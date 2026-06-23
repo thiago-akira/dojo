@@ -25,6 +25,7 @@ let canEdit = false;           // true para admin ou gestor do projeto
 let editMode = false;
 let projTab = "painel";        // painel | gestao | mensagens
 let consoleTab = "clientes";   // clientes | meus-projetos
+let curSpaceId = null;         // id do espaço (aba de painel) ativo
 
 /* Checa flag de permissão do membro atual. Admin e gestores têm tudo. */
 function perm(flag) {
@@ -37,8 +38,15 @@ let brand = { titulo: "Dojo", cor: "#e8a33d", logoUrl: "" };
 let state = defaultState();
 let _saveTimer = null;
 
-function defaultState() { return { spaces: [{ id: uid(), name: "Painel", tiles: [] }] }; }
-function space() { return state.spaces[0] || (state.spaces[0] = { id: uid(), name: "Painel", tiles: [] }); }
+function defaultState() { return { spaces: [{ id: uid(), name: "Painel", visibility: "compartilhado", tiles: [] }] }; }
+function space() {
+  const ss = state.spaces || [];
+  return ss.find(s => s.id === curSpaceId) || ss[0] || (ss.push({ id: uid(), name: "Painel", visibility: "compartilhado", tiles: [] }), ss[0]);
+}
+/* Espaços visíveis para o usuário atual (admin vê tudo; cliente só vê compartilhados) */
+function visibleSpaces() {
+  return (state.spaces || []).filter(s => isAdmin || s.visibility !== "interno");
+}
 
 /* ===== 4) Registro de widgets ===== */
 const WIDGETS = {
@@ -103,6 +111,7 @@ function route() {
   const canvas = $("#canvas"), hint = $("#emptyHint");
   canvas.style.display = "none"; hint.style.display = "none";
   canvas.innerHTML = ""; hint.innerHTML = "";
+  const spTabs = $("#spaceTabs"); if (spTabs) { spTabs.style.display = "none"; spTabs.innerHTML = ""; }
   $("#crumb").innerHTML = "";
 
   $("#subnav").style.display = "none";
@@ -327,6 +336,8 @@ async function abrirProjeto(id) {
     canEdit = !!(mb && mb.papel === "gestor");
   }
   await loadPainel(id);
+  const vis = visibleSpaces();
+  curSpaceId = vis.length ? vis[0].id : (state.spaces[0] && state.spaces[0].id) || null;
   view = "painel"; projTab = "painel"; editMode = false; route();
 }
 
@@ -385,11 +396,34 @@ function setProjTab(t) { projTab = t; route(); }
 
 /* ===== 9b) Render do painel (grid de widgets) ===== */
 function renderPainel(canvas, hint) {
+  const vis = visibleSpaces();
+  const cur = space();
+  const spTabs = $("#spaceTabs");
+
+  /* Mostra abas se há mais de uma visível OU se admin pode gerenciar */
+  if (vis.length > 1 || canEdit) {
+    spTabs.style.display = "block";
+    const tabsHtml = '<div class="space-tabs">' +
+      vis.map(s =>
+        '<button class="space-tab' + (s.id === cur.id ? " on" : "") + '" onclick="setSpace(\'' + s.id + '\')">' +
+        (s.visibility === "interno" ? "🔒 " : "") + esc(s.name) + '</button>'
+      ).join("") +
+      (canEdit ? '<button class="space-tab sp-add" title="Nova aba" onclick="addSpace()">＋</button>' : '') +
+      '</div>';
+    const ctrlHtml = canEdit && cur
+      ? '<div class="space-ctrl"><span class="space-ctrl-label">' + esc(cur.name) + '</span>' +
+        '<button class="lnk" onclick="editarSpace(\'' + cur.id + '\')">✏ renomear</button>' +
+        (state.spaces.length > 1 ? '<button class="lnk del" onclick="deletarSpace(\'' + cur.id + '\')">excluir aba</button>' : '') +
+        '</div>'
+      : '';
+    spTabs.innerHTML = tabsHtml + ctrlHtml;
+  }
+
   canvas.style.display = "grid";
-  const tiles = space().tiles;
+  const tiles = cur ? cur.tiles : [];
   if (!tiles.length) {
     hint.style.display = "block";
-    hint.textContent = editMode ? "Painel vazio — clique em ＋ Adicionar." : "Nada por aqui ainda.";
+    hint.textContent = canEdit ? "Aba vazia — clique em ＋ Adicionar." : "Nada por aqui ainda.";
   } else hint.style.display = "none";
 
   tiles.forEach(t => {
@@ -461,6 +495,52 @@ function openPicker() {
   openModal('<h3>Adicionar widget</h3><div class="pick-grid">' +
     Object.keys(WIDGETS).map(k => { const W = WIDGETS[k]; return '<div class="pick-card" data-t="' + k + '"><div class="pick-emoji">' + W.emoji + '</div><div class="pick-name">' + esc(W.name) + '</div><div class="pick-desc">' + esc(W.desc) + '</div></div>'; }).join("") +
     '</div>', m => { m.querySelectorAll(".pick-card").forEach(el => el.onclick = () => { addWidget(el.dataset.t); closeModal(); }); });
+}
+
+/* ===== 10b) Gestão de espaços (abas de painel) ===== */
+function setSpace(id) { curSpaceId = id; route(); }
+
+function _spaceVisSelect(cur) {
+  return '<label>Visibilidade</label><select data-k="vis">' +
+    '<option value="interno"' + (cur === "interno" ? " selected" : "") + '>🔒 Privada — só você vê</option>' +
+    '<option value="compartilhado"' + (cur !== "interno" ? " selected" : "") + '>👁 Compartilhada — cliente vê</option></select>';
+}
+
+function addSpace() {
+  openModal('<h3>Nova aba de painel</h3>' + field("Nome", "nome", "") + _spaceVisSelect("interno") + actions("Criar"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = () => {
+        const nome = m.querySelector('[data-k="nome"]').value.trim();
+        if (!nome) { alert("Informe o nome."); return; }
+        const ns = { id: uid(), name: nome, visibility: m.querySelector('[data-k="vis"]').value, tiles: [] };
+        state.spaces.push(ns);
+        curSpaceId = ns.id;
+        save(); closeModal(); route();
+      };
+    });
+}
+
+function editarSpace(id) {
+  const s = (state.spaces || []).find(x => x.id === id); if (!s) return;
+  openModal('<h3>Editar aba</h3>' + field("Nome", "nome", s.name) + _spaceVisSelect(s.visibility || "compartilhado") + actions("Salvar"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = () => {
+        const nome = m.querySelector('[data-k="nome"]').value.trim();
+        if (!nome) { alert("Informe o nome."); return; }
+        s.name = nome; s.visibility = m.querySelector('[data-k="vis"]').value;
+        save(); closeModal(); route();
+      };
+    });
+}
+
+function deletarSpace(id) {
+  if (!confirm("Excluir esta aba e todos os widgets nela?")) return;
+  state.spaces = state.spaces.filter(s => s.id !== id);
+  const vis = visibleSpaces();
+  curSpaceId = vis.length ? vis[0].id : (state.spaces[0] && state.spaces[0].id) || null;
+  save(); route();
 }
 
 /* ===== 11) Modal helpers ===== */

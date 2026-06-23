@@ -152,6 +152,17 @@ body.edit .tile.dragging .card{cursor:grabbing}
 
 /* projetos reusam .cli-grid / .cli-card do console */
 
+/* ===== Abas de espaços (múltiplos painéis por projeto) ===== */
+#spaceTabs{padding:0 0 10px 0}
+.space-tabs{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.space-tab{background:var(--surface-solid);border:1px solid var(--line);color:var(--muted);border-radius:9px;padding:6px 13px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
+.space-tab:hover{border-color:var(--accent);color:var(--text)}
+.space-tab.on{border-color:var(--accent);color:var(--accent);background:var(--surface)}
+.space-tab.sp-add{background:transparent;border-style:dashed;color:var(--faint);font-size:16px;padding:4px 11px}
+.space-tab.sp-add:hover{color:var(--accent);border-color:var(--accent)}
+.space-ctrl{display:flex;align-items:center;gap:10px;margin-top:7px;padding-top:7px;border-top:1px solid var(--line)}
+.space-ctrl-label{font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;flex:1}
+
 /* ===== Tabs do console (Clientes | Meus Projetos) ===== */
 .console-nav{display:flex;gap:6px;margin-bottom:20px;border-bottom:1px solid var(--line);padding-bottom:0}
 .console-tab{background:transparent;border:none;border-bottom:2px solid transparent;color:var(--muted);padding:8px 14px 10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:-1px;border-radius:0}
