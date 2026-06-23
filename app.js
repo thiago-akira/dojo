@@ -24,6 +24,7 @@ let myMembro = null;           // linha de `membros` do usuário no projeto atua
 let canEdit = false;           // true para admin ou gestor do projeto
 let editMode = false;
 let projTab = "painel";        // painel | gestao | mensagens
+let consoleTab = "clientes";   // clientes | meus-projetos
 
 /* Checa flag de permissão do membro atual. Admin e gestores têm tudo. */
 function perm(flag) {
@@ -119,10 +120,10 @@ function showLogin(hint) {
     '<button class="btn primary" onclick="authModal()">Entrar</button></div>';
 }
 
-/* ===== 6) Console do admin: lista de clientes ===== */
+/* ===== 6) Console do admin: lista de clientes e meus projetos ===== */
 async function renderConsole(canvas, hint) {
   view = "console"; curCliente = null; curProjeto = null;
-  $("#crumb").innerHTML = '<span class="cr-cur">Clientes</span>';
+  $("#crumb").innerHTML = '<span class="cr-cur">' + (consoleTab === "meus-projetos" ? "Meus Projetos" : "Clientes") + '</span>';
   const since24h = new Date(Date.now() - 86400000).toISOString();
   const [cliRes, projRes, apRes, msgRes] = await Promise.all([
     sb.from("clientes").select("*, projetos(count)").order("nome"),
@@ -130,8 +131,11 @@ async function renderConsole(canvas, hint) {
     sb.from("aprovacoes").select("*", { count: "exact", head: true }).eq("status", "pendente"),
     sb.from("mensagens").select("projeto_id, projetos!inner(cliente_id)").gt("created_at", since24h).neq("autor_id", me.id)
   ]);
-  if (cliRes.error) { hint.style.display = "block"; hint.textContent = "Erro ao carregar clientes."; return; }
-  const clientes = cliRes.data || [];
+  if (cliRes.error) { hint.style.display = "block"; hint.textContent = "Erro ao carregar."; return; }
+
+  const allClientes = cliRes.data || [];
+  const clientes = allClientes.filter(c => !c.is_interno);
+  const internoCliente = allClientes.find(c => c.is_interno) || null;
   const nProjAtivos = projRes.count || 0;
   const nAprovPend = apRes.count || 0;
   const msgBadge = {};
@@ -142,7 +146,19 @@ async function renderConsole(canvas, hint) {
 
   canvas.style.display = "none";
   hint.style.display = "block";
-  hint.innerHTML = '<div class="page">' +
+
+  const navHtml =
+    '<div class="console-nav">' +
+    '<button class="console-tab' + (consoleTab === "clientes" ? " on" : "") + '" onclick="switchConsoleTab(\'clientes\')">👥 Clientes</button>' +
+    '<button class="console-tab' + (consoleTab === "meus-projetos" ? " on" : "") + '" onclick="switchConsoleTab(\'meus-projetos\')">🏢 Meus Projetos</button>' +
+    '</div>';
+
+  if (consoleTab === "meus-projetos") {
+    await renderMeusProjetos(hint, internoCliente, navHtml);
+    return;
+  }
+
+  hint.innerHTML = '<div class="page">' + navHtml +
     '<div class="page-head"><h2>👥 Clientes</h2><button class="btn primary" onclick="novoCliente()">＋ Novo cliente</button></div>' +
     '<div class="dash-stats">' +
     '<div class="dstat"><span class="dstat-n">' + clientes.length + '</span><span class="dstat-l">cliente' + (clientes.length === 1 ? "" : "s") + '</span></div>' +
@@ -161,6 +177,32 @@ async function renderConsole(canvas, hint) {
     }).join("") + '</div>'
       : '<p class="muted-note">Nenhum cliente ainda. Crie o primeiro com <b>＋ Novo cliente</b>.</p>') +
     '</div>';
+}
+
+async function renderMeusProjetos(hint, internoCliente, navHtml) {
+  let projetosHtml = '<p class="muted-note">Nenhum projeto ainda. Crie o primeiro com <b>＋ Novo projeto</b>.</p>';
+  if (internoCliente) {
+    const { data: projetos } = await sb.from("projetos").select("*").eq("cliente_id", internoCliente.id).order("created_at");
+    if (projetos && projetos.length) {
+      projetosHtml = '<div class="cli-grid">' + projetos.map(p =>
+        '<div class="cli-card" onclick="abrirProjeto(\'' + p.id + '\')">' +
+        '<div class="cli-name">' + esc(p.nome) + '</div>' +
+        '<div class="cli-sub">' + esc(p.descricao || "") + '</div>' +
+        '<div class="cli-meta">' +
+        '<span class="cli-status ' + (p.status === "ativo" ? "ativo" : "pausado") + '">' + esc(p.status) + '</span>' +
+        '<span>' + p.progresso + '%</span></div></div>'
+      ).join("") + '</div>';
+    }
+  }
+  const iid = internoCliente ? internoCliente.id : null;
+  const empresa = internoCliente ? esc(internoCliente.empresa || "Meus Projetos") : "Meus Projetos";
+  hint.innerHTML = '<div class="page">' + navHtml +
+    '<div class="page-head">' +
+    '<div><h2>🏢 Meus Projetos</h2><div class="muted-note" style="font-size:12px;margin-top:2px">' + empresa + '</div></div>' +
+    '<div style="display:flex;gap:8px">' +
+    (internoCliente ? '<button class="btn" onclick="editarClienteInterno()">✏ Renomear</button>' : '') +
+    '<button class="btn primary" onclick="novoMeuProjeto(' + (iid ? '\'' + iid + '\'' : 'null') + ')">＋ Novo projeto</button>' +
+    '</div></div>' + projetosHtml + '</div>';
 }
 
 function novoCliente() {
@@ -210,6 +252,47 @@ async function renderClienteDetail(canvas, hint) {
     ).join("") + '</div>'
       : '<p class="muted-note">Sem projetos. Crie o primeiro com <b>＋ Novo projeto</b>.</p>') +
     '</div>';
+}
+
+function novoMeuProjeto(internoClienteId) {
+  if (!internoClienteId) { alert("Erro: cliente interno não encontrado."); return; }
+  openModal('<h3>Novo projeto</h3>' + field("Nome", "nome", "") +
+    '<label>Descrição</label><textarea data-k="descricao"></textarea>' +
+    '<div class="modal-actions"><span class="grow"></span><button class="btn" data-x>Cancelar</button><button class="btn primary" data-ok>Criar</button></div>',
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const nome = m.querySelector('[data-k="nome"]').value.trim();
+        const descricao = m.querySelector('[data-k="descricao"]').value.trim();
+        if (!nome) { alert("Informe o nome."); return; }
+        const { error } = await sb.from("projetos").insert({ cliente_id: internoClienteId, nome, descricao });
+        if (error) { alert("Erro: " + error.message); return; }
+        closeModal(); route();
+      };
+    });
+}
+
+function editarClienteInterno() {
+  sb.from("clientes").select("*").eq("is_interno", true).single().then(({ data }) => {
+    if (!data) { alert("Cliente interno não encontrado."); return; }
+    curCliente = data;
+    openModal('<h3>Renomear empresa</h3>' +
+      field("Nome da empresa", "empresa", data.empresa || "") +
+      '<label>Cor</label><input type="color" data-k="cor" value="' + escAttr((data.marca && data.marca.cor) || "#5b8def") + '" style="height:40px;padding:4px">' +
+      actions("Salvar"),
+      m => {
+        m.querySelector("[data-x]").onclick = closeModal;
+        m.querySelector("[data-ok]").onclick = async () => {
+          const empresa = m.querySelector('[data-k="empresa"]').value.trim();
+          if (!empresa) { alert("Informe o nome."); return; }
+          const cor = m.querySelector('[data-k="cor"]').value;
+          const marca = Object.assign({}, data.marca || {}, { cor, titulo: empresa });
+          const { error } = await sb.from("clientes").update({ empresa, nome: empresa, marca }).eq("id", data.id);
+          if (error) { alert("Erro: " + error.message); return; }
+          closeModal(); route();
+        };
+      });
+  });
 }
 
 function novoProjeto() {
@@ -263,10 +346,21 @@ function save() {
 /* ===== 9) Projeto: sub-nav (Painel · Gestão · Mensagens) ===== */
 function renderProjeto(canvas, hint) {
   const c = curCliente;
-  $("#crumb").innerHTML =
-    (isAdmin ? '<a class="cr-link" onclick="irConsole()">Clientes</a><span class="cr-sep">›</span>' +
-      '<a class="cr-link" onclick="abrirCliente(\'' + c.id + '\')">' + esc(c.empresa || c.nome) + '</a><span class="cr-sep">›</span>' : '') +
-    '<span class="cr-cur">' + esc(curProjeto.nome) + '</span>';
+  const fromInterno = c && c.is_interno;
+  if (isAdmin) {
+    if (fromInterno) {
+      $("#crumb").innerHTML =
+        '<a class="cr-link" onclick="irMeusProjetos()">Meus Projetos</a><span class="cr-sep">›</span>' +
+        '<span class="cr-cur">' + esc(curProjeto.nome) + '</span>';
+    } else {
+      $("#crumb").innerHTML =
+        '<a class="cr-link" onclick="irConsole()">Clientes</a><span class="cr-sep">›</span>' +
+        '<a class="cr-link" onclick="abrirCliente(\'' + c.id + '\')">' + esc(c.empresa || c.nome) + '</a><span class="cr-sep">›</span>' +
+        '<span class="cr-cur">' + esc(curProjeto.nome) + '</span>';
+    }
+  } else {
+    $("#crumb").innerHTML = '<span class="cr-cur">' + esc(curProjeto.nome) + '</span>';
+  }
 
   const tabs = [["painel", "📋 Painel"]];
   if (canEdit) tabs.push(["gestao", "🗂 Gestão interna"]);
@@ -393,6 +487,8 @@ function paintTools() {
   document.body.classList.toggle("edit", editMode && inPainel);
 }
 function irConsole() { view = "console"; route(); }
+function irMeusProjetos() { consoleTab = "meus-projetos"; view = "console"; route(); }
+function switchConsoleTab(tab) { consoleTab = tab; route(); }
 
 /* ===== 13) Autenticação ===== */
 function authModal() {
@@ -1286,6 +1382,7 @@ function editarCliente() {
 }
 
 async function excluirCliente() {
+  if (curCliente.is_interno) { alert("Não é possível excluir Meus Projetos."); return; }
   const nome = curCliente.empresa || curCliente.nome;
   if (!confirm('Excluir "' + nome + '" e TODOS os seus projetos, painéis, documentos e mensagens?\n\nEsta ação não pode ser desfeita.')) return;
   const { error } = await sb.from("clientes").delete().eq("id", curCliente.id);

@@ -152,6 +152,12 @@ body.edit .tile.dragging .card{cursor:grabbing}
 
 /* projetos reusam .cli-grid / .cli-card do console */
 
+/* ===== Tabs do console (Clientes | Meus Projetos) ===== */
+.console-nav{display:flex;gap:6px;margin-bottom:20px;border-bottom:1px solid var(--line);padding-bottom:0}
+.console-tab{background:transparent;border:none;border-bottom:2px solid transparent;color:var(--muted);padding:8px 14px 10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:-1px;border-radius:0}
+.console-tab:hover{color:var(--text)}
+.console-tab.on{color:var(--accent);border-bottom-color:var(--accent)}
+
 /* ===== Sub-nav do projeto ===== */
 .subnav{display:flex;gap:6px;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:53px;z-index:20}
 .sntab{background:transparent;border:1px solid transparent;color:var(--muted);border-radius:9px;padding:6px 12px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
