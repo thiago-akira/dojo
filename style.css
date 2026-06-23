@@ -196,3 +196,25 @@ body.edit .tile.dragging .card{cursor:grabbing}
 .composer{display:flex;gap:8px;align-items:flex-end;padding-top:10px;border-top:1px solid var(--line)}
 .composer select{width:auto;min-width:170px;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px;color:var(--text);font-family:inherit;font-size:13px}
 .composer textarea{flex:1;min-height:42px;max-height:120px;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:10px 12px;color:var(--text);font-family:inherit;font-size:14px;resize:vertical}
+
+/* ===== Aprovações ===== */
+.btn.ok{color:var(--ok);border-color:var(--ok)}
+.apcard{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:14px 15px;margin-bottom:12px}
+.ap-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.ap-title{font-weight:800;font-size:15px}
+.apbadge{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;border-radius:6px;padding:3px 8px;white-space:nowrap}
+.apbadge.pendente{color:var(--accent);border:1px solid var(--accent)}
+.apbadge.aprovado{color:var(--ok);border:1px solid var(--ok)}
+.apbadge.reprovado{color:var(--danger);border:1px solid var(--danger)}
+.ap-desc{font-size:13.5px;color:var(--text);line-height:1.5;white-space:pre-wrap;margin-bottom:10px}
+.ap-decision{font-size:13px;color:var(--muted);background:var(--surface-solid);border-radius:9px;padding:8px 11px;margin-bottom:8px}
+.ap-actions{display:flex;gap:8px;margin-bottom:10px}
+.ap-del{position:absolute;top:12px;right:12px}
+.apcard .ap-head{padding-right:60px}
+
+/* thread de comentários */
+.co-thread{border-top:1px solid var(--line);padding-top:9px;display:flex;flex-direction:column;gap:6px}
+.co{font-size:13px;line-height:1.45}
+.co-who{font-weight:800;color:var(--accent-2)}
+.co-add{display:flex;gap:6px;margin-top:4px}
+.co-add input{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--text);font-family:inherit;font-size:13px}

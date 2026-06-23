@@ -232,12 +232,15 @@ function renderProjeto(canvas, hint) {
 
   const tabs = [["painel", "📋 Painel"]];
   if (canEdit) tabs.push(["gestao", "🗂 Gestão interna"]);
-  tabs.push(["mensagens", "💬 Mensagens"]);
+  else tabs.push(["materiais", "📎 Materiais"]);
+  tabs.push(["aprovacoes", "✅ Aprovações"], ["mensagens", "💬 Mensagens"]);
   const sn = $("#subnav"); sn.style.display = "flex";
   sn.innerHTML = tabs.map(([k, l]) =>
     '<button class="sntab' + (projTab === k ? " on" : "") + '" onclick="setProjTab(\'' + k + '\')">' + l + '</button>').join("");
 
   if (projTab === "gestao" && canEdit) return renderGestao(canvas, hint);
+  if (projTab === "materiais") return renderMateriais(canvas, hint);
+  if (projTab === "aprovacoes") return renderAprovacoes(canvas, hint);
   if (projTab === "mensagens") return renderMensagens(canvas, hint);
   return renderPainel(canvas, hint);
 }
@@ -391,7 +394,9 @@ function authModal() {
           const nome = val("nome").trim();
           const { error } = await sb.auth.signUp({ email, password: senha, options: { data: { nome } } });
           if (error) return err(error.message);
-          err("✓ Conta criada! Confirme pelo e-mail e depois entre.");
+          const { error: e2 } = await sb.auth.signInWithPassword({ email, password: senha });
+          if (e2) err("✓ Conta criada! Agora é só entrar.");
+          else closeModal();
         } else {
           const { error } = await sb.auth.signInWithPassword({ email, password: senha });
           if (error) return err("E-mail ou senha inválidos.");
@@ -624,6 +629,102 @@ async function enviarMsg() {
   route();
 }
 
+/* ===== 13d) Aprovações (Fase 3) ===== */
+const APBADGE = { pendente: "⏳ pendente", aprovado: "✓ aprovado", reprovado: "✕ reprovado" };
+async function renderAprovacoes(canvas, hint) {
+  const pid = curProjeto.id;
+  hint.style.display = "block";
+  const { data: aps } = await sb.from("aprovacoes")
+    .select("*, decisor:pessoas!decidido_por(nome,email), comentarios(*, autor:pessoas!autor_id(nome,email))")
+    .eq("projeto_id", pid)
+    .order("created_at", { ascending: false })
+    .order("created_at", { referencedTable: "comentarios", ascending: true });
+
+  const cards = (aps || []).map(a => {
+    const coms = (a.comentarios || []).map(c =>
+      '<div class="co"><span class="co-who">' + esc((c.autor && (c.autor.nome || c.autor.email)) || "—") + '</span> ' + esc(c.corpo) + '</div>').join("");
+    const decided = a.status !== "pendente";
+    const decisor = a.decisor && (a.decisor.nome || a.decisor.email);
+    return '<div class="apcard">' +
+      '<div class="ap-head"><span class="ap-title">' + esc(a.titulo) + '</span><span class="apbadge ' + a.status + '">' + APBADGE[a.status] + '</span></div>' +
+      (a.descricao ? '<div class="ap-desc">' + esc(a.descricao) + '</div>' : "") +
+      (decided ? '<div class="ap-decision">' + (a.status === "aprovado" ? "Aprovado" : "Reprovado") + (decisor ? " por " + esc(decisor) : "") + (a.parecer ? ' — “' + esc(a.parecer) + '”' : "") + '</div>'
+        : '<div class="ap-actions"><button class="btn sm ok" onclick="decidir(\'' + a.id + '\',\'aprovado\')">✓ Aprovar</button><button class="btn sm danger" onclick="decidir(\'' + a.id + '\',\'reprovado\')">✕ Reprovar</button></div>') +
+      '<div class="co-thread">' + coms +
+      '<div class="co-add"><input id="co-' + a.id + '" placeholder="Comentar…" onkeydown="if(event.key===\'Enter\')addComentario(\'' + a.id + '\')"><button class="btn sm" onclick="addComentario(\'' + a.id + '\')">Enviar</button></div>' +
+      '</div>' +
+      (canEdit ? '<button class="lnk del ap-del" onclick="delAprovacao(\'' + a.id + '\')">excluir</button>' : "") +
+      '</div>';
+  }).join("") || '<p class="muted-note">Nenhuma aprovação ainda.' + (canEdit ? " Crie uma para o cliente avaliar." : "") + '</p>';
+
+  hint.innerHTML = '<div class="page">' +
+    '<div class="page-head"><h2>✅ Aprovações</h2>' + (canEdit ? '<button class="btn primary" onclick="novaAprovacao()">＋ Nova aprovação</button>' : "") + '</div>' +
+    cards + '</div>';
+}
+function novaAprovacao() {
+  openModal('<h3>Nova aprovação</h3>' + field("Título", "titulo", "") +
+    '<label>Descrição</label><textarea data-k="descricao" placeholder="A ideia/entrega que o cliente vai avaliar…"></textarea>' + actions("Criar"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const titulo = m.querySelector('[data-k="titulo"]').value.trim();
+        if (!titulo) { alert("Informe o título."); return; }
+        const { error } = await sb.from("aprovacoes").insert({ projeto_id: curProjeto.id, titulo, descricao: m.querySelector('[data-k="descricao"]').value.trim(), criado_por: me.id });
+        if (error) { alert("Erro: " + error.message); return; }
+        closeModal(); route();
+      };
+    });
+}
+function decidir(apId, status) {
+  openModal('<h3>' + (status === "aprovado" ? "Aprovar" : "Reprovar") + '</h3>' +
+    '<label>Comentário (opcional)</label><textarea data-k="parecer"></textarea>' + actions(status === "aprovado" ? "Confirmar aprovação" : "Confirmar reprovação"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const { error } = await sb.from("aprovacoes").update({ status, parecer: m.querySelector('[data-k="parecer"]').value.trim() || null, decidido_por: me.id, decidido_em: new Date().toISOString() }).eq("id", apId);
+        if (error) { alert("Erro: " + error.message); return; }
+        closeModal(); route();
+      };
+    });
+}
+async function delAprovacao(id) { if (!confirm("Excluir esta aprovação?")) return; await sb.from("aprovacoes").delete().eq("id", id); route(); }
+async function addComentario(apId) {
+  const el = document.getElementById("co-" + apId); const corpo = (el.value || "").trim(); if (!corpo) return;
+  const { error } = await sb.from("comentarios").insert({ aprovacao_id: apId, autor_id: me.id, corpo });
+  if (error) { alert("Erro: " + error.message); return; }
+  route();
+}
+
+/* ===== 13e) Materiais (visão do cliente: conteúdo compartilhado) ===== */
+async function renderMateriais(canvas, hint) {
+  const pid = curProjeto.id;
+  hint.style.display = "block";
+  const [docs, anos, chs] = await Promise.all([
+    sb.from("documentos").select("*").eq("projeto_id", pid).order("created_at", { ascending: false }),
+    sb.from("anotacoes").select("*").eq("projeto_id", pid).order("updated_at", { ascending: false }),
+    sb.from("checklists").select("*, checklist_itens(*)").eq("projeto_id", pid).order("ordem")
+  ]);
+  const docsHtml = (docs.data || []).map(d =>
+    '<div class="grow-row"><div class="gr-main"><span class="gr-name">📄 ' + esc(d.nome) + '</span>' +
+    '<div class="gr-actions">' + (d.storage_path ? '<button class="lnk" onclick="baixarDoc(\'' + escAttr(d.storage_path) + '\')">baixar</button>' : (d.url ? '<a class="lnk" href="' + escAttr(d.url) + '" target="_blank" rel="noopener">abrir</a>' : "")) + '</div></div></div>'
+  ).join("") || '<p class="muted-note">Nada compartilhado aqui.</p>';
+  const anosHtml = (anos.data || []).map(a =>
+    '<div class="grow-row"><div class="gr-main"><span class="gr-name">📝 ' + esc(a.titulo || "(sem título)") + '</span></div>' +
+    (a.corpo ? '<div class="ano-prev" style="white-space:pre-wrap">' + esc(a.corpo) + '</div>' : "") + '</div>'
+  ).join("") || '<p class="muted-note">Nenhuma anotação compartilhada.</p>';
+  const chsHtml = (chs.data || []).map(cl =>
+    '<div class="chk"><div class="chk-head"><span class="chk-title">' + esc(cl.titulo) + '</span></div><div class="chk-items">' +
+    (cl.checklist_itens || []).sort((a, b) => a.ordem - b.ordem || a.created_at.localeCompare(b.created_at)).map(it =>
+      '<label class="chk-item' + (it.concluido ? " done" : "") + '"><input type="checkbox" ' + (it.concluido ? "checked" : "") + ' onchange="toggleItem(\'' + it.id + '\',' + it.concluido + ')"><span>' + esc(it.texto) + '</span></label>').join("") +
+    '</div></div>'
+  ).join("") || '<p class="muted-note">Nenhum checklist compartilhado.</p>';
+
+  hint.innerHTML = '<div class="page">' +
+    '<div class="gsec"><div class="gsec-head"><h3>📄 Documentos</h3></div><div class="glist">' + docsHtml + '</div></div>' +
+    '<div class="gsec"><div class="gsec-head"><h3>📝 Anotações</h3></div><div class="glist">' + anosHtml + '</div></div>' +
+    '<div class="gsec"><div class="gsec-head"><h3>✅ Checklists</h3></div><div class="glist">' + chsHtml + '</div></div></div>';
+}
+
 /* ===== 14) Topbar ===== */
 function wireTopbar() {
   $("#authBtn").onclick = authModal;
@@ -633,6 +734,8 @@ function wireTopbar() {
 }
 
 /* ===== Boot ===== */
+/* IMPORTANTE: não chamar `await sb.from(...)` dentro do callback de
+   onAuthStateChange (deadlock no lock interno). Adiamos com setTimeout(0).
+   O evento INITIAL_SESSION já entrega a sessão persistida no load. */
 wireTopbar();
-sb.auth.onAuthStateChange((_e, session) => onSession(session));
-sb.auth.getSession().then(({ data }) => onSession(data.session));
+sb.auth.onAuthStateChange((_e, session) => { setTimeout(() => onSession(session), 0); });
