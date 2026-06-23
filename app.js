@@ -168,7 +168,9 @@ async function renderClienteDetail(canvas, hint) {
   const { data: projetos } = await sb.from("projetos").select("*").eq("cliente_id", c.id).order("created_at");
   hint.style.display = "block";
   hint.innerHTML = '<div class="page">' +
-    '<div class="page-head"><h2>' + esc(c.empresa || c.nome) + '</h2><button class="btn primary" onclick="novoProjeto()">＋ Novo projeto</button></div>' +
+    '<div class="page-head"><h2>' + esc(c.empresa || c.nome) + '</h2><div style="display:flex;gap:8px">' +
+    '<button class="btn danger" onclick="excluirCliente()">🗑 Excluir cliente</button>' +
+    '<button class="btn primary" onclick="novoProjeto()">＋ Novo projeto</button></div></div>' +
     ((projetos && projetos.length) ? '<div class="cli-grid">' + projetos.map(p =>
       '<div class="cli-card" onclick="abrirProjeto(\'' + p.id + '\')">' +
       '<div class="cli-name">' + esc(p.nome) + '</div>' +
@@ -234,6 +236,7 @@ function renderProjeto(canvas, hint) {
   if (canEdit) tabs.push(["gestao", "🗂 Gestão interna"]);
   else tabs.push(["materiais", "📎 Materiais"]);
   tabs.push(["aprovacoes", "✅ Aprovações"], ["mensagens", "💬 Mensagens"]);
+  if (canEdit) tabs.push(["participantes", "👥 Participantes"]);
   const sn = $("#subnav"); sn.style.display = "flex";
   sn.innerHTML = tabs.map(([k, l]) =>
     '<button class="sntab' + (projTab === k ? " on" : "") + '" onclick="setProjTab(\'' + k + '\')">' + l + '</button>').join("");
@@ -242,6 +245,7 @@ function renderProjeto(canvas, hint) {
   if (projTab === "materiais") return renderMateriais(canvas, hint);
   if (projTab === "aprovacoes") return renderAprovacoes(canvas, hint);
   if (projTab === "mensagens") return renderMensagens(canvas, hint);
+  if (projTab === "participantes" && canEdit) return renderParticipantes(canvas, hint);
   return renderPainel(canvas, hint);
 }
 function setProjTab(t) { projTab = t; route(); }
@@ -723,6 +727,106 @@ async function renderMateriais(canvas, hint) {
     '<div class="gsec"><div class="gsec-head"><h3>📄 Documentos</h3></div><div class="glist">' + docsHtml + '</div></div>' +
     '<div class="gsec"><div class="gsec-head"><h3>📝 Anotações</h3></div><div class="glist">' + anosHtml + '</div></div>' +
     '<div class="gsec"><div class="gsec-head"><h3>✅ Checklists</h3></div><div class="glist">' + chsHtml + '</div></div></div>';
+}
+
+/* ===== 13f) Participantes (Fase 5 antecipada) ===== */
+function papelSelect(cur) {
+  return '<label>Papel</label><select data-k="papel">' +
+    '<option value="cliente"' + (cur !== "gestor" ? " selected" : "") + '>Cliente (participante)</option>' +
+    '<option value="gestor"' + (cur === "gestor" ? " selected" : "") + '>Gestor (seu time)</option></select>';
+}
+function permChecks(m) {
+  m = m || {};
+  const row = (k, label, def) => '<label class="ckrow"><input type="checkbox" data-k="' + k + '" ' + ((m[k] !== undefined ? m[k] : def) ? "checked" : "") + '> ' + label + '</label>';
+  return '<label>Permissões</label><div class="ckgroup">' +
+    row("pode_ver_documentos", "Ver documentos", true) +
+    row("pode_enviar_mensagens", "Enviar mensagens", true) +
+    row("pode_marcar_reunioes", "Marcar reuniões", false) +
+    row("pode_adicionar_pessoas", "Adicionar pessoas", false) + '</div>';
+}
+function lerPerms(m) {
+  const o = {};
+  ["pode_adicionar_pessoas", "pode_enviar_mensagens", "pode_marcar_reunioes", "pode_ver_documentos"]
+    .forEach(k => { o[k] = m.querySelector('[data-k="' + k + '"]').checked; });
+  return o;
+}
+
+async function renderParticipantes(canvas, hint) {
+  const pid = curProjeto.id;
+  hint.style.display = "block";
+  const { data: ms } = await sb.from("membros").select("*, pessoas(nome,email)").eq("projeto_id", pid).order("created_at");
+  const rows = (ms || []).map(m => {
+    const p = m.pessoas || {};
+    const perms = [
+      m.pode_adicionar_pessoas && "adiciona pessoas", m.pode_enviar_mensagens && "mensagens",
+      m.pode_marcar_reunioes && "reuniões", m.pode_ver_documentos && "documentos"
+    ].filter(Boolean).map(x => '<span class="permchip">' + x + '</span>').join("");
+    return '<div class="grow-row"><div class="gr-main">' +
+      '<span class="gr-name">' + esc(p.nome || p.email || "—") + ' <span class="papel ' + m.papel + '">' + m.papel + '</span></span>' +
+      '<div class="gr-actions"><button class="lnk" onclick="editarMembro(\'' + m.id + '\')">permissões</button>' +
+      '<button class="lnk del" onclick="removerMembro(\'' + m.id + '\')">remover</button></div></div>' +
+      '<div class="ano-prev">' + esc(p.email || "") + '</div>' +
+      (perms ? '<div class="perms">' + perms + '</div>' : "") + '</div>';
+  }).join("") || '<p class="muted-note">Nenhum participante ainda. Adicione alguém para liberar o portal do cliente.</p>';
+  hint.innerHTML = '<div class="page"><div class="page-head"><h2>👥 Participantes</h2>' +
+    '<button class="btn primary" onclick="adicionarParticipante()">＋ Adicionar</button></div>' + rows + '</div>';
+}
+
+function adicionarParticipante() {
+  openModal('<h3>Adicionar participante</h3>' +
+    field("E-mail", "email", "") + field("Nome (opcional)", "nome", "") +
+    papelSelect("cliente") + permChecks(null) +
+    '<p class="muted-note" style="font-size:12px;margin-top:8px">Se a pessoa ainda não tiver conta, ela será convidada por e-mail.</p>' +
+    '<div class="auth-err" id="ppErr"></div>' + actions("Adicionar / convidar"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const email = m.querySelector('[data-k="email"]').value.trim();
+        const errEl = m.querySelector("#ppErr");
+        if (!email) { errEl.textContent = "Informe o e-mail."; return; }
+        errEl.textContent = "Processando…";
+        const { data, error } = await sb.functions.invoke("adicionar-participante", {
+          body: {
+            projeto_id: curProjeto.id, email,
+            nome: m.querySelector('[data-k="nome"]').value.trim(),
+            papel: m.querySelector('[data-k="papel"]').value,
+            permissoes: lerPerms(m)
+          }
+        });
+        if (error) {
+          let msg = error.message;
+          try { const ctx = await error.context.json(); if (ctx && ctx.error) msg = ctx.error; } catch (e) {}
+          errEl.textContent = "Erro: " + msg; return;
+        }
+        if (data && data.error) { errEl.textContent = "Erro: " + data.error; return; }
+        closeModal(); route();
+      };
+    });
+}
+
+async function editarMembro(id) {
+  const { data: m } = await sb.from("membros").select("*, pessoas(nome,email)").eq("id", id).single();
+  openModal('<h3>Permissões — ' + esc((m.pessoas && (m.pessoas.nome || m.pessoas.email)) || "") + '</h3>' +
+    papelSelect(m.papel) + permChecks(m) + actions("Salvar"),
+    mo => {
+      mo.querySelector("[data-x]").onclick = closeModal;
+      mo.querySelector("[data-ok]").onclick = async () => {
+        const rec = Object.assign({ papel: mo.querySelector('[data-k="papel"]').value }, lerPerms(mo));
+        const { error } = await sb.from("membros").update(rec).eq("id", id);
+        if (error) { alert("Erro: " + error.message); return; }
+        closeModal(); route();
+      };
+    });
+}
+async function removerMembro(id) { if (!confirm("Remover este participante do projeto?")) return; await sb.from("membros").delete().eq("id", id); route(); }
+
+/* — Excluir cliente — */
+async function excluirCliente() {
+  const nome = curCliente.empresa || curCliente.nome;
+  if (!confirm('Excluir "' + nome + '" e TODOS os seus projetos, painéis, documentos e mensagens?\n\nEsta ação não pode ser desfeita.')) return;
+  const { error } = await sb.from("clientes").delete().eq("id", curCliente.id);
+  if (error) { alert("Erro: " + error.message); return; }
+  irConsole();
 }
 
 /* ===== 14) Topbar ===== */

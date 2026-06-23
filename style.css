@@ -218,3 +218,13 @@ body.edit .tile.dragging .card{cursor:grabbing}
 .co-who{font-weight:800;color:var(--accent-2)}
 .co-add{display:flex;gap:6px;margin-top:4px}
 .co-add input{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--text);font-family:inherit;font-size:13px}
+
+/* ===== Participantes ===== */
+.papel{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;border-radius:5px;padding:1px 6px;margin-left:4px}
+.papel.gestor{color:var(--accent-2);border:1px solid var(--accent-2)}
+.papel.cliente{color:var(--muted);border:1px solid var(--line-strong)}
+.perms{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+.permchip{font-size:10.5px;font-weight:700;color:var(--muted);background:var(--surface-solid);border:1px solid var(--line);border-radius:5px;padding:2px 7px}
+.ckgroup{display:flex;flex-direction:column;gap:7px;margin-top:4px}
+.ckrow{display:flex;align-items:center;gap:9px;font-size:13.5px;font-weight:600;color:var(--text);text-transform:none;letter-spacing:0;margin:0}
+.ckrow input{width:16px;height:16px;accent-color:var(--accent)}
