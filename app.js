@@ -22,6 +22,7 @@ let curCliente = null;         // {id, nome, empresa, marca, ...}
 let curProjeto = null;         // {id, nome, ...}
 let canEdit = false;           // pode editar o painel atual (admin ou gestor)
 let editMode = false;
+let projTab = "painel";        // painel | gestao | mensagens
 let brand = { titulo: "Dojo", cor: "#e8a33d", logoUrl: "" };
 
 /* Estado do painel (layout de widgets) */
@@ -96,10 +97,11 @@ function route() {
   canvas.innerHTML = ""; hint.innerHTML = "";
   $("#crumb").innerHTML = "";
 
+  $("#subnav").style.display = "none";
   if (!me) return showLogin(hint);
   if (view === "console") return renderConsole(canvas, hint);
   if (view === "cliente") return renderClienteDetail(canvas, hint);
-  if (view === "painel") return renderPainel(canvas, hint);
+  if (view === "painel") return renderProjeto(canvas, hint);
   showLogin(hint);
 }
 
@@ -204,7 +206,7 @@ async function abrirProjeto(id) {
   brand = Object.assign({ titulo: "Dojo", cor: "#e8a33d", logoUrl: "" }, (curCliente && curCliente.marca) || {});
   canEdit = isAdmin; // gestor também poderá editar (RLS cobre); refinaremos na Fase 5
   await loadPainel(id);
-  view = "painel"; editMode = false; route();
+  view = "painel"; projTab = "painel"; editMode = false; route();
 }
 
 async function loadPainel(projetoId) {
@@ -220,14 +222,29 @@ function save() {
   }, 600);
 }
 
-/* ===== 9) Render do painel (grid de widgets) ===== */
-function renderPainel(canvas, hint) {
+/* ===== 9) Projeto: sub-nav (Painel · Gestão · Mensagens) ===== */
+function renderProjeto(canvas, hint) {
   const c = curCliente;
   $("#crumb").innerHTML =
     (isAdmin ? '<a class="cr-link" onclick="irConsole()">Clientes</a><span class="cr-sep">›</span>' +
       '<a class="cr-link" onclick="abrirCliente(\'' + c.id + '\')">' + esc(c.empresa || c.nome) + '</a><span class="cr-sep">›</span>' : '') +
     '<span class="cr-cur">' + esc(curProjeto.nome) + '</span>';
 
+  const tabs = [["painel", "📋 Painel"]];
+  if (canEdit) tabs.push(["gestao", "🗂 Gestão interna"]);
+  tabs.push(["mensagens", "💬 Mensagens"]);
+  const sn = $("#subnav"); sn.style.display = "flex";
+  sn.innerHTML = tabs.map(([k, l]) =>
+    '<button class="sntab' + (projTab === k ? " on" : "") + '" onclick="setProjTab(\'' + k + '\')">' + l + '</button>').join("");
+
+  if (projTab === "gestao" && canEdit) return renderGestao(canvas, hint);
+  if (projTab === "mensagens") return renderMensagens(canvas, hint);
+  return renderPainel(canvas, hint);
+}
+function setProjTab(t) { projTab = t; route(); }
+
+/* ===== 9b) Render do painel (grid de widgets) ===== */
+function renderPainel(canvas, hint) {
   canvas.style.display = "grid";
   const tiles = space().tiles;
   if (!tiles.length) {
@@ -320,7 +337,7 @@ function applyBrand() {
   $("#roleBadge").textContent = me ? (isAdmin ? "ADMIN" : "CLIENTE") : "";
 }
 function paintTools() {
-  const inPainel = view === "painel";
+  const inPainel = view === "painel" && projTab === "painel";
   $("#adminBtn").style.display = (isAdmin && view !== "console") ? "" : "none";
   $("#editBtn").style.display = (inPainel && canEdit) ? "" : "none";
   $("#addBtn").style.display = (inPainel && canEdit && editMode) ? "" : "none";
@@ -415,6 +432,196 @@ async function rotaCliente() {
   const hint = $("#emptyHint"); $("#canvas").style.display = "none"; hint.style.display = "block";
   hint.innerHTML = '<div class="welcome"><h2>Olá, ' + esc(me.nome || "") + '</h2><p>Você ainda não tem projetos liberados. Fale com o responsável.</p></div>';
   applyBrand(); paintTools();
+}
+
+/* ===== 13b) Gestão interna: documentos, anotações, checklists ===== */
+function visChip(v) { return '<span class="vis ' + v + '">' + (v === "compartilhado" ? "👁 cliente vê" : "🔒 interno") + '</span>'; }
+function visSelect(cur) {
+  cur = cur || "interno";
+  return '<label>Visibilidade</label><select data-k="vis">' +
+    '<option value="interno"' + (cur === "interno" ? " selected" : "") + '>🔒 Interno (só você)</option>' +
+    '<option value="compartilhado"' + (cur === "compartilhado" ? " selected" : "") + '>👁 Compartilhado (cliente vê)</option></select>';
+}
+function actions(ok) { return '<div class="modal-actions"><span class="grow"></span><button class="btn" data-x>Cancelar</button><button class="btn primary" data-ok>' + esc(ok) + '</button></div>'; }
+
+async function renderGestao(canvas, hint) {
+  const pid = curProjeto.id;
+  hint.style.display = "block";
+  hint.innerHTML = '<div class="page"><p class="muted-note">Carregando…</p></div>';
+  const [docs, anos, chs] = await Promise.all([
+    sb.from("documentos").select("*").eq("projeto_id", pid).order("created_at", { ascending: false }),
+    sb.from("anotacoes").select("*").eq("projeto_id", pid).order("updated_at", { ascending: false }),
+    sb.from("checklists").select("*, checklist_itens(*)").eq("projeto_id", pid).order("ordem")
+  ]);
+
+  const docsHtml = (docs.data || []).map(d =>
+    '<div class="grow-row"><div class="gr-main"><span class="gr-name">📄 ' + esc(d.nome) + '</span>' + visChip(d.visibilidade) + '</div>' +
+    '<div class="gr-actions">' +
+    (d.storage_path ? '<button class="lnk" onclick="baixarDoc(\'' + escAttr(d.storage_path) + '\')">baixar</button>' :
+      (d.url ? '<a class="lnk" href="' + escAttr(d.url) + '" target="_blank" rel="noopener">abrir</a>' : "")) +
+    '<button class="lnk" onclick="toggleVis(\'documentos\',\'' + d.id + '\',\'' + d.visibilidade + '\')">' + (d.visibilidade === "compartilhado" ? "tornar interno" : "compartilhar") + '</button>' +
+    '<button class="lnk del" onclick="delDoc(\'' + d.id + '\',\'' + escAttr(d.storage_path || "") + '\')">excluir</button></div></div>'
+  ).join("") || '<p class="muted-note">Nenhum documento ainda.</p>';
+
+  const anosHtml = (anos.data || []).map(a =>
+    '<div class="grow-row ano" onclick="editarAnotacao(\'' + a.id + '\')"><div class="gr-main"><span class="gr-name">📝 ' + esc(a.titulo || "(sem título)") + '</span>' + visChip(a.visibilidade) + '</div>' +
+    '<div class="ano-prev">' + esc((a.corpo || "").slice(0, 120)) + '</div>' +
+    '<button class="lnk del" onclick="event.stopPropagation();delAnotacao(\'' + a.id + '\')">excluir</button></div>'
+  ).join("") || '<p class="muted-note">Nenhuma anotação ainda.</p>';
+
+  const chsHtml = (chs.data || []).map(cl =>
+    '<div class="chk"><div class="chk-head"><span class="chk-title">' + esc(cl.titulo) + '</span>' + visChip(cl.visibilidade) +
+    '<span class="grow"></span>' +
+    '<button class="lnk" onclick="toggleVis(\'checklists\',\'' + cl.id + '\',\'' + cl.visibilidade + '\')">' + (cl.visibilidade === "compartilhado" ? "tornar interno" : "compartilhar") + '</button>' +
+    '<button class="lnk del" onclick="delChecklist(\'' + cl.id + '\')">excluir</button></div>' +
+    '<div class="chk-items">' +
+    (cl.checklist_itens || []).sort((a, b) => a.ordem - b.ordem || a.created_at.localeCompare(b.created_at)).map(it =>
+      '<label class="chk-item' + (it.concluido ? " done" : "") + '"><input type="checkbox" ' + (it.concluido ? "checked" : "") + ' onchange="toggleItem(\'' + it.id + '\',' + it.concluido + ')"><span>' + esc(it.texto) + '</span><button class="lnk del" onclick="delItem(\'' + it.id + '\')">✕</button></label>'
+    ).join("") +
+    '<div class="chk-add"><input id="ni-' + cl.id + '" placeholder="Novo item…" onkeydown="if(event.key===\'Enter\')addItem(\'' + cl.id + '\')"><button class="btn sm" onclick="addItem(\'' + cl.id + '\')">＋</button></div>' +
+    '</div></div>'
+  ).join("") || '<p class="muted-note">Nenhum checklist ainda.</p>';
+
+  hint.innerHTML = '<div class="page">' +
+    '<div class="gsec"><div class="gsec-head"><h3>🗂 Documentos</h3><button class="btn sm primary" onclick="novoDocumento()">＋ Documento</button></div><div class="glist">' + docsHtml + '</div></div>' +
+    '<div class="gsec"><div class="gsec-head"><h3>📝 Anotações</h3><button class="btn sm primary" onclick="novaAnotacao()">＋ Anotação</button></div><div class="glist">' + anosHtml + '</div></div>' +
+    '<div class="gsec"><div class="gsec-head"><h3>✅ Checklists</h3><button class="btn sm primary" onclick="novoChecklist()">＋ Checklist</button></div><div class="glist">' + chsHtml + '</div></div>' +
+    '</div>';
+}
+
+/* — Documentos — */
+function novoDocumento() {
+  openModal('<h3>Novo documento</h3>' + field("Nome", "nome", "") +
+    '<label>Arquivo</label><input type="file" id="docfile">' +
+    '<label>…ou link (URL)</label><input data-k="url" placeholder="https://">' +
+    visSelect() + actions("Adicionar"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const nome = m.querySelector('[data-k="nome"]').value.trim();
+        const url = m.querySelector('[data-k="url"]').value.trim();
+        const vis = m.querySelector('[data-k="vis"]').value;
+        const file = m.querySelector("#docfile").files[0];
+        if (!nome && !file && !url) { alert("Informe um nome e um arquivo ou link."); return; }
+        let storage_path = null, tipo = null, tamanho = null;
+        if (file) {
+          storage_path = curProjeto.id + "/" + uid() + "-" + file.name.replace(/[^\w.\-]/g, "_");
+          const up = await sb.storage.from("documentos").upload(storage_path, file);
+          if (up.error) { alert("Erro no upload: " + up.error.message); return; }
+          tipo = file.type; tamanho = file.size;
+        } else if (url) { tipo = "link"; }
+        const { error } = await sb.from("documentos").insert({
+          projeto_id: curProjeto.id, nome: nome || (file && file.name) || url,
+          storage_path, url: url || null, tipo, tamanho, visibilidade: vis, criado_por: me.id
+        });
+        if (error) { alert("Erro: " + error.message); return; }
+        closeModal(); route();
+      };
+    });
+}
+async function baixarDoc(path) {
+  const { data, error } = await sb.storage.from("documentos").createSignedUrl(path, 3600);
+  if (error) { alert("Erro: " + error.message); return; }
+  window.open(data.signedUrl, "_blank");
+}
+async function delDoc(id, path) {
+  if (!confirm("Excluir este documento?")) return;
+  if (path) await sb.storage.from("documentos").remove([path]);
+  await sb.from("documentos").delete().eq("id", id); route();
+}
+async function toggleVis(table, id, cur) {
+  await sb.from(table).update({ visibilidade: cur === "compartilhado" ? "interno" : "compartilhado" }).eq("id", id);
+  route();
+}
+
+/* — Anotações — */
+function novaAnotacao() { abrirAnotacao(null, { titulo: "", corpo: "", visibilidade: "interno" }); }
+async function editarAnotacao(id) {
+  const { data } = await sb.from("anotacoes").select("*").eq("id", id).single();
+  abrirAnotacao(id, data || { titulo: "", corpo: "", visibilidade: "interno" });
+}
+function abrirAnotacao(id, a) {
+  openModal('<h3>' + (id ? "Editar" : "Nova") + ' anotação</h3>' + field("Título", "titulo", a.titulo || "") +
+    '<label>Texto</label><textarea data-k="corpo" style="min-height:120px">' + esc(a.corpo || "") + '</textarea>' +
+    visSelect(a.visibilidade) + actions("Salvar"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const rec = {
+          projeto_id: curProjeto.id,
+          titulo: m.querySelector('[data-k="titulo"]').value.trim(),
+          corpo: m.querySelector('[data-k="corpo"]').value,
+          visibilidade: m.querySelector('[data-k="vis"]').value
+        };
+        let error;
+        if (id) ({ error } = await sb.from("anotacoes").update(rec).eq("id", id));
+        else { rec.criado_por = me.id; ({ error } = await sb.from("anotacoes").insert(rec)); }
+        if (error) { alert("Erro: " + error.message); return; }
+        closeModal(); route();
+      };
+    });
+}
+async function delAnotacao(id) { if (!confirm("Excluir esta anotação?")) return; await sb.from("anotacoes").delete().eq("id", id); route(); }
+
+/* — Checklists — */
+function novoChecklist() {
+  openModal('<h3>Novo checklist</h3>' + field("Título", "titulo", "") + visSelect() + actions("Criar"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const titulo = m.querySelector('[data-k="titulo"]').value.trim();
+        if (!titulo) { alert("Informe o título."); return; }
+        const { error } = await sb.from("checklists").insert({ projeto_id: curProjeto.id, titulo, visibilidade: m.querySelector('[data-k="vis"]').value, criado_por: me.id });
+        if (error) { alert("Erro: " + error.message); return; }
+        closeModal(); route();
+      };
+    });
+}
+async function delChecklist(id) { if (!confirm("Excluir o checklist e seus itens?")) return; await sb.from("checklists").delete().eq("id", id); route(); }
+async function addItem(clId) {
+  const el = document.getElementById("ni-" + clId); const texto = (el.value || "").trim(); if (!texto) return;
+  const { error } = await sb.from("checklist_itens").insert({ checklist_id: clId, texto });
+  if (error) { alert("Erro: " + error.message); return; }
+  route();
+}
+async function toggleItem(id, cur) {
+  const done = !cur;
+  await sb.from("checklist_itens").update({ concluido: done, concluido_por: done ? me.id : null, concluido_em: done ? new Date().toISOString() : null }).eq("id", id);
+  route();
+}
+async function delItem(id) { await sb.from("checklist_itens").delete().eq("id", id); route(); }
+
+/* ===== 13c) Mensagens ===== */
+async function renderMensagens(canvas, hint) {
+  const pid = curProjeto.id;
+  hint.style.display = "block";
+  const [msgs, mbs] = await Promise.all([
+    sb.from("mensagens").select("*, autor:pessoas!autor_id(nome,email)").eq("projeto_id", pid).order("created_at"),
+    sb.from("membros").select("pessoa_id, papel, pessoas(nome,email)").eq("projeto_id", pid)
+  ]);
+  const participantes = (mbs.data || []).filter(x => x.pessoa_id !== me.id);
+  const lista = (msgs.data || []).map(mm => {
+    const mine = mm.autor_id === me.id;
+    const who = (mm.autor && (mm.autor.nome || mm.autor.email)) || "—";
+    const priv = mm.destinatario_id ? ' · <span class="msg-priv">privado</span>' : "";
+    return '<div class="msg' + (mine ? " mine" : "") + '"><div class="msg-meta">' + esc(who) + priv + '</div><div class="msg-bubble">' + esc(mm.corpo) + '</div></div>';
+  }).join("") || '<p class="muted-note" style="text-align:center;margin-top:30px">Nenhuma mensagem ainda. Diga olá 👋</p>';
+
+  const opts = '<option value="">📢 Todos os participantes</option>' +
+    participantes.map(p => '<option value="' + p.pessoa_id + '">' + esc((p.pessoas && (p.pessoas.nome || p.pessoas.email)) || p.pessoa_id) + (p.papel === "gestor" ? " (gestor)" : "") + '</option>').join("");
+
+  hint.innerHTML = '<div class="page msgs"><div class="msg-list" id="msgList">' + lista + '</div>' +
+    '<div class="composer"><select id="msgTo">' + opts + '</select>' +
+    '<textarea id="msgBody" placeholder="Escreva uma mensagem…" onkeydown="if(event.key===\'Enter\'&&(event.metaKey||event.ctrlKey))enviarMsg()"></textarea>' +
+    '<button class="btn primary" onclick="enviarMsg()">Enviar</button></div></div>';
+  const ml = document.getElementById("msgList"); if (ml) ml.scrollTop = ml.scrollHeight;
+}
+async function enviarMsg() {
+  const body = document.getElementById("msgBody"); const corpo = (body.value || "").trim(); if (!corpo) return;
+  const to = document.getElementById("msgTo").value || null;
+  const { error } = await sb.from("mensagens").insert({ projeto_id: curProjeto.id, autor_id: me.id, destinatario_id: to, corpo });
+  if (error) { alert("Erro: " + error.message); return; }
+  route();
 }
 
 /* ===== 14) Topbar ===== */

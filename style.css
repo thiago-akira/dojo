@@ -140,3 +140,59 @@ body.edit .tile.dragging .card{cursor:grabbing}
 .btn.ghost{background:transparent}
 
 /* projetos reusam .cli-grid / .cli-card do console */
+
+/* ===== Sub-nav do projeto ===== */
+.subnav{display:flex;gap:6px;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:53px;z-index:20}
+.sntab{background:transparent;border:1px solid transparent;color:var(--muted);border-radius:9px;padding:6px 12px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+.sntab:hover{color:var(--text)}
+.sntab.on{background:var(--surface-solid);border-color:var(--line);color:var(--accent)}
+
+/* ===== Botão pequeno + chips de visibilidade ===== */
+.btn.sm{padding:5px 10px;font-size:12px}
+.vis{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;border-radius:5px;padding:2px 6px;white-space:nowrap}
+.vis.interno{color:var(--muted);border:1px solid var(--line-strong)}
+.vis.compartilhado{color:var(--ok);border:1px solid var(--ok)}
+.lnk{background:none;border:0;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;padding:2px 4px;text-decoration:none}
+.lnk:hover{color:var(--accent)}
+.lnk.del:hover{color:var(--danger)}
+
+/* ===== Gestão interna ===== */
+.gsec{margin-bottom:24px}
+.gsec-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.gsec-head h3{margin:0;font-size:15px}
+.glist{display:flex;flex-direction:column;gap:8px}
+.grow-row{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:11px 13px;display:flex;flex-direction:column;gap:6px}
+.grow-row .gr-main{display:flex;align-items:center;gap:9px;justify-content:space-between}
+.gr-name{font-weight:700;font-size:13.5px}
+.gr-actions{display:flex;gap:10px;align-items:center}
+.grow-row.ano{cursor:pointer}
+.grow-row.ano:hover{border-color:var(--accent)}
+.ano-prev{color:var(--muted);font-size:12.5px;line-height:1.5;white-space:pre-wrap}
+
+/* checklist */
+.chk{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.chk-head{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.chk-title{font-weight:800;font-size:14px}
+.chk-items{display:flex;flex-direction:column;gap:3px}
+.chk-item{display:flex;align-items:center;gap:9px;padding:5px 4px;border-radius:7px;font-size:13.5px}
+.chk-item:hover{background:var(--surface-solid)}
+.chk-item input{width:16px;height:16px;accent-color:var(--accent)}
+.chk-item span{flex:1}
+.chk-item.done span{text-decoration:line-through;color:var(--muted)}
+.chk-item .lnk{opacity:0;font-size:13px}
+.chk-item:hover .lnk{opacity:1}
+.chk-add{display:flex;gap:6px;margin-top:7px}
+.chk-add input{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--text);font-family:inherit;font-size:13px}
+
+/* ===== Mensagens ===== */
+.msgs{display:flex;flex-direction:column;height:calc(100vh - 150px)}
+.msg-list{flex:1;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:6px 2px}
+.msg{max-width:70%;align-self:flex-start}
+.msg.mine{align-self:flex-end;text-align:right}
+.msg-meta{font-size:11px;color:var(--faint);font-weight:700;margin:0 4px 3px}
+.msg-priv{color:var(--accent-2)}
+.msg-bubble{display:inline-block;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:9px 13px;font-size:14px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+.msg.mine .msg-bubble{background:var(--accent);color:#1a1300;border-color:transparent}
+.composer{display:flex;gap:8px;align-items:flex-end;padding-top:10px;border-top:1px solid var(--line)}
+.composer select{width:auto;min-width:170px;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px;color:var(--text);font-family:inherit;font-size:13px}
+.composer textarea{flex:1;min-height:42px;max-height:120px;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:10px 12px;color:var(--text);font-family:inherit;font-size:14px;resize:vertical}
