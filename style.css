@@ -1,0 +1,142 @@
+/* ===================== Dojo — design system mínimo ===================== */
+:root{
+  --bg:#0f0f14; --surface:#1a1b22; --surface-solid:#20212a; --line:#2c2e3a; --line-strong:#3a3d4d;
+  --text:#e9eaf0; --muted:#9aa0b5; --faint:#6b7186;
+  --accent:#e8a33d; --accent-2:#5b8def; --danger:#e0604a; --ok:#3fa873;
+  --radius:14px; --gap:14px; --row:96px; --cols:12;
+  --font-ui:"Bricolage Grotesque",system-ui,sans-serif; --font-mono:"JetBrains Mono",monospace;
+  --shadow:0 10px 30px rgba(0,0,0,.35);
+}
+html[data-theme="light"]{
+  --bg:#f3f4f8; --surface:#ffffff; --surface-solid:#ffffff; --line:#e3e5ee; --line-strong:#cfd2e0;
+  --text:#1d2030; --muted:#6b7186; --accent:#c9842a; --shadow:0 10px 24px rgba(20,24,60,.10);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--text);font-family:var(--font-ui);-webkit-font-smoothing:antialiased}
+
+/* ===== Topbar ===== */
+.topbar{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:0;z-index:30}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.mark{width:30px;height:30px;border-radius:9px;background:var(--surface-solid);border:1px solid var(--line);display:grid;place-items:center;color:var(--accent);font-size:16px}
+.title{font-weight:800;font-size:17px;letter-spacing:-.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.role-badge{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--accent);border:1px solid var(--line);border-radius:6px;padding:2px 7px}
+.spacer{flex:1}
+.tools{display:flex;align-items:center;gap:8px}
+.iconbtn{background:var(--surface-solid);border:1px solid var(--line);color:var(--text);border-radius:9px;padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+.iconbtn:hover{border-color:var(--accent)}
+.iconbtn.primary{background:var(--accent);color:#1a1300;border-color:transparent}
+.iconbtn.on{border-color:var(--accent);color:var(--accent)}
+
+/* ===== Canvas / grid ===== */
+.canvas-wrap{padding:var(--gap);min-height:calc(100vh - 52px)}
+.canvas{display:grid;grid-template-columns:repeat(var(--cols),1fr);grid-auto-rows:var(--row);gap:var(--gap);align-content:start}
+.empty-hint{color:var(--muted);text-align:center;padding:60px 20px;font-size:14px}
+
+/* ===== Tile / card ===== */
+.tile{grid-column:var(--gc);grid-row:var(--gr);position:relative;min-width:0;min-height:0}
+.card{position:absolute;inset:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
+body.edit .card{border-style:dashed;border-color:var(--line-strong)}
+.tile.dragging .card,.tile.resizing .card{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset,var(--shadow)}
+.content{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+
+/* barra de edição do tile (só admin em modo edição) */
+.tbar{position:absolute;top:6px;right:6px;display:none;gap:4px;z-index:5}
+body.edit .tbar{display:flex}
+.tbar button{width:26px;height:26px;border:0;border-radius:7px;background:rgba(0,0,0,.55);color:#fff;font-size:12px;cursor:pointer}
+.tbar button:hover{background:var(--accent);color:#1a1300}
+.thandle{position:absolute;width:16px;height:16px;right:2px;bottom:2px;cursor:se-resize;display:none;z-index:5;
+  background:linear-gradient(135deg,transparent 50%,var(--accent) 50%)}
+body.edit .thandle{display:block}
+body.edit .tile .card{cursor:grab}
+body.edit .tile.dragging .card{cursor:grabbing}
+
+/* ===== Cabeçalho padrão de widget ===== */
+.w-head{display:flex;align-items:center;gap:8px;padding:11px 13px 7px;flex:none}
+.w-title{font-weight:800;font-size:13.5px;letter-spacing:-.2px}
+.w-body{flex:1;min-height:0;overflow:auto;padding:0 13px 13px}
+
+/* ===== Widget: KPI ===== */
+.kpi{display:flex;flex-direction:column;justify-content:center;height:100%;padding:14px 16px;gap:4px}
+.kpi-label{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.kpi-value{font-size:34px;font-weight:800;letter-spacing:-1px;line-height:1.05}
+.kpi-delta{font-size:12.5px;font-weight:700}
+.kpi-delta.up{color:var(--ok)} .kpi-delta.down{color:var(--danger)}
+
+/* ===== Widget: Nota / texto ===== */
+.nota-body{flex:1;min-height:0;overflow:auto;padding:12px 14px;font-size:14px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+
+/* ===== Widget: Links ===== */
+.links-list{display:flex;flex-direction:column;gap:6px}
+.links-list a{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;color:var(--text);text-decoration:none;font-size:13px;font-weight:600;flex-shrink:0}
+.links-list a:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ===== Widget: Progresso ===== */
+.prog{display:flex;flex-direction:column;gap:10px;padding:13px}
+.prog-row .prog-top{display:flex;justify-content:space-between;font-size:12.5px;font-weight:700;margin-bottom:5px}
+.prog-bar{height:9px;border-radius:6px;background:var(--line-strong);overflow:hidden}
+.prog-bar i{display:block;height:100%;background:var(--accent);border-radius:6px}
+
+/* ===== Modal genérico ===== */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40}
+.panel-modal{position:fixed;z-index:41;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,94vw);max-height:88vh;overflow:auto;
+  background:var(--surface);border:1px solid var(--line-strong);border-radius:16px;box-shadow:var(--shadow);padding:18px 20px}
+.panel-modal h3{margin:0 0 12px;font-size:17px}
+.panel-modal label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin:10px 0 4px;text-transform:uppercase;letter-spacing:.3px}
+.panel-modal input,.panel-modal textarea,.panel-modal select{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px 11px;color:var(--text);font-family:inherit;font-size:14px}
+.panel-modal textarea{min-height:70px;resize:vertical}
+.modal-actions{display:flex;gap:8px;margin-top:16px;align-items:center}
+.modal-actions .grow{flex:1}
+.btn{border:1px solid var(--line);background:var(--surface-solid);color:var(--text);border-radius:9px;padding:8px 14px;font-weight:700;cursor:pointer;font-family:inherit;font-size:13px}
+.btn.primary{background:var(--accent);color:#1a1300;border-color:transparent}
+.btn.danger{color:var(--danger);border-color:var(--danger)}
+.btn:hover{filter:brightness(1.06)}
+
+/* lista de clientes (console admin) */
+.cli-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin-top:6px}
+.cli-card{border:1px solid var(--line);border-radius:12px;padding:12px;cursor:pointer;background:var(--surface-solid)}
+.cli-card:hover{border-color:var(--accent)}
+.cli-name{font-weight:800;font-size:14px}
+.cli-sub{font-size:11.5px;color:var(--muted);margin-top:3px}
+.cli-meta{font-size:11px;color:var(--muted);margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
+.cli-status{font-size:10px;font-weight:800;text-transform:uppercase;border-radius:5px;padding:1px 6px}
+.cli-status.ativo{color:var(--ok);border:1px solid var(--ok)}
+.cli-status.pausado{color:var(--danger);border:1px solid var(--danger)}
+
+/* picker de widgets */
+.pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:6px}
+.pick-card{border:1px solid var(--line);border-radius:11px;padding:12px;cursor:pointer;text-align:center;background:var(--surface-solid)}
+.pick-card:hover{border-color:var(--accent)}
+.pick-emoji{font-size:22px} .pick-name{font-weight:700;font-size:13px;margin-top:5px} .pick-desc{font-size:11px;color:var(--muted);margin-top:3px}
+
+/* aviso de painel pausado */
+.paused-note{margin:60px auto;max-width:420px;text-align:center;color:var(--muted);font-size:14px;line-height:1.6}
+
+/* ===== Breadcrumb (topbar) ===== */
+.crumb{display:flex;align-items:center;gap:7px;font-size:13px;min-width:0;overflow:hidden}
+.cr-link{color:var(--muted);cursor:pointer;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.cr-link:hover{color:var(--accent)}
+.cr-sep{color:var(--faint)}
+.cr-cur{color:var(--text);font-weight:700;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+
+/* ===== Páginas (console / detalhe) — usam #emptyHint como container ===== */
+.empty-hint .page{max-width:1080px;margin:0 auto;text-align:left;padding:8px 2px}
+.page-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+.page-head h2{margin:0;font-size:21px;letter-spacing:-.4px}
+.muted-note{color:var(--muted);font-size:14px;line-height:1.6}
+
+/* ===== Tela de boas-vindas / login ===== */
+.welcome{max-width:380px;margin:8vh auto;text-align:center}
+.welcome-mark{width:56px;height:56px;border-radius:16px;margin:0 auto 14px;display:grid;place-items:center;
+  background:var(--surface);border:1px solid var(--line);color:var(--accent);font-size:26px}
+.welcome h2{font-size:26px;margin:0 0 6px;letter-spacing:-.6px}
+.welcome p{color:var(--muted);margin:0 0 18px;font-size:14px}
+
+/* ===== Abas (modal de login) ===== */
+.tabs{display:flex;gap:6px;margin-bottom:6px}
+.tab{flex:1;background:var(--surface-solid);border:1px solid var(--line);color:var(--muted);border-radius:9px;padding:8px;font-weight:700;cursor:pointer;font-family:inherit;font-size:13px}
+.tab.on{border-color:var(--accent);color:var(--accent)}
+.auth-err{font-size:12.5px;color:var(--muted);margin-top:10px;min-height:16px}
+.btn.ghost{background:transparent}
+
+/* projetos reusam .cli-grid / .cli-card do console */

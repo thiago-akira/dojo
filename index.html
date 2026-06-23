@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dojo · Painéis de Clientes</title>
+<link rel="icon" href="data:image/svg+xml,<svg viewBox='0 0 32 32' xmlns='http://www.w3.org/2000/svg'><rect width='32' height='32' rx='7' fill='%230f0f1a'/><circle cx='16' cy='16' r='9' fill='none' stroke='%23e8a33d' stroke-width='2.5'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;600;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+<!-- Supabase JS (UMD) — expõe o global `supabase` -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<link rel="stylesheet" href="style.css?v=2">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="mark" id="brandMark">◯</div>
+    <div class="title" id="brandTitle">Dojo</div>
+    <span class="role-badge" id="roleBadge"></span>
+  </div>
+  <div class="crumb" id="crumb"></div>
+  <div class="spacer"></div>
+  <div class="tools" id="tools">
+    <button class="iconbtn" id="adminBtn" title="Console do administrador" style="display:none">👥 Clientes</button>
+    <button class="iconbtn" id="editBtn" title="Modo de edição" style="display:none">✏ Editar</button>
+    <button class="iconbtn" id="addBtn" title="Adicionar widget" style="display:none">＋ Adicionar</button>
+    <button class="iconbtn" id="authBtn" title="Conta">Entrar</button>
+  </div>
+</div>
+
+<div class="canvas-wrap">
+  <div class="canvas" id="canvas"></div>
+  <div class="empty-hint" id="emptyHint" style="display:none"></div>
+</div>
+
+<div class="scrim" id="scrim" style="display:none"></div>
+<div class="panel-modal" id="modal" style="display:none"></div>
+
+<script src="config.js?v=2"></script>
+<script src="app.js?v=2"></script>
+</body>
+</html>
