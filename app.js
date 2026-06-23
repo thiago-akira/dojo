@@ -116,16 +116,38 @@ function showLogin(hint) {
 async function renderConsole(canvas, hint) {
   view = "console"; curCliente = null; curProjeto = null;
   $("#crumb").innerHTML = '<span class="cr-cur">Clientes</span>';
-  const { data: clientes, error } = await sb.from("clientes").select("*, projetos(count)").order("nome");
-  if (error) { hint.style.display = "block"; hint.textContent = "Erro ao carregar clientes."; return; }
+  const since24h = new Date(Date.now() - 86400000).toISOString();
+  const [cliRes, projRes, apRes, msgRes] = await Promise.all([
+    sb.from("clientes").select("*, projetos(count)").order("nome"),
+    sb.from("projetos").select("*", { count: "exact", head: true }).eq("status", "ativo"),
+    sb.from("aprovacoes").select("*", { count: "exact", head: true }).eq("status", "pendente"),
+    sb.from("mensagens").select("projeto_id, projetos!inner(cliente_id)").gt("created_at", since24h).neq("autor_id", me.id)
+  ]);
+  if (cliRes.error) { hint.style.display = "block"; hint.textContent = "Erro ao carregar clientes."; return; }
+  const clientes = cliRes.data || [];
+  const nProjAtivos = projRes.count || 0;
+  const nAprovPend = apRes.count || 0;
+  const msgBadge = {};
+  (msgRes.data || []).forEach(m => {
+    const cid = m.projetos && m.projetos.cliente_id;
+    if (cid) msgBadge[cid] = (msgBadge[cid] || 0) + 1;
+  });
+
   canvas.style.display = "none";
   hint.style.display = "block";
   hint.innerHTML = '<div class="page">' +
     '<div class="page-head"><h2>👥 Clientes</h2><button class="btn primary" onclick="novoCliente()">＋ Novo cliente</button></div>' +
+    '<div class="dash-stats">' +
+    '<div class="dstat"><span class="dstat-n">' + clientes.length + '</span><span class="dstat-l">cliente' + (clientes.length === 1 ? "" : "s") + '</span></div>' +
+    '<div class="dstat"><span class="dstat-n">' + nProjAtivos + '</span><span class="dstat-l">projetos ativos</span></div>' +
+    '<div class="dstat' + (nAprovPend ? " dstat-alert" : "") + '"><span class="dstat-n">' + nAprovPend + '</span><span class="dstat-l">aprovações pendentes</span></div>' +
+    '</div>' +
     (clientes.length ? '<div class="cli-grid">' + clientes.map(c => {
       const n = (c.projetos && c.projetos[0] && c.projetos[0].count) || 0;
+      const msgs = msgBadge[c.id] || 0;
       return '<div class="cli-card" onclick="abrirCliente(\'' + c.id + '\')">' +
-        '<div class="cli-name">' + esc(c.empresa || c.nome) + '</div>' +
+        '<div class="cli-card-top"><div class="cli-name">' + esc(c.empresa || c.nome) + '</div>' +
+        (msgs ? '<span class="cli-msg-badge">' + msgs + '</span>' : '') + '</div>' +
         '<div class="cli-sub">' + esc(c.nome) + '</div>' +
         '<div class="cli-meta"><span class="cli-status ' + (c.status === "ativo" ? "ativo" : "pausado") + '">' + esc(c.status) + '</span>' +
         '<span>' + n + ' projeto' + (n === 1 ? "" : "s") + '</span></div></div>';
@@ -169,7 +191,8 @@ async function renderClienteDetail(canvas, hint) {
   hint.style.display = "block";
   hint.innerHTML = '<div class="page">' +
     '<div class="page-head"><h2>' + esc(c.empresa || c.nome) + '</h2><div style="display:flex;gap:8px">' +
-    '<button class="btn danger" onclick="excluirCliente()">🗑 Excluir cliente</button>' +
+    '<button class="btn danger" onclick="excluirCliente()">🗑 Excluir</button>' +
+    '<button class="btn" onclick="editarCliente()">✏ Editar</button>' +
     '<button class="btn primary" onclick="novoProjeto()">＋ Novo projeto</button></div></div>' +
     ((projetos && projetos.length) ? '<div class="cli-grid">' + projetos.map(p =>
       '<div class="cli-card" onclick="abrirProjeto(\'' + p.id + '\')">' +
@@ -1218,7 +1241,33 @@ async function editarMembro(id) {
 }
 async function removerMembro(id) { if (!confirm("Remover este participante do projeto?")) return; await sb.from("membros").delete().eq("id", id); route(); }
 
-/* — Excluir cliente — */
+/* — Editar / Excluir cliente — */
+function editarCliente() {
+  const c = curCliente;
+  openModal('<h3>Editar cliente</h3>' +
+    field("Empresa", "empresa", c.empresa || "") +
+    field("Contato / nome", "nome", c.nome || "") +
+    '<label>Status</label><select data-k="status">' +
+    '<option value="ativo"' + (c.status === "ativo" ? " selected" : "") + '>Ativo</option>' +
+    '<option value="pausado"' + (c.status !== "ativo" ? " selected" : "") + '>Pausado</option></select>' +
+    '<label>Cor da marca</label><input type="color" data-k="cor" value="' + escAttr((c.marca && c.marca.cor) || "#e8a33d") + '" style="height:40px;padding:4px">' +
+    actions("Salvar"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const get = k => m.querySelector('[data-k="' + k + '"]').value.trim();
+        const empresa = get("empresa");
+        if (!empresa) { alert("Informe a empresa."); return; }
+        const marca = Object.assign({}, c.marca || {}, { cor: get("cor"), titulo: empresa });
+        const upd = { empresa, nome: get("nome") || empresa, status: get("status"), marca };
+        const { error } = await sb.from("clientes").update(upd).eq("id", c.id);
+        if (error) { alert("Erro: " + error.message); return; }
+        curCliente = Object.assign({}, c, upd);
+        closeModal(); route();
+      };
+    });
+}
+
 async function excluirCliente() {
   const nome = curCliente.empresa || curCliente.nome;
   if (!confirm('Excluir "' + nome + '" e TODOS os seus projetos, painéis, documentos e mensagens?\n\nEsta ação não pode ser desfeita.')) return;
