@@ -185,7 +185,7 @@ body.edit .tile.dragging .card{cursor:grabbing}
 .chk-add input{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--text);font-family:inherit;font-size:13px}
 
 /* ===== Mensagens ===== */
-.msgs{display:flex;flex-direction:column;height:calc(100vh - 150px)}
+.msgs{display:flex;flex-direction:column;height:calc(100vh - 195px)}
 .msg-list{flex:1;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:6px 2px}
 .msg{max-width:70%;align-self:flex-start}
 .msg.mine{align-self:flex-end;text-align:right}
@@ -195,7 +195,13 @@ body.edit .tile.dragging .card{cursor:grabbing}
 .msg.mine .msg-bubble{background:var(--accent);color:#1a1300;border-color:transparent}
 .composer{display:flex;gap:8px;align-items:flex-end;padding-top:10px;border-top:1px solid var(--line)}
 .composer select{width:auto;min-width:170px;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px;color:var(--text);font-family:inherit;font-size:13px}
-.composer textarea{flex:1;min-height:42px;max-height:120px;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:10px 12px;color:var(--text);font-family:inherit;font-size:14px;resize:vertical}
+.composer-body{flex:1;display:flex;flex-direction:column;gap:5px}
+.composer textarea{width:100%;min-height:42px;max-height:120px;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:10px 12px;color:var(--text);font-family:inherit;font-size:14px;resize:vertical}
+.composer-send{display:flex;flex-direction:column;gap:6px;align-items:stretch}
+.msg-anexo-prev{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);background:var(--surface-solid);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.msg-anexo-prev span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.msg-anexo{margin-top:6px;padding-top:5px;border-top:1px solid rgba(255,255,255,.08)}
+.msg.mine .msg-anexo{border-top-color:rgba(0,0,0,.15)}
 
 /* ===== Aprovações ===== */
 .btn.ok{color:var(--ok);border-color:var(--ok)}

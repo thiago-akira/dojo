@@ -616,24 +616,68 @@ async function renderMensagens(canvas, hint) {
     const mine = mm.autor_id === me.id;
     const who = (mm.autor && (mm.autor.nome || mm.autor.email)) || "—";
     const priv = mm.destinatario_id ? ' · <span class="msg-priv">privado</span>' : "";
-    return '<div class="msg' + (mine ? " mine" : "") + '"><div class="msg-meta">' + esc(who) + priv + '</div><div class="msg-bubble">' + esc(mm.corpo) + '</div></div>';
+    const anexo = mm.anexo_storage_path
+      ? '<div class="msg-anexo"><button class="lnk" onclick="baixarChatAnexo(\'' + escAttr(mm.anexo_storage_path) + '\')">📎 ' + esc(mm.anexo_nome || "Arquivo") + '</button></div>'
+      : "";
+    return '<div class="msg' + (mine ? " mine" : "") + '"><div class="msg-meta">' + esc(who) + priv + '</div>' +
+      '<div class="msg-bubble">' + (mm.corpo ? esc(mm.corpo) : "") + anexo + '</div></div>';
   }).join("") || '<p class="muted-note" style="text-align:center;margin-top:30px">Nenhuma mensagem ainda. Diga olá 👋</p>';
 
   const opts = '<option value="">📢 Todos os participantes</option>' +
     participantes.map(p => '<option value="' + p.pessoa_id + '">' + esc((p.pessoas && (p.pessoas.nome || p.pessoas.email)) || p.pessoa_id) + (p.papel === "gestor" ? " (gestor)" : "") + '</option>').join("");
 
   hint.innerHTML = '<div class="page msgs"><div class="msg-list" id="msgList">' + lista + '</div>' +
-    '<div class="composer"><select id="msgTo">' + opts + '</select>' +
+    '<div class="composer">' +
+    '<select id="msgTo">' + opts + '</select>' +
+    '<div class="composer-body">' +
     '<textarea id="msgBody" placeholder="Escreva uma mensagem…" onkeydown="if(event.key===\'Enter\'&&(event.metaKey||event.ctrlKey))enviarMsg()"></textarea>' +
-    '<button class="btn primary" onclick="enviarMsg()">Enviar</button></div></div>';
+    '<div id="msgAnexoPrev" class="msg-anexo-prev" style="display:none"></div>' +
+    '</div>' +
+    '<div class="composer-send">' +
+    '<label class="btn sm ghost iconbtn" title="Anexar arquivo">📎<input type="file" id="msgFile" style="display:none" onchange="onMsgFile(this)"></label>' +
+    '<button class="btn primary" onclick="enviarMsg()">Enviar</button>' +
+    '</div></div></div>';
   const ml = document.getElementById("msgList"); if (ml) ml.scrollTop = ml.scrollHeight;
 }
+function onMsgFile(input) {
+  const f = input.files[0];
+  const prev = document.getElementById("msgAnexoPrev");
+  if (!prev) return;
+  if (f) {
+    prev.style.display = "flex";
+    prev.innerHTML = '📎 <span>' + esc(f.name) + '</span><button class="lnk del" onclick="document.getElementById(\'msgFile\').value=\'\';document.getElementById(\'msgAnexoPrev\').style.display=\'none\'">✕</button>';
+  } else {
+    prev.style.display = "none";
+    prev.innerHTML = "";
+  }
+}
+
 async function enviarMsg() {
-  const body = document.getElementById("msgBody"); const corpo = (body.value || "").trim(); if (!corpo) return;
+  const body = document.getElementById("msgBody");
+  const corpo = (body.value || "").trim();
+  const fileInput = document.getElementById("msgFile");
+  const file = fileInput && fileInput.files[0];
+  if (!corpo && !file) return;
+  let anexo_storage_path = null, anexo_nome = null;
+  if (file) {
+    const path = curProjeto.id + "/" + uid() + "-" + file.name.replace(/[^\w.\-]/g, "_");
+    const { error: upErr } = await sb.storage.from("chat").upload(path, file);
+    if (upErr) { alert("Erro no upload: " + upErr.message); return; }
+    anexo_storage_path = path; anexo_nome = file.name;
+  }
   const to = document.getElementById("msgTo").value || null;
-  const { error } = await sb.from("mensagens").insert({ projeto_id: curProjeto.id, autor_id: me.id, destinatario_id: to, corpo });
+  const { error } = await sb.from("mensagens").insert({
+    projeto_id: curProjeto.id, autor_id: me.id, destinatario_id: to,
+    corpo: corpo || "", anexo_storage_path, anexo_nome
+  });
   if (error) { alert("Erro: " + error.message); return; }
   route();
+}
+
+async function baixarChatAnexo(path) {
+  const { data, error } = await sb.storage.from("chat").createSignedUrl(path, 3600);
+  if (error) { alert("Erro: " + error.message); return; }
+  window.open(data.signedUrl, "_blank");
 }
 
 /* ===== 13d) Aprovações (Fase 3) ===== */
