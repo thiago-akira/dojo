@@ -235,7 +235,8 @@ function renderProjeto(canvas, hint) {
   const tabs = [["painel", "📋 Painel"]];
   if (canEdit) tabs.push(["gestao", "🗂 Gestão interna"]);
   else tabs.push(["materiais", "📎 Materiais"]);
-  tabs.push(["aprovacoes", "✅ Aprovações"], ["mensagens", "💬 Mensagens"]);
+  tabs.push(["aprovacoes", "✅ Aprovações"], ["questionarios", "📝 Questionários"],
+    ["reunioes", "📅 Reuniões"], ["mensagens", "💬 Mensagens"]);
   if (canEdit) tabs.push(["participantes", "👥 Participantes"]);
   const sn = $("#subnav"); sn.style.display = "flex";
   sn.innerHTML = tabs.map(([k, l]) =>
@@ -244,6 +245,8 @@ function renderProjeto(canvas, hint) {
   if (projTab === "gestao" && canEdit) return renderGestao(canvas, hint);
   if (projTab === "materiais") return renderMateriais(canvas, hint);
   if (projTab === "aprovacoes") return renderAprovacoes(canvas, hint);
+  if (projTab === "questionarios") return renderQuestionarios(canvas, hint);
+  if (projTab === "reunioes") return renderReunioes(canvas, hint);
   if (projTab === "mensagens") return renderMensagens(canvas, hint);
   if (projTab === "participantes" && canEdit) return renderParticipantes(canvas, hint);
   return renderPainel(canvas, hint);
@@ -729,7 +732,358 @@ async function renderMateriais(canvas, hint) {
     '<div class="gsec"><div class="gsec-head"><h3>✅ Checklists</h3></div><div class="glist">' + chsHtml + '</div></div></div>';
 }
 
-/* ===== 13f) Participantes (Fase 5 antecipada) ===== */
+/* ===== 13f) Questionários ===== */
+async function renderQuestionarios(canvas, hint) {
+  const pid = curProjeto.id;
+  hint.style.display = "block";
+  const { data: qs } = await sb.from("questionarios")
+    .select("*, perguntas(count)")
+    .eq("projeto_id", pid)
+    .order("created_at", { ascending: false });
+
+  let myRespostasMap = {};
+  if (!isAdmin) {
+    const { data: rs } = await sb.from("respostas").select("questionario_id").eq("respondido_por", me.id);
+    (rs || []).forEach(r => { myRespostasMap[r.questionario_id] = true; });
+  } else {
+    const { data: rs } = await sb.from("respostas").select("questionario_id, respondido_por, pessoas(nome,email)").in("questionario_id", (qs || []).map(q => q.id));
+    const byQ = {};
+    (rs || []).forEach(r => {
+      if (!byQ[r.questionario_id]) byQ[r.questionario_id] = [];
+      byQ[r.questionario_id].push(r.pessoas);
+    });
+    myRespostasMap = byQ;
+  }
+
+  const cards = (qs || []).map(q => {
+    const nPergs = (q.perguntas && q.perguntas[0] && q.perguntas[0].count) || 0;
+    let statusEl = '';
+    if (isAdmin) {
+      const respondentes = myRespostasMap[q.id] || [];
+      const nomes = respondentes.map(p => p ? esc(p.nome || p.email || "?") : "?").join(", ");
+      statusEl = '<div class="q-resp">' + (respondentes.length ? respondentes.length + ' resposta(s): ' + nomes : 'Sem respostas ainda') + '</div>';
+    } else {
+      const jaRespondeu = !!myRespostasMap[q.id];
+      statusEl = jaRespondeu
+        ? '<span class="qbadge respondido">✓ respondido</span>'
+        : '<button class="btn sm primary" onclick="responderQuestionario(\'' + q.id + '\')">Responder</button>';
+    }
+    return '<div class="qcard">' +
+      '<div class="q-head"><span class="q-title">' + esc(q.titulo) + '</span>' +
+      '<span class="qbadge ' + q.status + '">' + q.status + '</span></div>' +
+      (q.descricao ? '<div class="q-desc">' + esc(q.descricao) + '</div>' : '') +
+      '<div class="q-meta">' + nPergs + ' pergunta(s)' + (canEdit ? '' : '') + '</div>' +
+      statusEl +
+      (canEdit ? '<div class="q-admin-actions">' +
+        '<button class="lnk" onclick="editarQuestionario(\'' + q.id + '\')">editar perguntas</button>' +
+        '<button class="lnk" onclick="toggleQStatus(\'' + q.id + '\',\'' + q.status + '\')">' + (q.status === 'aberto' ? 'fechar' : 'reabrir') + '</button>' +
+        '<button class="lnk del" onclick="delQuestionario(\'' + q.id + '\')">excluir</button></div>' : '') +
+      '</div>';
+  }).join("") || '<p class="muted-note">Nenhum questionário ainda.' + (canEdit ? ' Crie um para o cliente responder.' : '') + '</p>';
+
+  hint.innerHTML = '<div class="page"><div class="page-head"><h2>📝 Questionários</h2>' +
+    (canEdit ? '<button class="btn primary" onclick="novoQuestionario()">＋ Novo questionário</button>' : '') +
+    '</div>' + cards + '</div>';
+}
+
+function novoQuestionario() {
+  openModal('<h3>Novo questionário</h3>' + field("Título", "titulo", "") +
+    '<label>Descrição (opcional)</label><textarea data-k="descricao" placeholder="Contexto para o cliente…"></textarea>' +
+    actions("Criar"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const titulo = m.querySelector('[data-k="titulo"]').value.trim();
+        if (!titulo) { alert("Informe o título."); return; }
+        const { data, error } = await sb.from("questionarios").insert({
+          projeto_id: curProjeto.id, titulo,
+          descricao: m.querySelector('[data-k="descricao"]').value.trim() || null,
+          criado_por: me.id
+        }).select().single();
+        if (error) { alert("Erro: " + error.message); return; }
+        closeModal();
+        editarQuestionario(data.id);
+      };
+    });
+}
+
+async function editarQuestionario(qid) {
+  const [{ data: q }, { data: pergs }] = await Promise.all([
+    sb.from("questionarios").select("*").eq("id", qid).single(),
+    sb.from("perguntas").select("*").eq("questionario_id", qid).order("ordem")
+  ]);
+
+  function pergHtml(p, i) {
+    const tipoOpts = ["texto", "multipla", "unica", "escala"]
+      .map(t => '<option value="' + t + '"' + (p.tipo === t ? " selected" : "") + '>' + { texto: "Texto livre", multipla: "Múltipla escolha", unica: "Escolha única", escala: "Escala 1–5" }[t] + '</option>').join("");
+    return '<div class="perg-row" data-perg-id="' + p.id + '">' +
+      '<div class="perg-num">' + (i + 1) + '</div>' +
+      '<div class="perg-body">' +
+      '<input data-k="texto" value="' + escAttr(p.texto) + '" placeholder="Pergunta…" style="width:100%">' +
+      '<div style="display:flex;gap:8px;margin-top:6px;align-items:center">' +
+      '<select data-k="tipo" style="flex:1">' + tipoOpts + '</select>' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);text-transform:none;letter-spacing:0;margin:0">' +
+      '<input type="checkbox" data-k="obrigatoria"' + (p.obrigatoria ? " checked" : "") + '> Obrigatória</label>' +
+      '</div>' +
+      ((p.tipo === "multipla" || p.tipo === "unica") ? '<textarea data-k="opcoes" style="margin-top:6px;min-height:50px" placeholder="Uma opção por linha">' + esc((p.opcoes || []).join("\n")) + '</textarea>' : '') +
+      '</div>' +
+      '<button class="lnk del" onclick="delPergunta(\'' + p.id + '\',\'' + qid + '\')">✕</button>' +
+      '</div>';
+  }
+
+  const pergsHtml = (pergs || []).map(pergHtml).join("");
+
+  openModal('<h3>Perguntas — ' + esc(q.titulo) + '</h3>' +
+    '<div id="pergList">' + pergsHtml + '</div>' +
+    '<button class="btn sm" style="margin-top:10px" onclick="addPergunta(\'' + qid + '\')">＋ Pergunta</button>' +
+    '<div class="modal-actions"><span class="grow"></span>' +
+    '<button class="btn" data-x>Fechar</button>' +
+    '<button class="btn primary" data-ok>Salvar alterações</button></div>',
+    m => {
+      m.querySelector("[data-x]").onclick = () => { closeModal(); route(); };
+      m.querySelector("[data-ok]").onclick = async () => {
+        const rows = m.querySelectorAll("[data-perg-id]");
+        const saves = Array.from(rows).map((row, i) => {
+          const get = k => (row.querySelector('[data-k="' + k + '"]') || {}).value;
+          const checked = k => !!(row.querySelector('[data-k="' + k + '"]') || {}).checked;
+          const tipo = get("tipo") || "texto";
+          const opcoesRaw = get("opcoes") || "";
+          const opcoes = (tipo === "multipla" || tipo === "unica")
+            ? opcoesRaw.split("\n").map(s => s.trim()).filter(Boolean)
+            : null;
+          return sb.from("perguntas").update({
+            texto: get("texto"), tipo, obrigatoria: checked("obrigatoria"), opcoes, ordem: i
+          }).eq("id", row.dataset.pergId);
+        });
+        await Promise.all(saves);
+        closeModal(); route();
+      };
+    });
+}
+
+async function addPergunta(qid) {
+  const { data } = await sb.from("perguntas").insert({
+    questionario_id: qid, texto: "Nova pergunta", tipo: "texto", ordem: 99
+  }).select().single();
+  if (data) { closeModal(); editarQuestionario(qid); }
+}
+
+async function delPergunta(pid, qid) {
+  if (!confirm("Excluir esta pergunta?")) return;
+  await sb.from("perguntas").delete().eq("id", pid);
+  closeModal(); editarQuestionario(qid);
+}
+
+async function toggleQStatus(qid, cur) {
+  await sb.from("questionarios").update({ status: cur === "aberto" ? "fechado" : "aberto" }).eq("id", qid);
+  route();
+}
+
+async function delQuestionario(qid) {
+  if (!confirm("Excluir este questionário e todas as respostas?")) return;
+  await sb.from("questionarios").delete().eq("id", qid);
+  route();
+}
+
+async function responderQuestionario(qid) {
+  const [{ data: q }, { data: pergs }, { data: respostaExist }] = await Promise.all([
+    sb.from("questionarios").select("*").eq("id", qid).single(),
+    sb.from("perguntas").select("*").eq("questionario_id", qid).order("ordem"),
+    sb.from("respostas").select("*").eq("questionario_id", qid).eq("respondido_por", me.id).maybeSingle()
+  ]);
+  const saved = (respostaExist && respostaExist.respostas) || {};
+
+  const pergsHtml = (pergs || []).map((p, i) => {
+    const v = saved[p.id] || "";
+    let input = '';
+    if (p.tipo === "texto") {
+      input = '<textarea data-pid="' + p.id + '" style="width:100%;min-height:60px">' + esc(v) + '</textarea>';
+    } else if (p.tipo === "escala") {
+      input = '<div class="escala-row">' + [1, 2, 3, 4, 5].map(n =>
+        '<label style="display:flex;align-items:center;gap:5px;font-size:13px;text-transform:none;letter-spacing:0;margin:0"><input type="radio" name="esc-' + p.id + '" data-pid="' + p.id + '" value="' + n + '"' + (String(v) === String(n) ? " checked" : "") + '> ' + n + '</label>'
+      ).join("") + '</div>';
+    } else {
+      const opts = (p.opcoes || []);
+      const multi = p.tipo === "multipla";
+      const selected = Array.isArray(v) ? v : (v ? [v] : []);
+      input = '<div class="opts-list">' + opts.map(o =>
+        '<label style="display:flex;align-items:center;gap:8px;font-size:13.5px;text-transform:none;letter-spacing:0;margin:0;padding:4px 0"><input type="' + (multi ? "checkbox" : "radio") + '" name="opt-' + p.id + '" data-pid="' + p.id + '" value="' + escAttr(o) + '"' + (selected.includes(o) ? " checked" : "") + '> ' + esc(o) + '</label>'
+      ).join("") + '</div>';
+    }
+    return '<div class="perg-resp">' +
+      '<div class="perg-label">' + (i + 1) + '. ' + esc(p.texto) + (p.obrigatoria ? ' <span style="color:var(--danger)">*</span>' : '') + '</div>' +
+      input + '</div>';
+  }).join("");
+
+  openModal('<h3>' + esc(q.titulo) + '</h3>' +
+    (q.descricao ? '<p class="muted-note">' + esc(q.descricao) + '</p>' : '') +
+    pergsHtml +
+    '<div class="auth-err" id="qErr"></div>' +
+    actions(respostaExist ? "Atualizar respostas" : "Enviar respostas"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const errEl = m.querySelector("#qErr");
+        const respostasObj = {};
+        for (const p of (pergs || [])) {
+          const type = p.tipo;
+          if (type === "texto") {
+            const el = m.querySelector('[data-pid="' + p.id + '"]');
+            respostasObj[p.id] = el ? el.value.trim() : "";
+          } else if (type === "escala") {
+            const el = m.querySelector('[data-pid="' + p.id + '"]:checked');
+            respostasObj[p.id] = el ? el.value : "";
+          } else if (type === "unica") {
+            const el = m.querySelector('[data-pid="' + p.id + '"]:checked');
+            respostasObj[p.id] = el ? el.value : "";
+          } else {
+            const els = m.querySelectorAll('[data-pid="' + p.id + '"]:checked');
+            respostasObj[p.id] = Array.from(els).map(e => e.value);
+          }
+          if (p.obrigatoria) {
+            const r = respostasObj[p.id];
+            const empty = !r || (Array.isArray(r) && r.length === 0);
+            if (empty) { errEl.textContent = 'A pergunta "' + p.texto + '" é obrigatória.'; return; }
+          }
+        }
+        errEl.textContent = "Salvando…";
+        const rec = { questionario_id: qid, respondido_por: me.id, respostas: respostasObj, updated_at: new Date().toISOString() };
+        let err;
+        if (respostaExist) {
+          ({ error: err } = await sb.from("respostas").update({ respostas: respostasObj, updated_at: rec.updated_at }).eq("id", respostaExist.id));
+        } else {
+          ({ error: err } = await sb.from("respostas").insert(rec));
+        }
+        if (err) { errEl.textContent = "Erro: " + err.message; return; }
+        closeModal(); route();
+      };
+    });
+}
+
+/* ===== 13g) Reuniões ===== */
+function fmtDt(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }) + " " +
+    d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+
+async function renderReunioes(canvas, hint) {
+  const pid = curProjeto.id;
+  hint.style.display = "block";
+  const { data: rs } = await sb.from("reunioes")
+    .select("*")
+    .eq("projeto_id", pid)
+    .order("data_hora");
+
+  const SBADGE = { agendada: "⏳ agendada", realizada: "✓ realizada", cancelada: "✕ cancelada" };
+  const cards = (rs || []).map(r => {
+    return '<div class="reucard">' +
+      '<div class="reu-head"><span class="reu-title">' + esc(r.titulo) + '</span>' +
+      '<span class="reubadge ' + r.status + '">' + SBADGE[r.status] + '</span></div>' +
+      '<div class="reu-when">📅 ' + fmtDt(r.data_hora) + ' · ' + r.duracao_min + ' min</div>' +
+      (r.local_ou_link ? '<div class="reu-local">' + (r.local_ou_link.startsWith("http") ?
+        '<a href="' + escAttr(r.local_ou_link) + '" target="_blank" rel="noopener" class="lnk">🔗 Link da reunião</a>' :
+        '📍 ' + esc(r.local_ou_link)) + '</div>' : '') +
+      (r.descricao ? '<div class="reu-desc">' + esc(r.descricao) + '</div>' : '') +
+      (r.notas ? '<div class="reu-notas"><b>📋 Ata:</b> ' + esc(r.notas) + '</div>' : '') +
+      (canEdit ? '<div class="reu-actions">' +
+        '<button class="lnk" onclick="editarReuniao(\'' + r.id + '\')">editar</button>' +
+        (r.status === "agendada" ? '<button class="lnk ok" onclick="realizarReuniao(\'' + r.id + '\')">marcar como realizada</button>' : '') +
+        '<button class="lnk del" onclick="delReuniao(\'' + r.id + '\')">excluir</button></div>' : '') +
+      '</div>';
+  }).join("") || '<p class="muted-note">Nenhuma reunião agendada.</p>';
+
+  hint.innerHTML = '<div class="page"><div class="page-head"><h2>📅 Reuniões</h2>' +
+    (canEdit ? '<button class="btn primary" onclick="novaReuniao()">＋ Agendar reunião</button>' : '') +
+    '</div>' + cards + '</div>';
+}
+
+function reuForm(r) {
+  r = r || {};
+  const toLocalDt = iso => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    const pad = n => String(n).padStart(2, "0");
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+      "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+  };
+  return field("Título", "titulo", r.titulo || "") +
+    '<label>Data e hora</label><input type="datetime-local" data-k="data_hora" value="' + escAttr(toLocalDt(r.data_hora)) + '">' +
+    field("Duração (minutos)", "duracao_min", r.duracao_min || 60) +
+    field("Local ou link", "local_ou_link", r.local_ou_link || "") +
+    '<label>Descrição (pauta)</label><textarea data-k="descricao">' + esc(r.descricao || "") + '</textarea>';
+}
+
+function novaReuniao() {
+  openModal('<h3>Agendar reunião</h3>' + reuForm() + actions("Agendar"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const get = k => (m.querySelector('[data-k="' + k + '"]') || {}).value || "";
+        const titulo = get("titulo").trim();
+        const data_hora = get("data_hora");
+        if (!titulo) { alert("Informe o título."); return; }
+        if (!data_hora) { alert("Informe a data e hora."); return; }
+        const { error } = await sb.from("reunioes").insert({
+          projeto_id: curProjeto.id, titulo, data_hora: new Date(data_hora).toISOString(),
+          duracao_min: parseInt(get("duracao_min")) || 60,
+          local_ou_link: get("local_ou_link").trim() || null,
+          descricao: get("descricao").trim() || null,
+          criado_por: me.id
+        });
+        if (error) { alert("Erro: " + error.message); return; }
+        closeModal(); route();
+      };
+    });
+}
+
+async function editarReuniao(rid) {
+  const { data: r } = await sb.from("reunioes").select("*").eq("id", rid).single();
+  openModal('<h3>Editar reunião</h3>' + reuForm(r) +
+    '<label>Ata / notas pós-reunião</label><textarea data-k="notas">' + esc(r.notas || "") + '</textarea>' +
+    actions("Salvar"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const get = k => (m.querySelector('[data-k="' + k + '"]') || {}).value || "";
+        const titulo = get("titulo").trim();
+        const data_hora = get("data_hora");
+        if (!titulo || !data_hora) { alert("Título e data são obrigatórios."); return; }
+        const { error } = await sb.from("reunioes").update({
+          titulo, data_hora: new Date(data_hora).toISOString(),
+          duracao_min: parseInt(get("duracao_min")) || 60,
+          local_ou_link: get("local_ou_link").trim() || null,
+          descricao: get("descricao").trim() || null,
+          notas: get("notas").trim() || null
+        }).eq("id", rid);
+        if (error) { alert("Erro: " + error.message); return; }
+        closeModal(); route();
+      };
+    });
+}
+
+async function realizarReuniao(rid) {
+  openModal('<h3>Marcar como realizada</h3>' +
+    '<label>Ata / notas (opcional)</label><textarea data-k="notas" style="min-height:100px"></textarea>' +
+    actions("Confirmar"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const notas = m.querySelector('[data-k="notas"]').value.trim() || null;
+        await sb.from("reunioes").update({ status: "realizada", notas }).eq("id", rid);
+        closeModal(); route();
+      };
+    });
+}
+
+async function delReuniao(rid) {
+  if (!confirm("Excluir esta reunião?")) return;
+  await sb.from("reunioes").delete().eq("id", rid);
+  route();
+}
+
+/* ===== 13h) Participantes (Fase 5 antecipada) ===== */
 function papelSelect(cur) {
   return '<label>Papel</label><select data-k="papel">' +
     '<option value="cliente"' + (cur !== "gestor" ? " selected" : "") + '>Cliente (participante)</option>' +

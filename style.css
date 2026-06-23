@@ -219,6 +219,41 @@ body.edit .tile.dragging .card{cursor:grabbing}
 .co-add{display:flex;gap:6px;margin-top:4px}
 .co-add input{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--text);font-family:inherit;font-size:13px}
 
+/* ===== Questionários ===== */
+.qcard{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:14px 15px;margin-bottom:12px}
+.q-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.q-title{font-weight:800;font-size:15px}
+.qbadge{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;border-radius:6px;padding:3px 8px;white-space:nowrap}
+.qbadge.aberto{color:var(--ok);border:1px solid var(--ok)}
+.qbadge.fechado{color:var(--muted);border:1px solid var(--line-strong)}
+.qbadge.respondido{color:var(--accent-2);border:1px solid var(--accent-2)}
+.q-desc{font-size:13.5px;color:var(--muted);line-height:1.5;margin-bottom:8px}
+.q-meta{font-size:12px;color:var(--faint);margin-bottom:8px}
+.q-resp{font-size:12.5px;color:var(--muted);margin-top:6px}
+.q-admin-actions{display:flex;gap:10px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+.perg-row{display:flex;gap:10px;align-items:flex-start;padding:10px;border:1px solid var(--line);border-radius:9px;margin-bottom:8px}
+.perg-num{font-size:12px;font-weight:800;color:var(--muted);min-width:18px;padding-top:8px}
+.perg-body{flex:1;min-width:0}
+.perg-resp{margin-bottom:14px}
+.perg-label{font-size:13.5px;font-weight:700;margin-bottom:8px;line-height:1.4}
+.escala-row{display:flex;gap:14px;flex-wrap:wrap}
+.opts-list{display:flex;flex-direction:column;gap:2px}
+
+/* ===== Reuniões ===== */
+.reucard{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:14px 15px;margin-bottom:12px}
+.reu-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.reu-title{font-weight:800;font-size:15px}
+.reubadge{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;border-radius:6px;padding:3px 8px;white-space:nowrap}
+.reubadge.agendada{color:var(--accent);border:1px solid var(--accent)}
+.reubadge.realizada{color:var(--ok);border:1px solid var(--ok)}
+.reubadge.cancelada{color:var(--muted);border:1px solid var(--line-strong)}
+.reu-when{font-size:13px;font-weight:700;color:var(--muted);margin-bottom:4px}
+.reu-local{font-size:13px;color:var(--muted);margin-bottom:4px}
+.reu-desc{font-size:13.5px;line-height:1.5;white-space:pre-wrap;color:var(--text);margin-bottom:8px}
+.reu-notas{font-size:13px;background:var(--surface-solid);border-radius:9px;padding:10px 12px;line-height:1.55;white-space:pre-wrap;margin-bottom:8px;color:var(--muted)}
+.reu-actions{display:flex;gap:10px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+.lnk.ok:hover{color:var(--ok)}
+
 /* ===== Participantes ===== */
 .papel{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;border-radius:5px;padding:1px 6px;margin-left:4px}
 .papel.gestor{color:var(--accent-2);border:1px solid var(--accent-2)}
