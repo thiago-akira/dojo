@@ -178,6 +178,70 @@ const WIDGETS = {
         '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Inicie uma coluna com <b>## Nome</b>. Depois, um link por linha: <b>Rótulo | URL</b>.</p>' +
         '<textarea data-k="raw" spellcheck="false" style="min-height:170px;font-family:var(--font-mono);font-size:12.5px;line-height:1.5">' + esc(p.raw) + '</textarea>';
     }
+  },
+  tabela: {
+    emoji: "📊", name: "Tabela", desc: "Tabela de dados editável — linhas e colunas.",
+    w: 6, h: 3, defaults: { title: "Tabela", raw: "Item | Valor | Status\nFase 1 | R$ 5.000 | ✓ Concluída\nFase 2 | R$ 8.000 | Em andamento" },
+    render(t, c) {
+      const p = t.props;
+      const rows = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(r => r.some(x => x));
+      let table = '<p class="muted-note">Sem dados.</p>';
+      if (rows.length) {
+        const head = rows[0], body = rows.slice(1);
+        table = '<table class="data-table"><thead><tr>' + head.map(h => '<th>' + esc(h) + '</th>').join("") + '</tr></thead><tbody>' +
+          body.map(r => '<tr>' + head.map((_, i) => '<td>' + esc(r[i] || "") + '</td>').join("") + '</tr>').join("") + '</tbody></table>';
+      }
+      c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Tabela") + '</span></div><div class="w-body">' + table + '</div>';
+    },
+    form(p) {
+      return field("Título", "title", p.title) +
+        '<label>Dados</label>' +
+        '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Uma linha por registro, colunas separadas por <b>|</b>. A 1ª linha é o cabeçalho.</p>' +
+        '<textarea data-k="raw" spellcheck="false" style="min-height:150px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6">' + esc(p.raw) + '</textarea>';
+    }
+  },
+  marcos: {
+    emoji: "🗓", name: "Linha do tempo", desc: "Marcos do projeto com status e datas.",
+    w: 4, h: 4, defaults: { title: "Cronograma", raw: "feito | Briefing | Jan\nfeito | Design | Fev\natual | Desenvolvimento | Mar\nfuturo | Entrega | Abr" },
+    render(t, c) {
+      const p = t.props;
+      const items = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a.some(x => x));
+      const KNOWN = { feito: 1, atual: 1, futuro: 1 };
+      const body = items.map(a => {
+        let status, titulo, data;
+        if (a[0] && KNOWN[a[0].toLowerCase()]) { status = a[0].toLowerCase(); titulo = a[1] || ""; data = a[2] || ""; }
+        else { status = "futuro"; titulo = a[0] || ""; data = a[1] || ""; }
+        return '<div class="tl-item ' + status + '"><div class="tl-dot"></div><div class="tl-body">' +
+          '<div class="tl-title">' + esc(titulo) + '</div>' + (data ? '<div class="tl-date">' + esc(data) + '</div>' : '') + '</div></div>';
+      }).join("");
+      c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Cronograma") + '</span></div>' +
+        '<div class="w-body"><div class="timeline">' + (body || '<p class="muted-note">Sem marcos.</p>') + '</div></div>';
+    },
+    form(p) {
+      return field("Título", "title", p.title) +
+        '<label>Marcos</label>' +
+        '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Um marco por linha: <b>status | nome | data</b>. Status: <b>feito</b>, <b>atual</b> ou <b>futuro</b>.</p>' +
+        '<textarea data-k="raw" spellcheck="false" style="min-height:150px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6">' + esc(p.raw) + '</textarea>';
+    }
+  },
+  embed: {
+    emoji: "🔗", name: "Incorporar", desc: "Incorpora Figma, Sheets, Maps, Calendly via iframe.",
+    w: 5, h: 4, defaults: { title: "", url: "" },
+    render(t, c) {
+      const p = t.props;
+      const head = p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '';
+      const url = (p.url || "").trim();
+      let body;
+      if (!url) body = '<div class="video-empty">🔗 Configure a URL para incorporar ao editar este widget.</div>';
+      else if (!/^https?:\/\//i.test(url)) body = '<div class="video-empty">URL inválida — use http(s)://</div>';
+      else body = '<div class="video-frame"><iframe src="' + escAttr(url) + '" allow="fullscreen; clipboard-write" allowfullscreen loading="lazy"></iframe></div>';
+      c.innerHTML = head + body;
+    },
+    form(p) {
+      return field("Título (opcional)", "title", p.title) +
+        field("URL para incorporar", "url", p.url) +
+        '<p class="muted-note" style="font-size:11.5px;margin:6px 0 0;text-transform:none;letter-spacing:0;font-weight:600">Use a URL de <b>embed</b> (Figma: Share → Embed; Google Sheets: Publicar na web). Alguns sites bloqueiam incorporação.</p>';
+    }
   }
 };
 function field(label, k, v) { return '<label>' + esc(label) + '</label><input data-k="' + k + '" value="' + escAttr(v) + '">'; }
