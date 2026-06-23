@@ -242,6 +242,153 @@ const WIDGETS = {
         field("URL para incorporar", "url", p.url) +
         '<p class="muted-note" style="font-size:11.5px;margin:6px 0 0;text-transform:none;letter-spacing:0;font-weight:600">Use a URL de <b>embed</b> (Figma: Share → Embed; Google Sheets: Publicar na web). Alguns sites bloqueiam incorporação.</p>';
     }
+  },
+  metricas: {
+    emoji: "🔢", name: "Painel de KPIs", desc: "Vários indicadores num só card.",
+    w: 5, h: 2, defaults: { title: "Métricas", raw: "Leads | 128\nMRR | R$ 8.400\nNPS | 94%\nChurn | 1,2%" },
+    render(t, c) {
+      const p = t.props;
+      const items = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]);
+      const head = p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '';
+      c.innerHTML = head + '<div class="w-body"><div class="metric-grid">' +
+        items.map(a => '<div class="metric-cell"><div class="metric-val">' + esc(a[1] || "") + '</div><div class="metric-lbl">' + esc(a[0]) + '</div></div>').join("") +
+        '</div></div>';
+    },
+    form(p) {
+      return field("Título", "title", p.title) + '<label>Métricas</label>' +
+        '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Uma por linha: <b>Rótulo | Valor</b>.</p>' +
+        '<textarea data-k="raw" spellcheck="false" style="min-height:130px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6">' + esc(p.raw) + '</textarea>';
+    }
+  },
+  grafico: {
+    emoji: "📈", name: "Gráfico", desc: "Gráfico de barras a partir de dados.",
+    w: 5, h: 3, defaults: { title: "Vendas por mês", raw: "Jan | 12\nFev | 19\nMar | 8\nAbr | 24\nMai | 17" },
+    render(t, c) {
+      const p = t.props;
+      const rows = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]);
+      const nums = rows.map(a => parseFloat((a[1] || "0").replace(",", ".")) || 0);
+      const max = Math.max(1, ...nums);
+      const head = '<div class="w-head"><span class="w-title">' + esc(p.title || "Gráfico") + '</span></div>';
+      c.innerHTML = head + '<div class="w-body"><div class="bchart">' +
+        rows.map((a, i) => {
+          const pct = Math.round(nums[i] / max * 100);
+          return '<div class="bchart-col"><div class="bchart-track"><div class="bchart-bar" style="height:' + pct + '%"></div></div>' +
+            '<div class="bchart-val">' + esc(a[1] || "") + '</div><div class="bchart-lbl">' + esc(a[0]) + '</div></div>';
+        }).join("") + '</div></div>';
+    },
+    form(p) {
+      return field("Título", "title", p.title) + '<label>Dados</label>' +
+        '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Uma barra por linha: <b>Rótulo | Número</b>.</p>' +
+        '<textarea data-k="raw" spellcheck="false" style="min-height:130px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6">' + esc(p.raw) + '</textarea>';
+    }
+  },
+  semaforo: {
+    emoji: "🚦", name: "Status / Saúde", desc: "Indicador de saúde do projeto.",
+    w: 3, h: 2, defaults: { title: "Saúde do projeto", status: "verde", texto: "No prazo, tudo certo." },
+    render(t, c) {
+      const p = t.props;
+      const st = ["verde", "amarelo", "vermelho"].includes(p.status) ? p.status : "verde";
+      const LABEL = { verde: "No prazo", amarelo: "Atenção", vermelho: "Em risco" };
+      const head = p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '';
+      c.innerHTML = head + '<div class="w-body"><div class="status-box ' + st + '"><span class="status-dot"></span>' +
+        '<div><div class="status-label">' + LABEL[st] + '</div>' + (p.texto ? '<div class="status-text">' + esc(p.texto) + '</div>' : '') + '</div></div></div>';
+    },
+    form(p) {
+      return field("Título", "title", p.title) +
+        '<label>Status</label><select data-k="status">' +
+        '<option value="verde"' + (p.status === "verde" ? " selected" : "") + '>🟢 No prazo</option>' +
+        '<option value="amarelo"' + (p.status === "amarelo" ? " selected" : "") + '>🟡 Atenção</option>' +
+        '<option value="vermelho"' + (p.status === "vermelho" ? " selected" : "") + '>🔴 Em risco</option></select>' +
+        '<label>Mensagem</label><textarea data-k="texto">' + esc(p.texto) + '</textarea>';
+    }
+  },
+  countdown: {
+    emoji: "⏳", name: "Contador regressivo", desc: "Tempo restante até uma data.",
+    w: 3, h: 2, defaults: { title: "Lançamento", alvo: "" },
+    render(t, c) {
+      const p = t.props;
+      const head = p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '';
+      let body;
+      if (!p.alvo) body = '<div class="video-empty">Defina a data-alvo ao editar.</div>';
+      else {
+        const diff = new Date(p.alvo).getTime() - Date.now();
+        if (isNaN(diff)) body = '<div class="video-empty">Data inválida.</div>';
+        else if (diff <= 0) body = '<div class="cd-box"><div class="cd-done">✓ Chegou!</div></div>';
+        else {
+          const d = Math.floor(diff / 86400000), h = Math.floor((diff % 86400000) / 3600000);
+          body = '<div class="cd-box"><span class="cd-n">' + d + '</span><span class="cd-u">dia' + (d === 1 ? "" : "s") + '</span>' +
+            '<span class="cd-n">' + h + '</span><span class="cd-u">h</span></div>';
+        }
+      }
+      c.innerHTML = head + body;
+    },
+    form(p) {
+      return field("Título", "title", p.title) +
+        '<label>Data e hora alvo</label><input type="datetime-local" data-k="alvo" value="' + escAttr(p.alvo) + '">';
+    }
+  },
+  imagem: {
+    emoji: "🖼", name: "Imagem / Galeria", desc: "Uma ou várias imagens por URL.",
+    w: 4, h: 4, defaults: { title: "", raw: "" },
+    render(t, c) {
+      const p = t.props;
+      const urls = (p.raw || "").split("\n").map(s => s.trim()).filter(Boolean);
+      const head = p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '';
+      let body;
+      if (!urls.length) body = '<div class="video-empty">🖼 Adicione URLs de imagem (uma por linha) ao editar.</div>';
+      else body = '<div class="img-body"><div class="img-grid' + (urls.length === 1 ? " single" : "") + '">' +
+        urls.map(u => '<a href="' + escAttr(u) + '" target="_blank" rel="noopener" class="img-cell"><img src="' + escAttr(u) + '" loading="lazy" alt=""></a>').join("") + '</div></div>';
+      c.innerHTML = head + body;
+    },
+    form(p) {
+      return field("Título (opcional)", "title", p.title) + '<label>Imagens</label>' +
+        '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Uma URL de imagem por linha. Várias = galeria em grade.</p>' +
+        '<textarea data-k="raw" spellcheck="false" style="min-height:110px;font-family:var(--font-mono);font-size:12px">' + esc(p.raw) + '</textarea>';
+    }
+  },
+  paleta: {
+    emoji: "🎨", name: "Paleta de marca", desc: "Amostras de cores com código.",
+    w: 4, h: 2, defaults: { title: "Cores", raw: "Primária | #e8a33d\nFundo | #0f0f14\nTexto | #e9eaf0\nDestaque | #5b8def" },
+    render(t, c) {
+      const p = t.props;
+      const items = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]);
+      const head = p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '';
+      c.innerHTML = head + '<div class="w-body"><div class="swatches">' +
+        items.map(a => {
+          const hex = (a[1] || "").replace(/[^#\w(),.%\s]/g, "");
+          return '<div class="swatch"><div class="swatch-chip" style="background:' + escAttr(hex) + '"></div>' +
+            '<div class="swatch-info"><div class="swatch-name">' + esc(a[0]) + '</div><div class="swatch-hex">' + esc(a[1] || "") + '</div></div></div>';
+        }).join("") + '</div></div>';
+    },
+    form(p) {
+      return field("Título", "title", p.title) + '<label>Cores</label>' +
+        '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Uma por linha: <b>Nome | #hex</b> (ou rgb()).</p>' +
+        '<textarea data-k="raw" spellcheck="false" style="min-height:120px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6">' + esc(p.raw) + '</textarea>';
+    }
+  },
+  banner: {
+    emoji: "📣", name: "Banner / Destaque", desc: "Aviso grande e colorido.",
+    w: 6, h: 2, defaults: { texto: "Anúncio importante aqui.", cor: "#e8a33d", icone: "📣" },
+    render(t, c) {
+      const p = t.props;
+      c.innerHTML = '<div class="banner-box" style="--bn:' + escAttr(p.cor || "#e8a33d") + '">' +
+        (p.icone ? '<span class="banner-ico">' + esc(p.icone) + '</span>' : '') +
+        '<div class="banner-text">' + esc(p.texto || "") + '</div></div>';
+    },
+    form(p) {
+      return field("Texto", "texto", p.texto) + field("Ícone (emoji, opcional)", "icone", p.icone) +
+        '<label>Cor</label><input type="color" data-k="cor" value="' + escAttr(p.cor || "#e8a33d") + '" style="height:40px;padding:4px">';
+    }
+  },
+  secao: {
+    emoji: "🗂", name: "Cabeçalho de seção", desc: "Título divisor para organizar o painel.",
+    w: 12, h: 1, defaults: { titulo: "Nova seção", subtitulo: "" },
+    render(t, c) {
+      const p = t.props;
+      c.innerHTML = '<div class="sec-head"><div class="sec-titles"><div class="sec-title">' + esc(p.titulo || "") + '</div>' +
+        (p.subtitulo ? '<div class="sec-sub">' + esc(p.subtitulo) + '</div>' : '') + '</div><div class="sec-rule"></div></div>';
+    },
+    form(p) { return field("Título", "titulo", p.titulo) + field("Subtítulo (opcional)", "subtitulo", p.subtitulo); }
   }
 };
 function field(label, k, v) { return '<label>' + esc(label) + '</label><input data-k="' + k + '" value="' + escAttr(v) + '">'; }
