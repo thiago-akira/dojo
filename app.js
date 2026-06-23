@@ -478,7 +478,10 @@ function applyBrand() {
 }
 function paintTools() {
   const inPainel = view === "painel" && projTab === "painel";
-  $("#adminBtn").style.display = (isAdmin && view !== "console") ? "" : "none";
+  $("#adminBtn").style.display = isAdmin ? "" : "none";
+  $("#adminBtn").classList.toggle("on", view === "console" && consoleTab === "clientes");
+  $("#meusBtn").style.display = isAdmin ? "" : "none";
+  $("#meusBtn").classList.toggle("on", view === "console" && consoleTab === "meus-projetos");
   $("#editBtn").style.display = (inPainel && canEdit) ? "" : "none";
   $("#addBtn").style.display = (inPainel && canEdit && editMode) ? "" : "none";
   $("#editBtn").classList.toggle("on", editMode);
@@ -1394,6 +1397,7 @@ async function excluirCliente() {
 function wireTopbar() {
   $("#authBtn").onclick = authModal;
   $("#adminBtn").onclick = irConsole;
+  $("#meusBtn").onclick = irMeusProjetos;
   $("#addBtn").onclick = openPicker;
   $("#editBtn").onclick = () => { editMode = !editMode; route(); };
 }
