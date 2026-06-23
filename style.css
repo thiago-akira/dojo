@@ -77,6 +77,32 @@ body.edit .tile.dragging .card{cursor:grabbing}
 .prog-bar{height:9px;border-radius:6px;background:var(--line-strong);overflow:hidden}
 .prog-bar i{display:block;height:100%;background:var(--accent);border-radius:6px}
 
+/* ===== Widget: Vídeo ===== */
+.video-frame{position:relative;flex:1;min-height:0;background:#000}
+.video-frame iframe,.video-frame video{position:absolute;inset:0;width:100%;height:100%;border:0}
+.video-empty{flex:1;display:grid;place-items:center;color:var(--faint);font-size:13px;padding:20px;text-align:center;line-height:1.5}
+
+/* ===== Widget: Código ===== */
+.code-lang{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--accent);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+.code-copy{background:var(--surface-solid);border:1px solid var(--line);color:var(--muted);border-radius:6px;width:28px;height:24px;cursor:pointer;font-size:13px;flex:none}
+.code-copy:hover{border-color:var(--accent);color:var(--accent)}
+.code-body{flex:1;min-height:0;overflow:auto;padding:0 13px 13px}
+.code-body pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:12px;overflow:auto;height:100%}
+.code-body code{font-family:var(--font-mono);font-size:12.5px;line-height:1.55;color:var(--text);white-space:pre}
+
+/* ===== Widget: Parágrafo ===== */
+.para-body{flex:1;min-height:0;overflow:auto;padding:12px 14px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+.para-edit{outline:none;cursor:text}
+.para-edit:focus{box-shadow:inset 0 0 0 2px var(--accent);border-radius:8px}
+body.edit .para-edit{background:var(--surface-solid)}
+
+/* ===== Widget: Referências ===== */
+.ref-cols{display:flex;gap:18px;flex-wrap:wrap}
+.ref-col{flex:1;min-width:130px;display:flex;flex-direction:column;gap:4px}
+.ref-col-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:4px;padding-bottom:5px;border-bottom:1px solid var(--line)}
+.ref-col a{color:var(--text);text-decoration:none;font-size:13px;font-weight:600;padding:3px 0}
+.ref-col a:hover{color:var(--accent)}
+
 /* ===== Modal genérico ===== */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40}
 .panel-modal{position:fixed;z-index:41;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,94vw);max-height:88vh;overflow:auto;

@@ -101,9 +101,129 @@ const WIDGETS = {
         '</div></div>';
     },
     form(p) { return field("Título", "title", p.title) + '<label>Itens (um por linha: Rótulo | %)</label><textarea data-k="raw">' + esc(p.raw) + '</textarea>'; }
+  },
+  video: {
+    emoji: "🎬", name: "Vídeo", desc: "Incorpora um vídeo do YouTube, Vimeo, Loom ou link direto.",
+    w: 5, h: 4, defaults: { title: "", url: "" },
+    render(t, c) {
+      const p = t.props;
+      const head = p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '';
+      const e = videoEmbedUrl(p.url);
+      let body;
+      if (e.type === "none") body = '<div class="video-empty">🎬 Configure o link do vídeo ao editar este widget.</div>';
+      else if (e.type === "iframe") body = '<div class="video-frame"><iframe src="' + escAttr(e.url) + '" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe></div>';
+      else if (e.type === "video") body = '<div class="video-frame"><video src="' + escAttr(e.url) + '" controls></video></div>';
+      else body = '<div class="video-empty">Link não reconhecido. Use YouTube, Vimeo, Loom ou um arquivo .mp4.</div>';
+      c.innerHTML = head + body;
+    },
+    form(p) { return field("Título (opcional)", "title", p.title) + field("Link do vídeo", "url", p.url); }
+  },
+  code: {
+    emoji: "💻", name: "Código", desc: "Bloco de código monoespaçado com botão copiar.",
+    w: 5, h: 4, defaults: { title: "Código", lang: "", code: "" },
+    render(t, c) {
+      const p = t.props;
+      c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Código") + '</span>' +
+        (p.lang ? '<span class="code-lang">' + esc(p.lang) + '</span>' : '') +
+        '<span class="grow"></span><button class="code-copy" title="Copiar código" onclick="copyCode(this)">⧉</button></div>' +
+        '<div class="code-body"><pre><code>' + esc(p.code || "") + '</code></pre></div>';
+    },
+    form(p) {
+      return field("Título", "title", p.title) + field("Linguagem (ex.: JS, Python)", "lang", p.lang) +
+        '<label>Código</label><textarea data-k="code" spellcheck="false" style="min-height:170px;font-family:var(--font-mono);font-size:12.5px;white-space:pre;line-height:1.5">' + esc(p.code) + '</textarea>';
+    }
+  },
+  paragrafo: {
+    emoji: "📄", name: "Parágrafo", desc: "Texto editável ao clicar, com estilo ajustável.",
+    w: 4, h: 3, defaults: { title: "", text: "Clique para escrever…", size: "15", align: "left", color: "" },
+    render(t, c) {
+      const p = t.props;
+      const style = 'font-size:' + (parseInt(p.size) || 15) + 'px;text-align:' + (p.align || "left") + ';' + (p.color ? 'color:' + p.color + ';' : '');
+      const head = p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '';
+      if (editMode && canEdit) {
+        c.innerHTML = head + '<div class="para-body para-edit" contenteditable="true" style="' + style + '" oninput="onParaInput(this,\'' + t.id + '\')">' + esc(p.text) + '</div>';
+      } else {
+        c.innerHTML = head + '<div class="para-body" style="' + style + '">' + esc(p.text) + '</div>';
+      }
+    },
+    form(p) {
+      return field("Título (opcional)", "title", p.title) +
+        field("Tamanho da fonte (px)", "size", p.size) +
+        '<label>Alinhamento</label><select data-k="align">' +
+        '<option value="left"' + (p.align !== "center" && p.align !== "right" ? " selected" : "") + '>Esquerda</option>' +
+        '<option value="center"' + (p.align === "center" ? " selected" : "") + '>Centro</option>' +
+        '<option value="right"' + (p.align === "right" ? " selected" : "") + '>Direita</option></select>' +
+        '<label>Cor do texto (opcional)</label><input type="color" data-k="color" value="' + escAttr(p.color || "#e9eaf0") + '" style="height:40px;padding:4px">' +
+        '<label>Texto</label><textarea data-k="text" style="min-height:110px">' + esc(p.text) + '</textarea>';
+    }
+  },
+  referencias: {
+    emoji: "🔗", name: "Referências", desc: "Colunas de links importantes, editáveis.",
+    w: 6, h: 4, defaults: { title: "Referências", raw: "## Documentação\nGuia | https://exemplo.com\nAPI | https://exemplo.com/api\n\n## Design\nFigma | https://figma.com" },
+    render(t, c) {
+      const p = t.props;
+      const cols = parseRefColumns(p.raw);
+      c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Referências") + '</span></div>' +
+        '<div class="w-body"><div class="ref-cols">' +
+        (cols.length ? cols.map(col =>
+          '<div class="ref-col">' + (col.title ? '<div class="ref-col-title">' + esc(col.title) + '</div>' : '') +
+          col.links.map(l => '<a href="' + escAttr(l.url || "#") + '" target="_blank" rel="noopener">' + esc(l.label || l.url) + '</a>').join("") +
+          '</div>').join("")
+          : '<p class="muted-note">Sem links ainda.</p>') +
+        '</div></div>';
+    },
+    form(p) {
+      return field("Título", "title", p.title) +
+        '<label>Colunas e links</label>' +
+        '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Inicie uma coluna com <b>## Nome</b>. Depois, um link por linha: <b>Rótulo | URL</b>.</p>' +
+        '<textarea data-k="raw" spellcheck="false" style="min-height:170px;font-family:var(--font-mono);font-size:12.5px;line-height:1.5">' + esc(p.raw) + '</textarea>';
+    }
   }
 };
 function field(label, k, v) { return '<label>' + esc(label) + '</label><input data-k="' + k + '" value="' + escAttr(v) + '">'; }
+
+/* — Helpers dos widgets de mídia — */
+function videoEmbedUrl(url) {
+  url = (url || "").trim();
+  if (!url) return { type: "none" };
+  let m = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{11})/);
+  if (m) return { type: "iframe", url: "https://www.youtube.com/embed/" + m[1] };
+  m = url.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+  if (m) return { type: "iframe", url: "https://player.vimeo.com/video/" + m[1] };
+  m = url.match(/loom\.com\/(?:share|embed)\/([\w-]+)/);
+  if (m) return { type: "iframe", url: "https://www.loom.com/embed/" + m[1] };
+  if (/\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(url)) return { type: "video", url };
+  return { type: "unknown" };
+}
+function copyCode(btn) {
+  const code = btn.closest(".content").querySelector("code");
+  if (!code || !navigator.clipboard) return;
+  navigator.clipboard.writeText(code.innerText).then(() => {
+    const old = btn.textContent; btn.textContent = "✓";
+    setTimeout(() => { btn.textContent = old; }, 1200);
+  });
+}
+function onParaInput(el, id) {
+  const t = space().tiles.find(x => x.id === id);
+  if (!t) return;
+  t.props.text = el.innerText;
+  save(); // não chama route() — preserva o foco/cursor enquanto digita
+}
+function parseRefColumns(raw) {
+  const cols = [];
+  let cur = null;
+  (raw || "").split("\n").forEach(line => {
+    const s = line.trim();
+    if (!s) return;
+    if (s.startsWith("##")) { cur = { title: s.replace(/^##\s*/, ""), links: [] }; cols.push(cur); }
+    else {
+      if (!cur) { cur = { title: "", links: [] }; cols.push(cur); }
+      const parts = s.split("|").map(x => x.trim());
+      cur.links.push({ label: parts[0], url: parts[1] || "#" });
+    }
+  });
+  return cols;
+}
 
 /* ===== 5) Roteamento de telas ===== */
 function route() {
@@ -460,7 +580,7 @@ function removeTile(id) { if (!confirm("Excluir este widget?")) return; space().
 function cellSize() { const c = $("#canvas"); const gap = 14; const w = (c.clientWidth - gap * (COLS - 1)) / COLS; return { w, h: 96, gap }; }
 function enableDrag(tile, card, t) {
   card.addEventListener("pointerdown", e => {
-    if (e.target.closest(".tbar,.thandle") || !editMode) return;
+    if (e.target.closest(".tbar,.thandle,.para-edit") || !editMode) return;
     e.preventDefault(); const cs = cellSize(); const sx = e.clientX, sy = e.clientY, ox = t.x, oy = t.y;
     tile.classList.add("dragging"); card.setPointerCapture(e.pointerId);
     const mv = ev => { t.x = clamp(ox + Math.round((ev.clientX - sx) / (cs.w + cs.gap)), 0, COLS - t.w); t.y = Math.max(0, oy + Math.round((ev.clientY - sy) / (cs.h + cs.gap))); tile.style.setProperty("--gc", (t.x + 1) + " / span " + t.w); tile.style.setProperty("--gr", (t.y + 1) + " / span " + t.h); };
