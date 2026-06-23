@@ -270,6 +270,7 @@ body.edit .tile.dragging .card{cursor:grabbing}
 .reu-notas{font-size:13px;background:var(--surface-solid);border-radius:9px;padding:10px 12px;line-height:1.55;white-space:pre-wrap;margin-bottom:8px;color:var(--muted)}
 .reu-actions{display:flex;gap:10px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
 .lnk.ok:hover{color:var(--ok)}
+.perm-aviso{text-align:center;padding:16px;border:1px dashed var(--line-strong);border-radius:10px;color:var(--faint);font-size:13px}
 
 /* ===== Participantes ===== */
 .papel{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;border-radius:5px;padding:1px 6px;margin-left:4px}

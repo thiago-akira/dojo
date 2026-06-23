@@ -20,9 +20,16 @@ let isAdmin = false;
 let view = "login";            // login | console | cliente | painel
 let curCliente = null;         // {id, nome, empresa, marca, ...}
 let curProjeto = null;         // {id, nome, ...}
-let canEdit = false;           // pode editar o painel atual (admin ou gestor)
+let myMembro = null;           // linha de `membros` do usuário no projeto atual (null se admin)
+let canEdit = false;           // true para admin ou gestor do projeto
 let editMode = false;
 let projTab = "painel";        // painel | gestao | mensagens
+
+/* Checa flag de permissão do membro atual. Admin e gestores têm tudo. */
+function perm(flag) {
+  if (isAdmin || canEdit) return true;
+  return !!(myMembro && myMembro[flag]);
+}
 let brand = { titulo: "Dojo", cor: "#e8a33d", logoUrl: "" };
 
 /* Estado do painel (layout de widgets) */
@@ -229,7 +236,13 @@ async function abrirProjeto(id) {
   curProjeto = data;
   curCliente = data.clientes || curCliente;
   brand = Object.assign({ titulo: "Dojo", cor: "#e8a33d", logoUrl: "" }, (curCliente && curCliente.marca) || {});
-  canEdit = isAdmin; // gestor também poderá editar (RLS cobre); refinaremos na Fase 5
+  if (isAdmin) {
+    canEdit = true; myMembro = null;
+  } else {
+    const { data: mb } = await sb.from("membros").select("*").eq("projeto_id", id).eq("pessoa_id", me.id).maybeSingle();
+    myMembro = mb || null;
+    canEdit = !!(mb && mb.papel === "gestor");
+  }
   await loadPainel(id);
   view = "painel"; projTab = "painel"; editMode = false; route();
 }
@@ -260,7 +273,7 @@ function renderProjeto(canvas, hint) {
   else tabs.push(["materiais", "📎 Materiais"]);
   tabs.push(["aprovacoes", "✅ Aprovações"], ["questionarios", "📝 Questionários"],
     ["reunioes", "📅 Reuniões"], ["mensagens", "💬 Mensagens"]);
-  if (canEdit) tabs.push(["participantes", "👥 Participantes"]);
+  if (canEdit || perm("pode_adicionar_pessoas")) tabs.push(["participantes", "👥 Participantes"]);
   const sn = $("#subnav"); sn.style.display = "flex";
   sn.innerHTML = tabs.map(([k, l]) =>
     '<button class="sntab' + (projTab === k ? " on" : "") + '" onclick="setProjTab(\'' + k + '\')">' + l + '</button>').join("");
@@ -649,17 +662,19 @@ async function renderMensagens(canvas, hint) {
   const opts = '<option value="">📢 Todos os participantes</option>' +
     participantes.map(p => '<option value="' + p.pessoa_id + '">' + esc((p.pessoas && (p.pessoas.nome || p.pessoas.email)) || p.pessoa_id) + (p.papel === "gestor" ? " (gestor)" : "") + '</option>').join("");
 
-  hint.innerHTML = '<div class="page msgs"><div class="msg-list" id="msgList">' + lista + '</div>' +
-    '<div class="composer">' +
-    '<select id="msgTo">' + opts + '</select>' +
-    '<div class="composer-body">' +
-    '<textarea id="msgBody" placeholder="Escreva uma mensagem…" onkeydown="if(event.key===\'Enter\'&&(event.metaKey||event.ctrlKey))enviarMsg()"></textarea>' +
-    '<div id="msgAnexoPrev" class="msg-anexo-prev" style="display:none"></div>' +
-    '</div>' +
-    '<div class="composer-send">' +
-    '<label class="btn sm ghost iconbtn" title="Anexar arquivo">📎<input type="file" id="msgFile" style="display:none" onchange="onMsgFile(this)"></label>' +
-    '<button class="btn primary" onclick="enviarMsg()">Enviar</button>' +
-    '</div></div></div>';
+  const composerHtml = perm("pode_enviar_mensagens")
+    ? '<div class="composer">' +
+      '<select id="msgTo">' + opts + '</select>' +
+      '<div class="composer-body">' +
+      '<textarea id="msgBody" placeholder="Escreva uma mensagem…" onkeydown="if(event.key===\'Enter\'&&(event.metaKey||event.ctrlKey))enviarMsg()"></textarea>' +
+      '<div id="msgAnexoPrev" class="msg-anexo-prev" style="display:none"></div>' +
+      '</div>' +
+      '<div class="composer-send">' +
+      '<label class="btn sm ghost iconbtn" title="Anexar arquivo">📎<input type="file" id="msgFile" style="display:none" onchange="onMsgFile(this)"></label>' +
+      '<button class="btn primary" onclick="enviarMsg()">Enviar</button>' +
+      '</div></div>'
+    : '<p class="muted-note perm-aviso">Você não tem permissão para enviar mensagens neste projeto.</p>';
+  hint.innerHTML = '<div class="page msgs"><div class="msg-list" id="msgList">' + lista + '</div>' + composerHtml + '</div>';
   const ml = document.getElementById("msgList"); if (ml) ml.scrollTop = ml.scrollHeight;
 }
 function onMsgFile(input) {
@@ -778,10 +793,12 @@ async function renderMateriais(canvas, hint) {
     sb.from("anotacoes").select("*").eq("projeto_id", pid).order("updated_at", { ascending: false }),
     sb.from("checklists").select("*, checklist_itens(*)").eq("projeto_id", pid).order("ordem")
   ]);
-  const docsHtml = (docs.data || []).map(d =>
-    '<div class="grow-row"><div class="gr-main"><span class="gr-name">📄 ' + esc(d.nome) + '</span>' +
-    '<div class="gr-actions">' + (d.storage_path ? '<button class="lnk" onclick="baixarDoc(\'' + escAttr(d.storage_path) + '\')">baixar</button>' : (d.url ? '<a class="lnk" href="' + escAttr(d.url) + '" target="_blank" rel="noopener">abrir</a>' : "")) + '</div></div></div>'
-  ).join("") || '<p class="muted-note">Nada compartilhado aqui.</p>';
+  const docsHtml = !perm("pode_ver_documentos")
+    ? '<p class="muted-note perm-aviso">Acesso a documentos não habilitado neste projeto.</p>'
+    : (docs.data || []).map(d =>
+        '<div class="grow-row"><div class="gr-main"><span class="gr-name">📄 ' + esc(d.nome) + '</span>' +
+        '<div class="gr-actions">' + (d.storage_path ? '<button class="lnk" onclick="baixarDoc(\'' + escAttr(d.storage_path) + '\')">baixar</button>' : (d.url ? '<a class="lnk" href="' + escAttr(d.url) + '" target="_blank" rel="noopener">abrir</a>' : "")) + '</div></div></div>'
+      ).join("") || '<p class="muted-note">Nada compartilhado aqui.</p>';
   const anosHtml = (anos.data || []).map(a =>
     '<div class="grow-row"><div class="gr-main"><span class="gr-name">📝 ' + esc(a.titulo || "(sem título)") + '</span></div>' +
     (a.corpo ? '<div class="ano-prev" style="white-space:pre-wrap">' + esc(a.corpo) + '</div>' : "") + '</div>'
@@ -1062,7 +1079,7 @@ async function renderReunioes(canvas, hint) {
   }).join("") || '<p class="muted-note">Nenhuma reunião agendada.</p>';
 
   hint.innerHTML = '<div class="page"><div class="page-head"><h2>📅 Reuniões</h2>' +
-    (canEdit ? '<button class="btn primary" onclick="novaReuniao()">＋ Agendar reunião</button>' : '') +
+    (canEdit || perm("pode_marcar_reunioes") ? '<button class="btn primary" onclick="novaReuniao()">＋ Agendar reunião</button>' : '') +
     '</div>' + cards + '</div>';
 }
 
