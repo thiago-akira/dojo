@@ -94,7 +94,7 @@ function importarPainel(file) {
     let layout;
     try { const obj = JSON.parse(r.result); layout = obj.layout || obj; if (!layout || !layout.spaces) throw 0; } catch (e) { toast("Erro: arquivo JSON inválido."); return; }
     if (!(await confirmDialog("Substituir o painel atual pelo conteúdo do arquivo? O atual será sobrescrito."))) return;
-    state = layout; save(); closeModal(); route(); toast("Painel importado.");
+    state = layout; save(); pushHist("Importou painel"); closeModal(); route(); toast("Painel importado.");
   };
   r.readAsText(file);
 }
@@ -1724,6 +1724,7 @@ async function abrirProjeto(id) {
   }
   canEdit = canEditReal;
   await loadPainel(id);
+  histReset();
   const vis = visibleSpaces();
   curSpaceId = vis.length ? vis[0].id : (state.spaces[0] && state.spaces[0].id) || null;
   subscribeRealtime(id);
@@ -1740,7 +1741,104 @@ function save() {
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(async () => {
     await sb.from("paineis").upsert({ projeto_id: curProjeto.id, layout: state, updated_at: new Date().toISOString() });
+    autoBackup();
   }, 600);
+}
+
+/* ===== Histórico (desfazer/refazer), lixeira e backups — Fase C ===== */
+let histStack = [], histIdx = -1, _histLock = false, _lastBackup = 0;
+function _snap() { return JSON.parse(JSON.stringify(state)); }
+function histReset() { histStack = [{ s: _snap(), label: "Estado ao abrir", ts: Date.now() }]; histIdx = 0; updateHistButtons(); }
+function pushHist(label) {
+  if (_histLock || !canEdit) return;
+  histStack = histStack.slice(0, histIdx + 1);
+  histStack.push({ s: _snap(), label: label || "Alteração", ts: Date.now() });
+  if (histStack.length > 60) histStack.shift();
+  histIdx = histStack.length - 1;
+  updateHistButtons();
+}
+function _restoreHist(i) {
+  if (i < 0 || i >= histStack.length) return;
+  _histLock = true;
+  histIdx = i;
+  state = JSON.parse(JSON.stringify(histStack[i].s));
+  const vis = visibleSpaces(); if (!vis.find(s => s.id === curSpaceId)) curSpaceId = vis[0] && vis[0].id;
+  save(); route(); _histLock = false; updateHistButtons();
+}
+function undo() { if (histIdx > 0) _restoreHist(histIdx - 1); }
+function redo() { if (histIdx < histStack.length - 1) _restoreHist(histIdx + 1); }
+function updateHistButtons() {
+  const u = $("#undoBtn"), r = $("#redoBtn");
+  if (u) u.disabled = histIdx <= 0;
+  if (r) r.disabled = histIdx >= histStack.length - 1;
+}
+
+async function autoBackup() {
+  if (!canEdit || !curProjeto) return;
+  if (Date.now() - _lastBackup < 180000) return; // no máx 1 backup automático a cada 3 min
+  _lastBackup = Date.now();
+  try { await sb.from("paineis_backups").insert({ projeto_id: curProjeto.id, layout: state, label: "auto", criado_por: me.id }); } catch (e) { }
+}
+async function backupManual() {
+  if (!curProjeto) return;
+  try { await sb.from("paineis_backups").insert({ projeto_id: curProjeto.id, layout: state, label: "manual", criado_por: me.id }); _lastBackup = Date.now(); toast("✓ Backup criado."); abrirHistorico("backups"); }
+  catch (e) { toast("Erro ao criar backup."); }
+}
+
+/* Modal Histórico · Lixeira · Backups */
+async function abrirHistorico(aba) {
+  aba = aba || "hist";
+  openModal('<h3>🕘 Histórico</h3>' +
+    '<div class="hist-undo"><button class="btn sm" id="hUndo" ' + (histIdx <= 0 ? "disabled" : "") + '>↶ Desfazer</button>' +
+    '<button class="btn sm" id="hRedo" ' + (histIdx >= histStack.length - 1 ? "disabled" : "") + '>Refazer ↷</button></div>' +
+    '<div class="rep-tabs"><button class="rep-tab" data-h="hist">Alterações</button><button class="rep-tab" data-h="lixeira">🗑 Lixeira</button><button class="rep-tab" data-h="backups">💾 Backups</button></div>' +
+    '<div id="histBody"></div>' +
+    '<div class="modal-actions"><span class="grow"></span><button class="btn primary" data-x>Fechar</button></div>',
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("#hUndo").onclick = () => { undo(); abrirHistorico("hist"); };
+      m.querySelector("#hRedo").onclick = () => { redo(); abrirHistorico("hist"); };
+      const setAba = a => { m.querySelectorAll(".rep-tab").forEach(b => b.classList.toggle("on", b.dataset.h === a)); renderHistBody(a, m.querySelector("#histBody")); };
+      m.querySelectorAll(".rep-tab").forEach(b => b.onclick = () => setAba(b.dataset.h));
+      setAba(aba);
+    });
+}
+function renderHistBody(aba, box) {
+  if (aba === "hist") {
+    const items = histStack.map((h, i) => '<div class="hist-item' + (i === histIdx ? " on" : "") + '" onclick="_restoreHist(' + i + ');abrirHistorico(\'hist\')"><span class="hist-dot"></span><div class="hist-b"><div class="hist-l">' + esc(h.label) + '</div><div class="hist-t">' + fmtRel(h.ts) + (i === histIdx ? ' · atual' : '') + '</div></div></div>').reverse().join("");
+    box.innerHTML = '<div class="hist-list">' + (items || '<p class="muted-note">Sem alterações nesta sessão.</p>') + '</div>';
+  } else if (aba === "lixeira") {
+    const tr = state.trash || [];
+    box.innerHTML = '<div class="hist-list">' + (tr.length ? tr.map((d, i) => {
+      const w = WIDGETS[d.tile && d.tile.type]; const nome = (w ? w.emoji + " " + w.name : "Widget");
+      return '<div class="hist-item"><div class="hist-b"><div class="hist-l">' + esc(nome) + '</div><div class="hist-t">de "' + esc(d.space || "") + '" · ' + fmtRel(d.at) + '</div></div><div class="lix-acts"><button class="lnk" onclick="recuperarLixo(' + i + ')">recuperar</button><button class="lnk del" onclick="apagarLixo(' + i + ')">apagar</button></div></div>';
+    }).join("") : '<p class="muted-note">Lixeira vazia. Widgets que você excluir aparecem aqui pra recuperar.</p>') + '</div>';
+  } else {
+    box.innerHTML = '<div class="hist-undo" style="margin-bottom:10px"><button class="btn sm primary" onclick="backupManual()">💾 Criar backup agora</button></div><div class="hist-list"><p class="muted-note">Carregando…</p></div>';
+    sb.from("paineis_backups").select("id,label,created_at,criado_por,pessoas:pessoas!criado_por(nome)").eq("projeto_id", curProjeto.id).order("created_at", { ascending: false }).then(({ data }) => {
+      const list = data || [];
+      const html = list.length ? list.map(b => '<div class="hist-item"><div class="hist-b"><div class="hist-l">' + (b.label === "manual" ? "💾 Manual" : "🔄 Automático") + '</div><div class="hist-t">' + fmtRel(b.created_at) + (b.pessoas && b.pessoas.nome ? ' · ' + esc(b.pessoas.nome) : '') + '</div></div><button class="btn sm" onclick="restaurarBackup(\'' + b.id + '\')">restaurar</button></div>').join("") : '<p class="muted-note">Nenhum backup ainda. Eles são criados automaticamente conforme você edita.</p>';
+      const lb = box.querySelector(".hist-list"); if (lb) lb.innerHTML = html;
+    });
+  }
+}
+function recuperarLixo(i) {
+  const tr = state.trash || []; const d = tr[i]; if (!d) return;
+  const sp = space(); const t = d.tile; t.id = uid(); t.x = 0; t.y = bottomRow();
+  sp.tiles.push(t); tr.splice(i, 1);
+  save(); pushHist("Recuperou widget"); route(); closeModal();
+  toast("Widget recuperado.");
+}
+async function apagarLixo(i) {
+  if (!(await confirmDialog("Apagar definitivamente este item da lixeira?"))) return;
+  (state.trash || []).splice(i, 1); save(); abrirHistorico("lixeira");
+}
+async function restaurarBackup(id) {
+  if (!(await confirmDialog("Restaurar este backup? O painel atual será substituído (mas vira um novo ponto no histórico)."))) return;
+  const { data } = await sb.from("paineis_backups").select("layout").eq("id", id).single();
+  if (!data) { toast("Backup não encontrado."); return; }
+  state = data.layout; const vis = visibleSpaces(); curSpaceId = vis[0] && vis[0].id;
+  save(); pushHist("Restaurou backup"); route(); closeModal(); toast("✓ Backup restaurado.");
 }
 
 /* Dropdown para trocar de projeto (admin: do cliente atual; cliente: seus projetos) — itens 6 */
@@ -1940,10 +2038,16 @@ function renderPainel(canvas, hint) {
 function addWidget(type) {
   const W = WIDGETS[type]; if (!W) return;
   const t = { id: uid(), type, x: 0, y: bottomRow(), w: W.w, h: W.h, props: JSON.parse(JSON.stringify(W.defaults || {})) };
-  space().tiles.push(t); save(); route();
+  space().tiles.push(t); save(); pushHist("Adicionou " + (W.name || "widget")); route();
 }
 function bottomRow() { return space().tiles.reduce((m, t) => Math.max(m, t.y + t.h), 0); }
-async function removeTile(id) { if (!(await confirmDialog("Excluir este widget?"))) return; space().tiles = space().tiles.filter(t => t.id !== id); save(); route(); }
+async function removeTile(id) {
+  if (!(await confirmDialog("Excluir este widget?"))) return;
+  const sp = space(); const t = sp.tiles.find(x => x.id === id);
+  if (t) { state.trash = state.trash || []; state.trash.unshift({ tile: JSON.parse(JSON.stringify(t)), space: sp.name, at: Date.now() }); if (state.trash.length > 40) state.trash.pop(); }
+  sp.tiles = sp.tiles.filter(x => x.id !== id);
+  save(); pushHist("Removeu widget"); route();
+}
 
 function cellSize() { const c = $("#canvas"); const gap = 14; const w = (c.clientWidth - gap * (COLS - 1)) / COLS; return { w, h: 96, gap }; }
 function enableDrag(tile, card, t) {
@@ -1952,7 +2056,7 @@ function enableDrag(tile, card, t) {
     e.preventDefault(); const cs = cellSize(); const sx = e.clientX, sy = e.clientY, ox = t.x, oy = t.y;
     tile.classList.add("dragging"); card.setPointerCapture(e.pointerId);
     const mv = ev => { t.x = clamp(ox + Math.round((ev.clientX - sx) / (cs.w + cs.gap)), 0, COLS - t.w); t.y = Math.max(0, oy + Math.round((ev.clientY - sy) / (cs.h + cs.gap))); tile.style.setProperty("--gc", (t.x + 1) + " / span " + t.w); tile.style.setProperty("--gr", (t.y + 1) + " / span " + t.h); };
-    const up = () => { card.removeEventListener("pointermove", mv); card.removeEventListener("pointerup", up); tile.classList.remove("dragging"); save(); };
+    const up = () => { card.removeEventListener("pointermove", mv); card.removeEventListener("pointerup", up); tile.classList.remove("dragging"); save(); pushHist("Moveu widget"); };
     card.addEventListener("pointermove", mv); card.addEventListener("pointerup", up);
   });
 }
@@ -1961,7 +2065,7 @@ function enableResize(tile, handle, t) {
     e.preventDefault(); e.stopPropagation(); const cs = cellSize(); const sx = e.clientX, sy = e.clientY, ow = t.w, oh = t.h;
     tile.classList.add("resizing"); handle.setPointerCapture(e.pointerId);
     const mv = ev => { t.w = clamp(ow + Math.round((ev.clientX - sx) / (cs.w + cs.gap)), 1, COLS - t.x); t.h = Math.max(1, oh + Math.round((ev.clientY - sy) / (cs.h + cs.gap))); tile.style.setProperty("--gc", (t.x + 1) + " / span " + t.w); tile.style.setProperty("--gr", (t.y + 1) + " / span " + t.h); };
-    const up = () => { handle.removeEventListener("pointermove", mv); handle.removeEventListener("pointerup", up); tile.classList.remove("resizing"); save(); };
+    const up = () => { handle.removeEventListener("pointermove", mv); handle.removeEventListener("pointerup", up); tile.classList.remove("resizing"); save(); pushHist("Redimensionou widget"); };
     handle.addEventListener("pointermove", mv); handle.addEventListener("pointerup", up);
   });
 }
@@ -1975,7 +2079,7 @@ function widgetSettings(t) {
       m.querySelector("[data-x]").onclick = closeModal;
       m.querySelector("[data-ok]").onclick = () => {
         m.querySelectorAll("[data-k]").forEach(el => { t.props[el.dataset.k] = el.value; });
-        save(); route(); closeModal();
+        save(); pushHist("Editou widget"); route(); closeModal();
       };
     });
 }
@@ -2006,7 +2110,7 @@ function addSpace() {
         if (!nome) { toast("Informe o nome."); return; }
         const ns = { id: uid(), name: nome, visibility: ctx === "interno" ? "interno" : "compartilhado", tiles: [] };
         state.spaces.push(ns); curSpaceId = ns.id;
-        save(); closeModal(); route();
+        save(); pushHist("Nova aba: " + nome); closeModal(); route();
       };
     });
 }
@@ -2019,7 +2123,7 @@ function editarSpace(id) {
       m.querySelector("[data-ok]").onclick = () => {
         const nome = m.querySelector('[data-k="nome"]').value.trim();
         if (!nome) { toast("Informe o nome."); return; }
-        s.name = nome; save(); closeModal(); route();
+        s.name = nome; save(); pushHist("Renomeou aba"); closeModal(); route();
       };
     });
 }
@@ -2031,7 +2135,7 @@ async function deletarSpace(id) {
   state.spaces = state.spaces.filter(x => x.id !== id);
   const list = spacesFor(ctx);
   curSpaceId = list.length ? list[0].id : null;
-  save(); route();
+  save(); pushHist("Excluiu aba"); route();
 }
 
 /* ===== 11) Modal helpers ===== */
@@ -2114,6 +2218,11 @@ function paintTools() {
     pv.textContent = previewCliente ? "✕ Sair da prévia" : "👁 Ver como cliente";
   }
   $("#editBtn").style.display = (inPainel && canEdit) ? "" : "none";
+  const histOn = inPainel && canEdit;
+  $("#undoBtn").style.display = histOn ? "" : "none";
+  $("#redoBtn").style.display = histOn ? "" : "none";
+  $("#histBtn").style.display = histOn ? "" : "none";
+  if (histOn) updateHistButtons();
   $("#addBtn").style.display = (inPainel && canEdit && editMode) ? "" : "none";
   $("#editBtn").classList.toggle("on", editMode);
   $("#editBtn").textContent = editMode ? "✓ Concluir" : "✏ Editar";
@@ -3225,6 +3334,9 @@ function wireTopbar() {
   $("#previewBtn").onclick = () => setPreviewCliente(!previewCliente);
   $("#bellBtn").onclick = (e) => { e.stopPropagation(); toggleBell(); };
   $("#menuBtn").onclick = abrirPersonalizar;
+  $("#undoBtn").onclick = undo;
+  $("#redoBtn").onclick = redo;
+  $("#histBtn").onclick = () => abrirHistorico("hist");
   $("#editBtn").onclick = () => { editMode = !editMode; route(); };
 }
 
