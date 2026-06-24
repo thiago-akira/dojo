@@ -1634,11 +1634,14 @@ async function applyUrlRoute() {
   if (!parts.length) return;
   const [cliSlug, projSlug] = parts;
   if (projSlug) {
+    // Skip if already on this exact project (evita dupla carga no rotaCliente)
+    if (curProjeto && curProjeto.slug === projSlug && view === "painel") return;
     const { data } = await sb.from("projetos").select("id, slug, clientes(slug)").eq("slug", projSlug);
     const match = (data || []).find(p => !p.clientes || p.clientes.slug === cliSlug) || (data || [])[0];
     if (match) { await abrirProjeto(match.id); return; }
   }
   if (cliSlug && isAdmin) {
+    if (curCliente && curCliente.slug === cliSlug && view === "cliente") return;
     const { data } = await sb.from("clientes").select("id").eq("slug", cliSlug).maybeSingle();
     if (data) { await abrirCliente(data.id); return; }
   }
@@ -2624,9 +2627,17 @@ async function onSession(session) {
   const { data: pessoa } = await sb.from("pessoas").select("*").eq("id", session.user.id).maybeSingle();
   me = pessoa || { id: session.user.id, email: session.user.email, nome: session.user.email };
   isAdmin = !!(pessoa && pessoa.is_admin);
-  if (isAdmin) { subscribeAcessosRealtime(); updateBell(); view = "console"; route(); }
-  else { registrarAcesso(); subscribeNotifRealtime(); updateBell(); await rotaCliente(); }
-  await applyUrlRoute();
+  if (isAdmin) {
+    subscribeAcessosRealtime(); updateBell();
+    // Verifica URL primeiro — se há deep link (projeto/cliente), abre direto sem renderizar o console antes
+    // (evita race condition: renderConsole async sobrescrevia o projeto já carregado)
+    await applyUrlRoute();
+    if (view !== "painel" && view !== "cliente") { view = "console"; route(); }
+  } else {
+    registrarAcesso(); subscribeNotifRealtime(); updateBell();
+    await rotaCliente();
+    await applyUrlRoute(); // guard de slug no applyUrlRoute evita dupla carga
+  }
 }
 
 /* ===== Registro de acesso (frequência, último acesso, tempo de sessão) ===== */
