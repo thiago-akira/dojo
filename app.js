@@ -4180,27 +4180,59 @@ function wireTopbar() {
 /* IMPORTANTE: não chamar `await sb.from(...)` dentro do callback de
    onAuthStateChange (deadlock no lock interno). Adiamos com setTimeout(0).
 
-   NÃO confiar no INITIAL_SESSION para restaurar a sessão: em hard-refresh
-   (Ctrl+Shift+R) ele pode disparar com session=null antes do storage/lock
-   resolver, derrubando o usuário para a tela de login mesmo logado.
-   Em vez disso, fazemos bootstrap explícito com getSession(), que lê o
-   storage de forma confiável e renova o token se necessário. */
+   Estratégia de boot:
+   - Usamos APENAS onAuthStateChange. NÃO chamamos getSession() no boot.
+   - Chamar getSession() em paralelo com o refresh interno do Supabase causa
+     race condition com o rotating refresh token: ambos tentam usar o mesmo
+     refresh_token; o segundo recebe 401 → SIGNED_OUT dispara mesmo logado.
+   - INITIAL_SESSION com session válida → boot imediato.
+   - INITIAL_SESSION null → token expirado, refresh em andamento; aguardamos
+     TOKEN_REFRESHED (sucesso) ou SIGNED_OUT (falha genuína).
+   - Safety net: se nada responder em 8 s, tentamos getSession() uma vez. */
 applyPrefs();
 wireTopbar();
 
 let _authBooted = false;
+const _bootSafety = setTimeout(async () => {
+  if (_authBooted) return;
+  try {
+    const { data } = await sb.auth.getSession();
+    if (!_authBooted) { _authBooted = true; onSession(data.session || null); }
+  } catch (_) {
+    if (!_authBooted) { _authBooted = true; onSession(null); }
+  }
+}, 8000);
 
-// Eventos subsequentes: login, logout, renovação de token, update de usuário.
-// INITIAL_SESSION é ignorado aqui — quem cuida da carga inicial é o getSession() abaixo.
 sb.auth.onAuthStateChange((event, session) => {
-  if (event === "INITIAL_SESSION") return;
-  // Ignora null transitório (ex.: TOKEN_REFRESHED momentâneo); só SIGNED_OUT desloga de fato.
-  if (!session && event !== "SIGNED_OUT") return;
-  _authBooted = true;
-  setTimeout(() => onSession(session), 0);
+  if (event === "INITIAL_SESSION") {
+    if (session) {
+      // Token ainda válido — boot imediato
+      clearTimeout(_bootSafety);
+      _authBooted = true;
+      setTimeout(() => onSession(session), 0);
+    }
+    // null → token expirado, refresh em andamento; aguarda TOKEN_REFRESHED ou SIGNED_OUT
+    return;
+  }
+  if (event === "TOKEN_REFRESHED" && session) {
+    // Refresh concluído com sucesso
+    clearTimeout(_bootSafety);
+    _authBooted = true;
+    setTimeout(() => onSession(session), 0);
+    return;
+  }
+  if (event === "SIGNED_IN" && session) {
+    clearTimeout(_bootSafety);
+    _authBooted = true;
+    setTimeout(() => onSession(session), 0);
+    return;
+  }
+  if (event === "SIGNED_OUT") {
+    clearTimeout(_bootSafety);
+    _authBooted = true;
+    setTimeout(() => onSession(null), 0);
+    return;
+  }
+  // USER_UPDATED e outros: mantém sessão ativa se disponível
+  if (session && _authBooted) setTimeout(() => onSession(session), 0);
 });
-
-// Bootstrap robusto da sessão persistida.
-sb.auth.getSession()
-  .then(({ data }) => { if (_authBooted) return; _authBooted = true; onSession(data.session || null); })
-  .catch(() => { if (!_authBooted) { _authBooted = true; onSession(null); } });
