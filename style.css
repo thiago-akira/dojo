@@ -74,6 +74,16 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);-webkit-f
 @media (max-width:1080px){ .proj-evo{display:none !important} }
 @media (max-width:920px){ .role-badge{display:none !important} }
 @media (max-width:760px){ .client-brand{display:none !important} .brand .title{font-size:15px} }
+/* Mobile: corpo travado; topbar e subnav deslizam sozinhos */
+@media (max-width:900px){
+  body{overflow-x:clip}
+  .topbar{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .topbar::-webkit-scrollbar{display:none}
+  .subnav{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .subnav::-webkit-scrollbar{display:none}
+  /* Sem frame de "preview" em dispositivos reais — canvas ocupa tela toda */
+  .canvas-wrap.dev-tablet,.canvas-wrap.dev-mobile{max-width:100%!important;margin:0!important;border:none!important;border-radius:0!important;box-shadow:none!important}
+}
 .spacer{flex:1}
 .tools{display:flex;align-items:center;gap:8px}
 .iconbtn{background:var(--surface-solid);border:1px solid var(--line);color:var(--text);border-radius:9px;padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap}

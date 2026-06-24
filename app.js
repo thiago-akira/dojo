@@ -2318,8 +2318,9 @@ function renderPainel(canvas, hint) {
   tiles.forEach(t => {
     const W = WIDGETS[t.type]; if (!W) return;
     const tile = document.createElement("div"); tile.className = "tile"; tile.dataset.id = t.id;
-    tile.style.setProperty("--gc", (t.x + 1) + " / span " + t.w);
-    tile.style.setProperty("--gr", (t.y + 1) + " / span " + t.h);
+    const tl = tilePos(t);
+    tile.style.setProperty("--gc", (tl.x + 1) + " / span " + tl.w);
+    tile.style.setProperty("--gr", (tl.y + 1) + " / span " + tl.h);
     const card = document.createElement("div"); card.className = "card";
     const content = document.createElement("div"); content.className = "content";
     try { W.render(t, content); } catch (e) { content.textContent = "Erro no widget."; }
@@ -2349,61 +2350,88 @@ function renderPainel(canvas, hint) {
 /* ===== 10) Edição de widgets (admin/gestor) ===== */
 function addWidget(type) {
   const W = WIDGETS[type]; if (!W) return;
-  const t = { id: uid(), type, x: 0, y: bottomRow(), w: W.w * RES, h: W.h * RES, props: JSON.parse(JSON.stringify(W.defaults || {})) };
-  space().tiles.push(t); save(); pushHist("Adicionou " + (W.name || "widget")); route();
+  const sp = space();
+  const dbottom = sp.tiles.reduce((m, t) => Math.max(m, t.y + t.h), 0); // fundo desktop sempre
+  const t = { id: uid(), type, x: 0, y: dbottom, w: W.w * RES, h: W.h * RES, props: JSON.parse(JSON.stringify(W.defaults || {})) };
+  if (deviceView !== "desktop") {
+    // Também cria posição inicial para o device atual
+    if (!sp._layouts) sp._layouts = {};
+    if (!sp._layouts[deviceView]) sp._layouts[deviceView] = {};
+    sp._layouts[deviceView][t.id] = { x: 0, y: bottomRow(), w: W.w * RES, h: W.h * RES };
+  }
+  sp.tiles.push(t); save(); pushHist("Adicionou " + (W.name || "widget")); route();
 }
-function bottomRow() { return space().tiles.reduce((m, t) => Math.max(m, t.y + t.h), 0); }
+function bottomRow() { return space().tiles.reduce((m, t) => { const p = tilePos(t); return Math.max(m, p.y + p.h); }, 0); }
 async function removeTile(id) {
   if (!(await confirmDialog("Excluir este widget?"))) return;
   const sp = space(); const t = sp.tiles.find(x => x.id === id);
   if (t) { state.trash = state.trash || []; state.trash.unshift({ tile: JSON.parse(JSON.stringify(t)), space: sp.name, at: Date.now() }); if (state.trash.length > 40) state.trash.pop(); }
   sp.tiles = sp.tiles.filter(x => x.id !== id);
+  if (sp._layouts) { ["mobile","tablet"].forEach(lk => { if (sp._layouts[lk]) delete sp._layouts[lk][id]; }); }
   save(); pushHist("Removeu widget"); route();
 }
 
 function cellSize() { const c = $("#canvas"); const gap = 14; const w = (c.clientWidth - gap * (COLS - 1)) / COLS; return { w, h: 48, gap }; }
-function _xOverlap(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x; }
-/* Empurra os outros widgets para baixo para não sobrepor o widget fixo (arrastado) */
-function reflowPush(tiles, fixed) {
-  const others = tiles.filter(t => t !== fixed).sort((a, b) => a.y - b.y || a.x - b.x);
+/* Reflow com posMap (device-aware): empurra tiles para baixo para não sobrepor o fixed */
+function reflowPushMap(tiles, fixed, posMap) {
+  const others = tiles.filter(t => t !== fixed).sort((a, b) => posMap[a.id].y - posMap[b.id].y || posMap[a.id].x - posMap[b.id].x);
   const placed = [fixed];
   for (const t of others) {
-    let y = t.y, moved = true, guard = 0;
+    const { x: tx, w: tw, h: th } = posMap[t.id];
+    let y = posMap[t.id].y, moved = true, guard = 0;
     while (moved && guard++ < 120) {
       moved = false;
       for (const q of placed) {
-        if (_xOverlap(t, q) && y < q.y + q.h && y + t.h > q.y) { y = q.y + q.h; moved = true; }
+        const qp = posMap[q.id];
+        if (tx < qp.x + qp.w && tx + tw > qp.x && y < qp.y + qp.h && y + th > qp.y) { y = qp.y + qp.h; moved = true; }
       }
     }
-    t.y = y; placed.push(t);
+    posMap[t.id] = { ...posMap[t.id], y }; placed.push(t);
   }
 }
 function enableDrag(tile, card, t) {
   card.addEventListener("pointerdown", e => {
     if (e.target.closest(".tbar,.thandle,.para-edit") || !editMode) return;
     e.preventDefault();
-    const cs = cellSize(); const sx = e.clientX, sy = e.clientY, ox = t.x, oy = t.y;
+    const cs = cellSize(); const sx = e.clientX, sy = e.clientY;
     const tiles = space().tiles;
-    const orig = {}; tiles.forEach(x => orig[x.id] = { x: x.x, y: x.y });
+    // posMap: posições atuais do device para todos os tiles
+    const posMap = {}; tiles.forEach(x => { posMap[x.id] = { ...tilePos(x) }; });
+    const origMap = {}; tiles.forEach(x => { origMap[x.id] = { ...posMap[x.id] }; });
+    const ox = posMap[t.id].x, oy = posMap[t.id].y, tw = posMap[t.id].w;
     const els = {}; document.querySelectorAll("#canvas .tile").forEach(el => els[el.dataset.id] = el);
     tile.classList.add("dragging"); card.setPointerCapture(e.pointerId);
-    const applyAll = () => tiles.forEach(x => { const el = els[x.id]; if (el) { el.style.setProperty("--gc", (x.x + 1) + " / span " + x.w); el.style.setProperty("--gr", (x.y + 1) + " / span " + x.h); } });
+    const applyAll = () => tiles.forEach(x => { const el = els[x.id]; const p = posMap[x.id]; if (el) { el.style.setProperty("--gc", (p.x + 1) + " / span " + p.w); el.style.setProperty("--gr", (p.y + 1) + " / span " + p.h); } });
     const mv = ev => {
-      t.x = clamp(ox + Math.round((ev.clientX - sx) / (cs.w + cs.gap)), 0, COLS - t.w);
-      t.y = Math.max(0, oy + Math.round((ev.clientY - sy) / (cs.h + cs.gap)));
-      tiles.forEach(x => { if (x !== t) { x.x = orig[x.id].x; x.y = orig[x.id].y; } });
-      reflowPush(tiles, t);
+      posMap[t.id].x = clamp(ox + Math.round((ev.clientX - sx) / (cs.w + cs.gap)), 0, COLS - tw);
+      posMap[t.id].y = Math.max(0, oy + Math.round((ev.clientY - sy) / (cs.h + cs.gap)));
+      tiles.forEach(x => { if (x !== t) posMap[x.id] = { ...origMap[x.id] }; });
+      reflowPushMap(tiles, t, posMap);
       applyAll();
     };
-    const up = () => { card.removeEventListener("pointermove", mv); card.removeEventListener("pointerup", up); tile.classList.remove("dragging"); save(); pushHist("Moveu widget"); route(); };
+    const up = () => {
+      card.removeEventListener("pointermove", mv); card.removeEventListener("pointerup", up);
+      tile.classList.remove("dragging");
+      tiles.forEach(x => saveTilePos(x, posMap[x.id]));
+      save(); pushHist("Moveu widget"); route();
+    };
     card.addEventListener("pointermove", mv); card.addEventListener("pointerup", up);
   });
 }
 function enableResize(tile, handle, t) {
   handle.addEventListener("pointerdown", e => {
-    e.preventDefault(); e.stopPropagation(); const cs = cellSize(); const sx = e.clientX, sy = e.clientY, ow = t.w, oh = t.h;
+    e.preventDefault(); e.stopPropagation();
+    const cs = cellSize(); const sx = e.clientX, sy = e.clientY;
+    const initPos = { ...tilePos(t) }; // snapshot da posição do device atual
+    const ow = initPos.w, oh = initPos.h;
     tile.classList.add("resizing"); handle.setPointerCapture(e.pointerId);
-    const mv = ev => { t.w = clamp(ow + Math.round((ev.clientX - sx) / (cs.w + cs.gap)), 1, COLS - t.x); t.h = Math.max(1, oh + Math.round((ev.clientY - sy) / (cs.h + cs.gap))); tile.style.setProperty("--gc", (t.x + 1) + " / span " + t.w); tile.style.setProperty("--gr", (t.y + 1) + " / span " + t.h); };
+    const mv = ev => {
+      const nw = clamp(ow + Math.round((ev.clientX - sx) / (cs.w + cs.gap)), 1, COLS - initPos.x);
+      const nh = Math.max(1, oh + Math.round((ev.clientY - sy) / (cs.h + cs.gap)));
+      saveTilePos(t, { ...initPos, w: nw, h: nh });
+      tile.style.setProperty("--gc", (initPos.x + 1) + " / span " + nw);
+      tile.style.setProperty("--gr", (initPos.y + 1) + " / span " + nh);
+    };
     const up = () => { handle.removeEventListener("pointermove", mv); handle.removeEventListener("pointerup", up); tile.classList.remove("resizing"); save(); pushHist("Redimensionou widget"); };
     handle.addEventListener("pointermove", mv); handle.addEventListener("pointerup", up);
   });
@@ -2433,8 +2461,16 @@ function abrirMenuWidget(e, t) {
   setTimeout(() => { document.addEventListener("click", close, true); document.addEventListener("contextmenu", close, true); }, 0);
 }
 function duplicarTile(t) {
-  const nt = JSON.parse(JSON.stringify(t)); nt.id = uid(); nt.x = 0; nt.y = bottomRow();
-  space().tiles.push(nt); save(); pushHist("Duplicou widget"); route();
+  const sp = space();
+  const nt = JSON.parse(JSON.stringify(t)); nt.id = uid();
+  const dbottom = sp.tiles.reduce((m, x) => Math.max(m, x.y + x.h), 0);
+  nt.x = 0; nt.y = dbottom;
+  if (deviceView !== "desktop") {
+    if (!sp._layouts) sp._layouts = {};
+    if (!sp._layouts[deviceView]) sp._layouts[deviceView] = {};
+    sp._layouts[deviceView][nt.id] = { x: 0, y: bottomRow(), w: tilePos(t).w, h: tilePos(t).h };
+  }
+  sp.tiles.push(nt); save(); pushHist("Duplicou widget"); route();
 }
 function moverTile(t, spaceId) {
   const dest = state.spaces.find(s => s.id === spaceId); if (!dest) return;
@@ -2655,7 +2691,7 @@ function paintTools() {
   $("#bellBtn").style.display = me ? "" : "none";
   const pv = $("#previewBtn");
   if (pv) {
-    pv.style.display = (canEditReal && view === "painel") ? "" : "none";
+    pv.style.display = (canEditReal && view === "painel" && window.innerWidth > 900) ? "" : "none";
     pv.classList.toggle("on", previewCliente);
     pv.textContent = previewCliente ? "✕ Sair da prévia" : "👁 Ver como cliente";
   }
@@ -2664,7 +2700,7 @@ function paintTools() {
   $("#undoBtn").style.display = histOn ? "" : "none";
   $("#redoBtn").style.display = histOn ? "" : "none";
   $("#histBtn").style.display = histOn ? "" : "none";
-  $("#deviceBtn").style.display = (isAdmin && inPainel) ? "" : "none";
+  $("#deviceBtn").style.display = (isAdmin && inPainel && window.innerWidth > 900) ? "" : "none";
   applyDevice();
   if (histOn) updateHistButtons();
   $("#addBtn").style.display = (inPainel && canEdit && editMode) ? "" : "none";
@@ -4063,7 +4099,7 @@ async function excluirCliente() {
 
 /* ===== 14) Topbar ===== */
 /* ===== Item 4: visualização responsiva (desktop/tablet/celular) — admin ===== */
-let deviceView = "desktop";
+let deviceView = window.innerWidth <= 520 ? "mobile" : (window.innerWidth <= 900 ? "tablet" : "desktop");
 const DEV_ICON = { desktop: "🖥", tablet: "📲", mobile: "📱" };
 const DEV_NOME = { desktop: "Desktop", tablet: "Tablet", mobile: "Celular" };
 function applyDevice() {
@@ -4080,7 +4116,21 @@ function cycleDevice() {
   const order = ["desktop", "tablet", "mobile"];
   deviceView = order[(order.indexOf(deviceView) + 1) % 3];
   applyDevice();
+  route(); // re-renderiza com posições do novo device
   toast("Visualização: " + DEV_NOME[deviceView] + " " + DEV_ICON[deviceView]);
+}
+/* Posição do tile no device atual: lê de space._layouts[device] ou cai no desktop */
+function tilePos(t) {
+  try { const sp = space(); if (sp && sp._layouts && sp._layouts[deviceView] && sp._layouts[deviceView][t.id]) return sp._layouts[deviceView][t.id]; } catch(_) {}
+  return { x: t.x, y: t.y, w: t.w, h: t.h };
+}
+/* Salva posição do tile no device atual */
+function saveTilePos(t, pos) {
+  if (deviceView === "desktop") { t.x = pos.x; t.y = pos.y; t.w = pos.w; t.h = pos.h; return; }
+  const sp = space();
+  if (!sp._layouts) sp._layouts = {};
+  if (!sp._layouts[deviceView]) sp._layouts[deviceView] = {};
+  sp._layouts[deviceView][t.id] = { x: pos.x, y: pos.y, w: pos.w, h: pos.h };
 }
 
 /* ===== Item 8: renomear menus (rótulos por cliente) — admin ===== */
