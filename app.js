@@ -1582,7 +1582,7 @@ function route() {
   const canvas = $("#canvas"), hint = $("#emptyHint");
   canvas.style.display = "none"; hint.style.display = "none";
   canvas.innerHTML = ""; hint.innerHTML = "";
-  hint.style.background = ""; // reset — project tabs set this to var(--bg)
+  hint.style.background = ""; hint.className = "empty-hint"; // reset — project tabs adicionam proj-content
   const spTabs = $("#spaceTabs"); if (spTabs) { spTabs.style.display = "none"; spTabs.innerHTML = ""; }
   $("#crumb").innerHTML = "";
 
@@ -2173,8 +2173,8 @@ function renderProjeto(canvas, hint) {
     '<button class="sntab' + (projTab === k ? " on" : "") + '" onclick="setProjTab(\'' + k + '\')">' + l + '</button>').join("") +
     (canEdit ? '<button class="sntab sn-edit" title="Renomear menus deste cliente" onclick="renomearMenus()">🏷</button>' : "");
 
-  // Abas de conteúdo precisam de fundo sólido quando o projeto tem background customizado
-  if (projTab !== "painel" && projTab !== "admin") hint.style.background = "var(--bg)";
+  // Abas de conteúdo: card flutuante com cantos arredondados sobre o fundo do projeto
+  if (projTab !== "painel" && projTab !== "admin") hint.className = "empty-hint proj-content";
 
   if (projTab === "gestao" && canEdit) return renderGestao(canvas, hint);
   if (projTab === "materiais") return renderMateriais(canvas, hint);

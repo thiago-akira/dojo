@@ -650,6 +650,9 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 
 /* ===== Páginas (console / detalhe) — usam #emptyHint como container ===== */
 .empty-hint .page{max-width:1080px;margin:0 auto;text-align:left;padding:8px 2px}
+/* Abas de projeto (Materiais/Mensagens/etc.): card flutuando sobre o fundo */
+.proj-content{padding:14px 16px}
+.proj-content .page{padding:22px 26px;background:var(--surface);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);box-sizing:border-box}
 .page-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
 .page-head h2{margin:0;font-size:21px;letter-spacing:-.4px}
 .muted-note{color:var(--muted);font-size:14px;line-height:1.6}
