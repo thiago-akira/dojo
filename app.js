@@ -23,10 +23,20 @@ function applyPrefs() {
   root.setAttribute("data-theme", prefs.theme || "escuro");
   root.classList.toggle("hc", !!prefs.contrast);
   document.body.style.zoom = (prefs.fontScale || 100) / 100;
-  const b = prefs.bg || { type: "none" };
+  const b = getProjBg();
   if (b.type === "solid" || b.type === "gradient") document.body.style.background = b.value || "";
   else if (b.type === "photo" && b.value) document.body.style.background = "#0f0f14 url('" + String(b.value).replace(/['"\\]/g, "") + "') center/cover fixed";
   else document.body.style.background = "";
+}
+/* Fundo POR PROJETO, por usuário (item 6) — localStorage por projeto */
+function getProjBg() {
+  if (!curProjeto) return { type: "none" };
+  try { return JSON.parse(localStorage.getItem("dojo_bg_" + curProjeto.id) || '{"type":"none"}'); } catch (e) { return { type: "none" }; }
+}
+function setProjBg(bg) {
+  if (!curProjeto) { toast("Abra um projeto para definir o fundo."); return; }
+  localStorage.setItem("dojo_bg_" + curProjeto.id, JSON.stringify(bg || { type: "none" }));
+  applyPrefs();
 }
 const GRADIENTES = [
   "linear-gradient(135deg,#1a1b2e,#2d1b3d)", "linear-gradient(135deg,#0f2027,#203a43,#2c5364)",
@@ -44,7 +54,7 @@ function abrirPersonalizar() {
   const canExport = canEdit && curProjeto;
   openModal('<h3>⚙ Personalizar</h3>' +
     '<div class="pz-sec"><div class="pz-sec-tit">🎨 Tema</div><div class="theme-grid">' + themeBtns + '</div></div>' +
-    '<div class="pz-sec"><div class="pz-sec-tit">🖼 Plano de fundo</div><div class="bg-grid">' +
+    '<div class="pz-sec"><div class="pz-sec-tit">🖼 Plano de fundo <span class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:11px">(só deste projeto)</span></div><div class="bg-grid">' +
       '<button class="bg-opt" data-bg="none">Nenhum</button><button class="bg-opt" data-bg="gradient">Degradê</button>' +
       '<button class="bg-opt" data-bg="solid">Cor sólida</button><button class="bg-opt" data-bg="foto">🎲 Foto aleatória</button>' +
       '<button class="bg-opt" data-bg="link">Link/Upload</button></div>' +
@@ -60,18 +70,18 @@ function abrirPersonalizar() {
       m.querySelectorAll(".theme-opt").forEach(b => b.onclick = () => { prefs.theme = b.dataset.theme; savePrefs(); applyPrefs(); m.querySelectorAll(".theme-opt").forEach(x => x.classList.toggle("on", x === b)); });
       const gradRow = m.querySelector("#gradRow"), bgExtra = m.querySelector("#bgExtra");
       const markBg = t => m.querySelectorAll(".bg-opt").forEach(x => x.classList.toggle("on", x.dataset.bg === t));
-      const sortearFoto = () => { const seed = "d" + Math.random().toString(36).slice(2, 9); prefs.bg = { type: "photo", value: "https://picsum.photos/seed/" + seed + "/1600/900" }; savePrefs(); applyPrefs(); };
-      const uploadFundo = file => { if (!file) return; if (file.size > 1600000) { toast("Imagem grande demais (máx ~1.5MB). Use um link."); return; } const r = new FileReader(); r.onload = () => { prefs.bg = { type: "photo", value: r.result }; savePrefs(); applyPrefs(); }; r.readAsDataURL(file); };
+      const sortearFoto = () => { const seed = "d" + Math.random().toString(36).slice(2, 9); setProjBg({ type: "photo", value: "https://picsum.photos/seed/" + seed + "/1600/900" }); };
+      const uploadFundo = file => { if (!file) return; if (file.size > 1600000) { toast("Imagem grande demais (máx ~1.5MB). Use um link."); return; } const r = new FileReader(); r.onload = () => { setProjBg({ type: "photo", value: r.result }); }; r.readAsDataURL(file); };
       m.querySelectorAll(".bg-opt").forEach(b => b.onclick = () => {
         const t = b.dataset.bg; gradRow.style.display = "none"; bgExtra.innerHTML = "";
-        if (t === "none") { prefs.bg = { type: "none" }; savePrefs(); applyPrefs(); markBg("none"); }
+        if (t === "none") { setProjBg({ type: "none" }); markBg("none"); }
         else if (t === "gradient") { gradRow.style.display = "flex"; markBg("gradient"); }
-        else if (t === "solid") { markBg("solid"); bgExtra.innerHTML = '<input type="color" id="bgColor" value="#1a1b2e" style="height:40px;padding:4px;width:100%">'; m.querySelector("#bgColor").oninput = e => { prefs.bg = { type: "solid", value: e.target.value }; savePrefs(); applyPrefs(); }; }
-        else if (t === "foto") { markBg("foto"); sortearFoto(); bgExtra.innerHTML = '<button class="btn sm" id="reFoto">🎲 Outra foto</button> <span class="muted-note" style="font-size:12px">salva automaticamente — clique pra manter outra</span>'; m.querySelector("#reFoto").onclick = sortearFoto; }
-        else if (t === "link") { markBg("link"); bgExtra.innerHTML = '<input id="bgUrl" placeholder="Cole o link de uma imagem…" style="width:100%"><label class="btn sm" style="cursor:pointer;margin-top:8px;display:inline-block">📁 Enviar imagem<input type="file" id="bgUpload" accept="image/*" style="display:none"></label>'; m.querySelector("#bgUrl").onchange = e => { const v = e.target.value.trim(); if (v) { prefs.bg = { type: "photo", value: v }; savePrefs(); applyPrefs(); } }; m.querySelector("#bgUpload").onchange = e => uploadFundo(e.target.files[0]); }
+        else if (t === "solid") { markBg("solid"); bgExtra.innerHTML = '<input type="color" id="bgColor" value="#1a1b2e" style="height:40px;padding:4px;width:100%">'; m.querySelector("#bgColor").oninput = e => setProjBg({ type: "solid", value: e.target.value }); }
+        else if (t === "foto") { markBg("foto"); sortearFoto(); bgExtra.innerHTML = '<button class="btn sm" id="reFoto">🎲 Outra foto</button> <span class="muted-note" style="font-size:12px">só neste projeto — clique pra outra</span>'; m.querySelector("#reFoto").onclick = sortearFoto; }
+        else if (t === "link") { markBg("link"); bgExtra.innerHTML = '<input id="bgUrl" placeholder="Cole o link de uma imagem…" style="width:100%"><label class="btn sm" style="cursor:pointer;margin-top:8px;display:inline-block">📁 Enviar imagem<input type="file" id="bgUpload" accept="image/*" style="display:none"></label>'; m.querySelector("#bgUrl").onchange = e => { const v = e.target.value.trim(); if (v) setProjBg({ type: "photo", value: v }); }; m.querySelector("#bgUpload").onchange = e => uploadFundo(e.target.files[0]); }
       });
-      m.querySelectorAll(".grad-opt").forEach(b => b.onclick = () => { prefs.bg = { type: "gradient", value: GRADIENTES[+b.dataset.grad] }; savePrefs(); applyPrefs(); m.querySelectorAll(".grad-opt").forEach(x => x.classList.toggle("on", x === b)); });
-      const cur = prefs.bg || { type: "none" };
+      m.querySelectorAll(".grad-opt").forEach(b => b.onclick = () => { setProjBg({ type: "gradient", value: GRADIENTES[+b.dataset.grad] }); m.querySelectorAll(".grad-opt").forEach(x => x.classList.toggle("on", x === b)); });
+      const cur = getProjBg();
       markBg(cur.type === "photo" ? (String(cur.value).includes("picsum") ? "foto" : "link") : cur.type);
       if (cur.type === "gradient") gradRow.style.display = "flex";
       m.querySelectorAll("[data-font]").forEach(b => b.onclick = () => { let v = (prefs.fontScale || 100) + (b.dataset.font === "+" ? 10 : -10); v = Math.max(80, Math.min(160, v)); prefs.fontScale = v; savePrefs(); applyPrefs(); m.querySelector("#fontVal").textContent = v + "%"; });
@@ -1430,7 +1440,7 @@ async function loadQuestionariosPendentes(c) {
 
 /* ===== 5) Roteamento de telas ===== */
 function route() {
-  applyBrand(); paintTools();
+  applyBrand(); paintTools(); applyPrefs();
   const canvas = $("#canvas"), hint = $("#emptyHint");
   canvas.style.display = "none"; hint.style.display = "none";
   canvas.innerHTML = ""; hint.innerHTML = "";
@@ -2012,7 +2022,7 @@ function renderPainel(canvas, hint) {
     spTabs.style.display = "block";
     const tabsHtml = '<div class="space-tabs">' +
       list.map(s =>
-        '<button class="space-tab' + (cur && s.id === cur.id ? " on" : "") + '" onclick="setSpace(\'' + s.id + '\')">' + esc(s.name) + '</button>'
+        '<button class="space-tab' + (cur && s.id === cur.id ? " on" : "") + '"' + (canEdit ? ' data-sid="' + s.id + '"' : '') + ' onclick="setSpace(\'' + s.id + '\')">' + esc(s.name) + '</button>'
       ).join("") +
       (canEdit ? '<button class="space-tab sp-add" title="Adicionar aba" onclick="addSpace()">＋ Aba</button>' : '') +
       '</div>';
@@ -2024,6 +2034,7 @@ function renderPainel(canvas, hint) {
         '</div>'
       : '';
     spTabs.innerHTML = tabsHtml + ctrlHtml;
+    if (canEdit) attachTabReorder();
   }
 
   canvas.style.display = "grid";
@@ -2043,6 +2054,7 @@ function renderPainel(canvas, hint) {
     try { W.render(t, content); } catch (e) { content.textContent = "Erro no widget."; }
     card.appendChild(content);
     if (editMode) {
+      const grip = document.createElement("div"); grip.className = "tgrip"; grip.title = "Arrastar"; grip.textContent = "⠿"; card.appendChild(grip);
       const bar = document.createElement("div"); bar.className = "tbar";
       bar.innerHTML = '<button title="Configurar">⚙</button><button title="Excluir">✕</button>';
       bar.children[0].onclick = e => { e.stopPropagation(); widgetSettings(t); };
@@ -2057,6 +2069,7 @@ function renderPainel(canvas, hint) {
       cbtn.onclick = e => { e.stopPropagation(); abrirComentariosPainel(t.id); };
       card.appendChild(cbtn);
     }
+    if (canEdit) tile.oncontextmenu = e => { e.preventDefault(); abrirMenuWidget(e, t); };
     tile.appendChild(card); canvas.appendChild(tile);
   });
   if (!editMode) { decorateItemComments(); refreshComentarioMarcadores(tiles.map(t => t.id)); }
@@ -2098,6 +2111,62 @@ function enableResize(tile, handle, t) {
   });
 }
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+/* Menu de contexto (botão direito) nos widgets — item 5 */
+function abrirMenuWidget(e, t) {
+  const ex = document.getElementById("widgetMenu"); if (ex) ex.remove();
+  const spaces = spacesFor(panelCtx()).filter(s => s.id !== curSpaceId);
+  let html = '<button class="ctx-it" data-a="editar">✏ Editar</button>' +
+    '<button class="ctx-it" data-a="duplicar">⧉ Duplicar</button>';
+  if (spaces.length) html += '<div class="ctx-sub-h">Mover para aba</div>' + spaces.map(s => '<button class="ctx-it ctx-mv" data-mv="' + s.id + '">➡ ' + esc(s.name) + '</button>').join("");
+  html += '<button class="ctx-it ctx-del" data-a="excluir">🗑 Excluir</button>';
+  const menu = document.createElement("div"); menu.id = "widgetMenu"; menu.className = "ctx-menu"; menu.innerHTML = html;
+  document.body.appendChild(menu);
+  menu.style.left = Math.min(e.clientX, window.innerWidth - menu.offsetWidth - 8) + "px";
+  menu.style.top = Math.min(e.clientY, window.innerHeight - menu.offsetHeight - 8) + "px";
+  const close = () => { menu.remove(); document.removeEventListener("click", close, true); document.removeEventListener("contextmenu", close, true); };
+  menu.querySelectorAll(".ctx-it").forEach(b => b.onclick = () => {
+    const a = b.dataset.a, mv = b.dataset.mv; close();
+    if (a === "editar") widgetSettings(t);
+    else if (a === "duplicar") duplicarTile(t);
+    else if (a === "excluir") removeTile(t.id);
+    else if (mv) moverTile(t, mv);
+  });
+  setTimeout(() => { document.addEventListener("click", close, true); document.addEventListener("contextmenu", close, true); }, 0);
+}
+function duplicarTile(t) {
+  const nt = JSON.parse(JSON.stringify(t)); nt.id = uid(); nt.x = 0; nt.y = bottomRow();
+  space().tiles.push(nt); save(); pushHist("Duplicou widget"); route();
+}
+function moverTile(t, spaceId) {
+  const dest = state.spaces.find(s => s.id === spaceId); if (!dest) return;
+  space().tiles = space().tiles.filter(x => x.id !== t.id);
+  const nt = JSON.parse(JSON.stringify(t)); nt.x = 0; nt.y = (dest.tiles || []).reduce((m, x) => Math.max(m, x.y + x.h), 0);
+  dest.tiles = dest.tiles || []; dest.tiles.push(nt);
+  save(); pushHist("Moveu para outra aba"); route(); toast('Movido para "' + dest.name + '".');
+}
+
+/* Arrastar abas para reordenar — item 5 */
+function attachTabReorder() {
+  let dragId = null;
+  document.querySelectorAll('#spaceTabs .space-tab[data-sid]').forEach(el => {
+    el.draggable = true;
+    el.ondragstart = e => { dragId = el.dataset.sid; el.classList.add("sp-dragging"); e.dataTransfer.effectAllowed = "move"; };
+    el.ondragend = () => { dragId = null; el.classList.remove("sp-dragging"); };
+    el.ondragover = e => { e.preventDefault(); el.classList.add("sp-over"); };
+    el.ondragleave = () => el.classList.remove("sp-over");
+    el.ondrop = e => {
+      e.preventDefault(); el.classList.remove("sp-over");
+      const targetId = el.dataset.sid;
+      if (!dragId || dragId === targetId) return;
+      const arr = state.spaces;
+      const from = arr.findIndex(s => s.id === dragId), to = arr.findIndex(s => s.id === targetId);
+      if (from < 0 || to < 0) return;
+      const [moved] = arr.splice(from, 1); arr.splice(to, 0, moved);
+      save(); pushHist("Reordenou abas"); route();
+    };
+  });
+}
 
 function widgetSettings(t) {
   const W = WIDGETS[t.type];
