@@ -2241,7 +2241,9 @@ function paintTools() {
   $("#addBtn").style.display = (inPainel && canEdit && editMode) ? "" : "none";
   $("#editBtn").classList.toggle("on", editMode);
   $("#editBtn").textContent = editMode ? "✓ Concluir" : "✏ Editar";
-  $("#authBtn").textContent = me ? (me.nome || me.email || "Conta") : "Entrar";
+  const _ab = $("#authBtn"), _av = me && me.perfil && me.perfil.avatar;
+  if (me) _ab.innerHTML = (_av ? '<img class="ab-av" src="' + escAttr(_av) + '">' : '') + esc(me.nome || me.email || "Conta");
+  else _ab.textContent = "Entrar";
   document.body.classList.toggle("edit", editMode && inPainel);
 }
 function irConsole() { unsubscribeRealtime(); previewCliente = false; consoleTab = "clientes"; view = "console"; route(); }
@@ -2308,13 +2310,67 @@ function onFormRealtime() {
 }
 
 /* ===== 13) Autenticação ===== */
+/* Campos que contam para a barra de completude do perfil */
+const PERFIL_CAMPOS = ["nome", "avatar", "cargo", "nascimento", "telefone", "cidade", "uf"];
+function perfilPct(p) {
+  const o = Object.assign({ nome: me && me.nome }, p || {});
+  const ok = PERFIL_CAMPOS.filter(k => o[k] && String(o[k]).trim()).length;
+  return Math.round(ok / PERFIL_CAMPOS.length * 100);
+}
+function abrirPerfil() {
+  const p = (me && me.perfil) || {};
+  const av = p.avatar || "";
+  const ini = (me.nome || me.email || "?").split(/\s+/).map(w => w[0] || "").slice(0, 2).join("").toUpperCase();
+  openModal('<h3>👤 Meu perfil</h3>' +
+    '<div class="perfil-top"><div class="perfil-av" id="perfilAv">' + (av ? '<img src="' + escAttr(av) + '">' : esc(ini)) + '</div>' +
+    '<div style="flex:1"><div class="perfil-nome">' + esc(me.nome || me.email) + '</div><div class="muted-note" style="font-size:12px">' + esc(me.email || "") + ' · ' + (isAdmin ? "Admin" : "Cliente") + '</div>' +
+    '<div class="perfil-evo"><div class="evo-bar"><i id="perfilBar" style="width:' + perfilPct(p) + '%"></i></div><span class="evo-pct" id="perfilPctLbl">' + perfilPct(p) + '%</span></div></div></div>' +
+    '<label class="btn sm" style="cursor:pointer;display:inline-block;margin-bottom:4px">📷 Foto do avatar<input type="file" id="avUp" accept="image/*" style="display:none"></label> ' +
+    '<label class="muted-note" style="display:inline;text-transform:none;letter-spacing:0;font-weight:600;font-size:12px"> ou cole uma URL</label>' +
+    field("URL do avatar", "avatar", (av && !String(av).startsWith("data:")) ? av : "") +
+    field("Nome", "nome", me.nome || "") +
+    field("Cargo", "cargo", p.cargo || "") +
+    '<label>Data de nascimento</label><input type="date" data-k="nascimento" value="' + escAttr(p.nascimento || "") + '">' +
+    field("Telefone", "telefone", p.telefone || "") +
+    '<div style="display:flex;gap:8px"><div style="flex:1">' + field("Cidade", "cidade", p.cidade || "") + '</div><div style="width:90px">' + field("UF", "uf", p.uf || "") + '</div></div>' +
+    '<div class="pz-sec-tit" style="margin-top:18px">Senha</div>' +
+    '<input type="password" id="pwNew" placeholder="Nova senha (mín. 6)"><input type="password" id="pwConf" placeholder="Repita a nova senha" style="margin-top:8px"><button class="btn sm" id="pwBtn" style="margin-top:8px">🔑 Alterar senha</button><span id="pwMsg" class="muted-note" style="font-size:12px;margin-left:8px"></span>' +
+    '<div class="modal-actions"><button class="btn danger" data-out>Sair</button><span class="grow"></span><button class="btn" data-x>Fechar</button><button class="btn primary" data-ok>Salvar perfil</button></div>',
+    m => {
+      let avData = (av && String(av).startsWith("data:")) ? av : null;
+      const recalc = () => {
+        const vals = {}; PERFIL_CAMPOS.forEach(k => { const el = m.querySelector('[data-k="' + k + '"]'); if (el) vals[k] = el.value; });
+        vals.avatar = avData || (m.querySelector('[data-k="avatar"]') || {}).value;
+        const pct = perfilPct(vals);
+        m.querySelector("#perfilBar").style.width = pct + "%"; m.querySelector("#perfilPctLbl").textContent = pct + "%";
+      };
+      m.querySelectorAll("[data-k]").forEach(el => el.oninput = recalc);
+      m.querySelector("#avUp").onchange = e => { const f = e.target.files[0]; if (!f) return; if (f.size > 300000) { toast("Imagem grande (máx ~300KB). Use uma URL."); return; } const r = new FileReader(); r.onload = () => { avData = r.result; m.querySelector("#perfilAv").innerHTML = '<img src="' + r.result + '">'; recalc(); }; r.readAsDataURL(f); };
+      m.querySelector("#pwBtn").onclick = async () => {
+        const a = m.querySelector("#pwNew").value, b = m.querySelector("#pwConf").value, msg = m.querySelector("#pwMsg");
+        if (a.length < 6) { msg.textContent = "Mínimo 6 caracteres."; return; }
+        if (a !== b) { msg.textContent = "As senhas não conferem."; return; }
+        msg.textContent = "Salvando…";
+        const { error } = await sb.auth.updateUser({ password: a });
+        msg.textContent = error ? "Erro: " + error.message : "✓ Senha alterada!";
+        if (!error) { m.querySelector("#pwNew").value = ""; m.querySelector("#pwConf").value = ""; }
+      };
+      m.querySelector("[data-out]").onclick = async () => { await sb.auth.signOut(); closeModal(); };
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const get = k => ((m.querySelector('[data-k="' + k + '"]') || {}).value || "").trim();
+        const perfil = { avatar: avData || get("avatar"), cargo: get("cargo"), nascimento: get("nascimento"), telefone: get("telefone"), cidade: get("cidade"), uf: get("uf").toUpperCase() };
+        const nome = get("nome") || me.nome;
+        const { error } = await sb.rpc("atualizar_meu_perfil", { p_nome: nome, p_perfil: perfil });
+        if (error) { toast("Erro: " + error.message); return; }
+        me.nome = nome; me.perfil = perfil;
+        closeModal(); paintTools(); toast("Perfil salvo.");
+      };
+    });
+}
+
 function authModal() {
-  if (me) {
-    openModal('<h3>Conta</h3><p class="muted-note">' + esc(me.email || "") + ' · ' + (isAdmin ? "Administrador" : "Cliente") + '</p>' +
-      '<div class="modal-actions"><span class="grow"></span><button class="btn" data-x>Fechar</button><button class="btn danger" data-out>Sair</button></div>',
-      m => { m.querySelector("[data-x]").onclick = closeModal; m.querySelector("[data-out]").onclick = async () => { await sb.auth.signOut(); closeModal(); }; });
-    return;
-  }
+  if (me) { abrirPerfil(); return; }
   openModal(
     '<h3>Entrar no Dojo</h3>' +
     '<div class="tabs"><button class="tab on" data-tab="in">Entrar</button><button class="tab" data-tab="up">Criar conta</button></div>' +
