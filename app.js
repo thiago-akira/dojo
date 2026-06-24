@@ -970,6 +970,7 @@ async function abrirProjeto(id) {
   await loadPainel(id);
   const vis = visibleSpaces();
   curSpaceId = vis.length ? vis[0].id : (state.spaces[0] && state.spaces[0].id) || null;
+  subscribeRealtime(id);
   view = "painel"; projTab = "painel"; editMode = false; route();
 }
 
@@ -1201,9 +1202,37 @@ function paintTools() {
   $("#authBtn").textContent = me ? (me.nome || me.email || "Conta") : "Entrar";
   document.body.classList.toggle("edit", editMode && inPainel);
 }
-function irConsole() { view = "console"; route(); }
-function irMeusProjetos() { consoleTab = "meus-projetos"; view = "console"; route(); }
+function irConsole() { unsubscribeRealtime(); view = "console"; route(); }
+function irMeusProjetos() { unsubscribeRealtime(); consoleTab = "meus-projetos"; view = "console"; route(); }
 function switchConsoleTab(tab) { consoleTab = tab; route(); }
+
+/* ===== Realtime: mensagens, aprovações e comentários ao vivo ===== */
+let _rtChannel = null, _rtTimer = null;
+function subscribeRealtime(projetoId) {
+  unsubscribeRealtime();
+  if (!projetoId) return;
+  _rtChannel = sb.channel("proj-" + projetoId)
+    .on("postgres_changes", { event: "*", schema: "public", table: "mensagens", filter: "projeto_id=eq." + projetoId }, onRealtime)
+    .on("postgres_changes", { event: "*", schema: "public", table: "aprovacoes", filter: "projeto_id=eq." + projetoId }, onRealtime)
+    .on("postgres_changes", { event: "*", schema: "public", table: "comentarios" }, onRealtime)
+    .subscribe();
+}
+function unsubscribeRealtime() {
+  if (_rtChannel) { sb.removeChannel(_rtChannel); _rtChannel = null; }
+  clearTimeout(_rtTimer);
+}
+function onRealtime() {
+  if (view !== "painel") return;
+  // só re-renderiza abas que mostram dados ao vivo
+  if (!["mensagens", "aprovacoes", "painel"].includes(projTab)) return;
+  // não atrapalhar quem está digitando: adia enquanto um campo está focado
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === "TEXTAREA" || ae.tagName === "INPUT" || ae.isContentEditable)) {
+    clearTimeout(_rtTimer); _rtTimer = setTimeout(onRealtime, 2500); return;
+  }
+  clearTimeout(_rtTimer);
+  _rtTimer = setTimeout(() => { if (view === "painel") route(); }, 200);
+}
 
 /* ===== 13) Autenticação ===== */
 function authModal() {
@@ -1262,7 +1291,7 @@ function authModal() {
 
 /* Carrega o perfil e decide a rota inicial conforme o papel */
 async function onSession(session) {
-  if (!session) { me = null; isAdmin = false; view = "login"; route(); return; }
+  if (!session) { unsubscribeRealtime(); me = null; isAdmin = false; view = "login"; route(); return; }
   const { data: pessoa } = await sb.from("pessoas").select("*").eq("id", session.user.id).maybeSingle();
   me = pessoa || { id: session.user.id, email: session.user.email, nome: session.user.email };
   isAdmin = !!(pessoa && pessoa.is_admin);
