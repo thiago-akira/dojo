@@ -4179,12 +4179,28 @@ function wireTopbar() {
 /* ===== Boot ===== */
 /* IMPORTANTE: não chamar `await sb.from(...)` dentro do callback de
    onAuthStateChange (deadlock no lock interno). Adiamos com setTimeout(0).
-   O evento INITIAL_SESSION já entrega a sessão persistida no load. */
+
+   NÃO confiar no INITIAL_SESSION para restaurar a sessão: em hard-refresh
+   (Ctrl+Shift+R) ele pode disparar com session=null antes do storage/lock
+   resolver, derrubando o usuário para a tela de login mesmo logado.
+   Em vez disso, fazemos bootstrap explícito com getSession(), que lê o
+   storage de forma confiável e renova o token se necessário. */
 applyPrefs();
 wireTopbar();
+
+let _authBooted = false;
+
+// Eventos subsequentes: login, logout, renovação de token, update de usuário.
+// INITIAL_SESSION é ignorado aqui — quem cuida da carga inicial é o getSession() abaixo.
 sb.auth.onAuthStateChange((event, session) => {
-  // Ignora null intermediário durante renovação de token (TOKEN_REFRESHED chega com session válida)
-  // Só SIGNED_OUT e INITIAL_SESSION(null) indicam "sem sessão real"
-  if (!session && event !== "SIGNED_OUT" && event !== "INITIAL_SESSION") return;
+  if (event === "INITIAL_SESSION") return;
+  // Ignora null transitório (ex.: TOKEN_REFRESHED momentâneo); só SIGNED_OUT desloga de fato.
+  if (!session && event !== "SIGNED_OUT") return;
+  _authBooted = true;
   setTimeout(() => onSession(session), 0);
 });
+
+// Bootstrap robusto da sessão persistida.
+sb.auth.getSession()
+  .then(({ data }) => { if (_authBooted) return; _authBooted = true; onSession(data.session || null); })
+  .catch(() => { if (!_authBooted) { _authBooted = true; onSession(null); } });
