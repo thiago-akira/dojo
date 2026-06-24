@@ -21,14 +21,22 @@ let view = "login";            // login | console | cliente | painel
 let curCliente = null;         // {id, nome, empresa, marca, ...}
 let curProjeto = null;         // {id, nome, ...}
 let myMembro = null;           // linha de `membros` do usuário no projeto atual (null se admin)
-let canEdit = false;           // true para admin ou gestor do projeto
+let canEdit = false;           // EFETIVO (considera a prévia de cliente)
+let canEditReal = false;       // valor real (admin ou gestor do projeto)
+let previewCliente = false;    // admin vendo "como o cliente vê"
 let editMode = false;
 let projTab = "painel";        // painel | gestao | mensagens
 let consoleTab = "clientes";   // clientes | meus-projetos
 let curSpaceId = null;         // id do espaço (aba de painel) ativo
 
+/* Em prévia, simula um cliente padrão (vê documentos e mensagens; sem perms elevadas) */
+const PREVIEW_PERMS = { pode_ver_documentos: true, pode_enviar_mensagens: true, pode_marcar_reunioes: false, pode_adicionar_pessoas: false };
+/* Admin "atuante": false quando ele está na prévia de cliente */
+function actingAdmin() { return isAdmin && !previewCliente; }
+
 /* Checa flag de permissão do membro atual. Admin e gestores têm tudo. */
 function perm(flag) {
+  if (previewCliente) return !!PREVIEW_PERMS[flag];
   if (isAdmin || canEdit) return true;
   return !!(myMembro && myMembro[flag]);
 }
@@ -45,7 +53,7 @@ function space() {
 }
 /* Espaços visíveis para o usuário atual (admin vê tudo; cliente só vê compartilhados) */
 function visibleSpaces() {
-  return (state.spaces || []).filter(s => isAdmin || s.visibility !== "interno");
+  return (state.spaces || []).filter(s => actingAdmin() || s.visibility !== "interno");
 }
 /* Contexto do painel atual: "interno" (aba Admin, só você) ou "shared" (aba Painel, cliente vê) */
 function panelCtx() { return projTab === "admin" ? "interno" : "shared"; }
@@ -1483,13 +1491,15 @@ async function abrirProjeto(id) {
   curProjeto = data;
   curCliente = data.clientes || curCliente;
   brand = Object.assign({ titulo: "Dojo", cor: "#e8a33d", logoUrl: "" }, (curCliente && curCliente.marca) || {});
+  previewCliente = false; // sempre abre no modo real
   if (isAdmin) {
-    canEdit = true; myMembro = null;
+    canEditReal = true; myMembro = null;
   } else {
     const { data: mb } = await sb.from("membros").select("*").eq("projeto_id", id).eq("pessoa_id", me.id).maybeSingle();
     myMembro = mb || null;
-    canEdit = !!(mb && mb.papel === "gestor");
+    canEditReal = !!(mb && mb.papel === "gestor");
   }
+  canEdit = canEditReal;
   await loadPainel(id);
   const vis = visibleSpaces();
   curSpaceId = vis.length ? vis[0].id : (state.spaces[0] && state.spaces[0].id) || null;
@@ -1529,8 +1539,9 @@ function renderProjeto(canvas, hint) {
     $("#crumb").innerHTML = '<span class="cr-cur">' + esc(curProjeto.nome) + '</span>';
   }
 
-  const tabs = [["painel", "📋 Painel"]];
+  const tabs = [];
   if (canEdit) tabs.push(["admin", "🔒 Admin"]);
+  tabs.push(["painel", "📋 Painel"]);
   if (canEdit) tabs.push(["gestao", "🗂 Gestão interna"]);
   else tabs.push(["materiais", "📎 Materiais"]);
   tabs.push(["aprovacoes", "✅ Aprovações"], ["questionarios", "📝 Questionários"],
@@ -1554,6 +1565,19 @@ function setProjTab(t) {
   projTab = t;
   if (t === "painel" || t === "admin") {
     const list = spacesFor(t === "admin" ? "interno" : "shared");
+    curSpaceId = list.length ? list[0].id : null;
+  }
+  route();
+}
+
+/* Admin alterna entre o modo real e a prévia "como o cliente vê" */
+function setPreviewCliente(on) {
+  previewCliente = !!on;
+  canEdit = canEditReal && !previewCliente;
+  editMode = false;
+  if (previewCliente && projTab === "admin") projTab = "painel"; // cliente não tem aba Admin
+  if (projTab === "painel" || projTab === "admin") {
+    const list = spacesFor(projTab === "admin" ? "interno" : "shared");
     curSpaceId = list.length ? list[0].id : null;
   }
   route();
@@ -1771,7 +1795,8 @@ function applyBrand() {
   if (inPainel && brand.logoUrl) $("#brandMark").innerHTML = '<img src="' + escAttr(brand.logoUrl) + '" style="width:100%;height:100%;object-fit:cover;border-radius:7px">';
   else $("#brandMark").textContent = "◯";
   document.documentElement.style.setProperty("--accent", (inPainel && brand.cor) ? brand.cor : "#e8a33d");
-  $("#roleBadge").textContent = me ? (isAdmin ? "ADMIN" : "CLIENTE") : "";
+  $("#roleBadge").textContent = me ? (previewCliente ? "PRÉVIA CLIENTE" : (isAdmin ? "ADMIN" : "CLIENTE")) : "";
+  $("#roleBadge").classList.toggle("preview", previewCliente);
 }
 function paintTools() {
   const inPainel = view === "painel" && (projTab === "painel" || projTab === "admin");
@@ -1779,6 +1804,12 @@ function paintTools() {
   $("#adminBtn").classList.toggle("on", view === "console" && consoleTab === "clientes");
   $("#meusBtn").style.display = isAdmin ? "" : "none";
   $("#meusBtn").classList.toggle("on", view === "console" && consoleTab === "meus-projetos");
+  const pv = $("#previewBtn");
+  if (pv) {
+    pv.style.display = (canEditReal && view === "painel") ? "" : "none";
+    pv.classList.toggle("on", previewCliente);
+    pv.textContent = previewCliente ? "✕ Sair da prévia" : "👁 Ver como cliente";
+  }
   $("#editBtn").style.display = (inPainel && canEdit) ? "" : "none";
   $("#addBtn").style.display = (inPainel && canEdit && editMode) ? "" : "none";
   $("#editBtn").classList.toggle("on", editMode);
@@ -1786,8 +1817,8 @@ function paintTools() {
   $("#authBtn").textContent = me ? (me.nome || me.email || "Conta") : "Entrar";
   document.body.classList.toggle("edit", editMode && inPainel);
 }
-function irConsole() { unsubscribeRealtime(); view = "console"; route(); }
-function irMeusProjetos() { unsubscribeRealtime(); consoleTab = "meus-projetos"; view = "console"; route(); }
+function irConsole() { unsubscribeRealtime(); previewCliente = false; view = "console"; route(); }
+function irMeusProjetos() { unsubscribeRealtime(); previewCliente = false; consoleTab = "meus-projetos"; view = "console"; route(); }
 function switchConsoleTab(tab) { consoleTab = tab; route(); }
 
 /* ===== Realtime: mensagens, aprovações e comentários ao vivo ===== */
@@ -2277,7 +2308,7 @@ async function renderQuestionarios(canvas, hint) {
     .order("created_at", { ascending: false });
 
   let myRespostasMap = {};
-  if (!isAdmin) {
+  if (!actingAdmin()) {
     const { data: rs } = await sb.from("respostas").select("questionario_id").eq("respondido_por", me.id);
     (rs || []).forEach(r => { myRespostasMap[r.questionario_id] = true; });
   } else {
@@ -2293,7 +2324,7 @@ async function renderQuestionarios(canvas, hint) {
   const cards = (qs || []).map(q => {
     const nPergs = (q.perguntas && q.perguntas[0] && q.perguntas[0].count) || 0;
     let statusEl = '';
-    if (isAdmin) {
+    if (actingAdmin()) {
       const respondentes = myRespostasMap[q.id] || [];
       const nomes = respondentes.map(p => p ? esc(p.nome || p.email || "?") : "?").join(", ");
       statusEl = '<div class="q-resp">' + (respondentes.length ? respondentes.length + ' resposta(s): ' + nomes : 'Sem respostas ainda') + '</div>';
@@ -2751,6 +2782,7 @@ function wireTopbar() {
   $("#adminBtn").onclick = irConsole;
   $("#meusBtn").onclick = irMeusProjetos;
   $("#addBtn").onclick = openPicker;
+  $("#previewBtn").onclick = () => setPreviewCliente(!previewCliente);
   $("#editBtn").onclick = () => { editMode = !editMode; route(); };
 }
 
