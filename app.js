@@ -2244,7 +2244,7 @@ function paintTools() {
   $("#authBtn").textContent = me ? (me.nome || me.email || "Conta") : "Entrar";
   document.body.classList.toggle("edit", editMode && inPainel);
 }
-function irConsole() { unsubscribeRealtime(); previewCliente = false; view = "console"; route(); }
+function irConsole() { unsubscribeRealtime(); previewCliente = false; consoleTab = "clientes"; view = "console"; route(); }
 function irMeusProjetos() { unsubscribeRealtime(); previewCliente = false; consoleTab = "meus-projetos"; view = "console"; route(); }
 function switchConsoleTab(tab) { consoleTab = tab; route(); }
 
