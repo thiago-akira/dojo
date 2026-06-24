@@ -1166,6 +1166,7 @@ async function editarFormulario(widgetId) {
     field("Título", "titulo", form.titulo || "") +
     '<label>Descrição / introdução</label><textarea data-k="descricao" style="min-height:60px">' + esc(form.descricao || "") + '</textarea>' +
     '<p class="muted-note" style="font-size:11.5px;margin:4px 0 10px;text-transform:none;letter-spacing:0;font-weight:600">' + hint + ' · <a class="lnk" style="display:inline" onclick="gerenciarCamposDinamicos(\'' + widgetId + '\')">gerenciar campos</a></p>' +
+    '<div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn sm" onclick="usarModeloForm(\'' + widgetId + '\')">📋 Usar modelo</button><button class="btn sm" onclick="salvarFormComoModelo(\'' + widgetId + '\')">💾 Salvar como modelo</button></div>' +
     '<div id="fpergList">' + (pergs || []).map(pergRow).join("") + '</div>' +
     '<button class="btn sm" style="margin-top:8px" onclick="addFormPergunta(\'' + form.id + '\',\'' + widgetId + '\')">＋ Pergunta</button>' +
     '<div class="modal-actions"><span class="grow"></span><button class="btn" data-x>Fechar</button><button class="btn primary" data-ok>Salvar</button></div>',
@@ -3090,13 +3091,68 @@ async function renderQuestionarios(canvas, hint) {
       (canEdit ? '<div class="q-admin-actions">' +
         '<button class="lnk" onclick="editarQuestionario(\'' + q.id + '\')">editar perguntas</button>' +
         '<button class="lnk" onclick="toggleQStatus(\'' + q.id + '\',\'' + q.status + '\')">' + (q.status === 'aberto' ? 'fechar' : 'reabrir') + '</button>' +
+        '<button class="lnk" onclick="salvarComoModelo(\'' + q.id + '\')">salvar como modelo</button>' +
         '<button class="lnk del" onclick="delQuestionario(\'' + q.id + '\')">excluir</button></div>' : '') +
       '</div>';
   }).join("") || '<p class="muted-note">Nenhum questionário ainda.' + (canEdit ? ' Crie um para o cliente responder.' : '') + '</p>';
 
   hint.innerHTML = '<div class="page"><div class="page-head"><h2>📝 Questionários</h2>' +
-    (canEdit ? '<button class="btn primary" onclick="novoQuestionario()">＋ Novo questionário</button>' : '') +
+    (canEdit ? '<div style="display:flex;gap:8px"><button class="btn" onclick="usarModeloQuestionario()">📋 Usar modelo</button><button class="btn primary" onclick="novoQuestionario()">＋ Novo questionário</button></div>' : '') +
     '</div>' + cards + '</div>';
+}
+
+/* ===== Modelos de questionário/formulário (item 13) ===== */
+async function abrirModelos(tipo, onPick) {
+  const { data } = await sb.from("modelos").select("*").eq("tipo", tipo).order("created_at", { ascending: false });
+  const list = data || [];
+  const rows = list.length
+    ? list.map(m => '<div class="grow-row"><div class="gr-main"><span class="gr-name">' + esc(m.titulo) + ' <span class="muted-note" style="font-size:11px;text-transform:none;letter-spacing:0">' + ((m.perguntas || []).length) + ' pergunta(s)</span></span><div class="gr-actions"><button class="lnk" data-use="' + m.id + '">usar</button><button class="lnk del" data-del="' + m.id + '">excluir</button></div></div>' + (m.descricao ? '<div class="ano-prev">' + esc(m.descricao) + '</div>' : '') + '</div>').join("")
+    : '<p class="muted-note">Nenhum modelo salvo ainda. Crie um a partir de um ' + (tipo === "questionario" ? "questionário" : "formulário") + ' existente (botão “salvar como modelo”).</p>';
+  openModal('<h3>📋 Modelos</h3>' + rows + '<div class="modal-actions"><span class="grow"></span><button class="btn primary" data-x>Fechar</button></div>',
+    mm => {
+      mm.querySelector("[data-x]").onclick = closeModal;
+      mm.querySelectorAll("[data-use]").forEach(b => b.onclick = () => { const m = list.find(x => x.id === b.dataset.use); closeModal(); if (m) onPick(m); });
+      mm.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => { if (!(await confirmDialog("Excluir este modelo?"))) return; await sb.from("modelos").delete().eq("id", b.dataset.del); abrirModelos(tipo, onPick); });
+    });
+}
+async function salvarModelo(tipo, titulo, descricao, perguntas) {
+  if (!perguntas.length) { toast("Sem perguntas para salvar como modelo."); return; }
+  const { error } = await sb.from("modelos").insert({ tipo, titulo: titulo || "Modelo", descricao: descricao || null, perguntas, criado_por: me.id });
+  if (error) { toast("Erro: " + error.message); return; }
+  toast("✓ Modelo salvo.");
+}
+function _qTipo(t) { return ({ paragrafo: "texto", nota: "escala" })[t] || (["texto", "multipla", "unica", "escala"].includes(t) ? t : "texto"); }
+function usarModeloQuestionario() {
+  abrirModelos("questionario", async m => {
+    const { data: q } = await sb.from("questionarios").insert({ projeto_id: curProjeto.id, titulo: m.titulo, descricao: m.descricao, criado_por: me.id }).select().single();
+    if (!q) return;
+    const pergs = (m.perguntas || []).map((p, i) => ({ questionario_id: q.id, texto: p.texto, tipo: _qTipo(p.tipo), opcoes: p.opcoes || null, obrigatoria: !!p.obrigatoria, ordem: i }));
+    if (pergs.length) await sb.from("perguntas").insert(pergs);
+    editarQuestionario(q.id);
+  });
+}
+async function salvarComoModelo(qid) {
+  const [{ data: q }, { data: pergs }] = await Promise.all([
+    sb.from("questionarios").select("titulo,descricao").eq("id", qid).single(),
+    sb.from("perguntas").select("*").eq("questionario_id", qid).order("ordem")
+  ]);
+  await salvarModelo("questionario", q && q.titulo, q && q.descricao, (pergs || []).map(p => ({ tipo: p.tipo, texto: p.texto, opcoes: p.opcoes, obrigatoria: p.obrigatoria })));
+}
+function usarModeloForm(widgetId) {
+  abrirModelos("formulario", async m => {
+    const form = await ensureFormulario(widgetId); if (!form) return;
+    await sb.from("form_formularios").update({ titulo: m.titulo, descricao: m.descricao || null }).eq("id", form.id);
+    await sb.from("form_perguntas").delete().eq("formulario_id", form.id);
+    const pergs = (m.perguntas || []).map((p, i) => ({ formulario_id: form.id, texto: p.texto, tipo: p.tipo, opcoes: p.opcoes || null, media_url: p.media_url || null, media_tipo: p.media_tipo || null, obrigatoria: !!p.obrigatoria, ordem: i }));
+    if (pergs.length) await sb.from("form_perguntas").insert(pergs);
+    editarFormulario(widgetId);
+  });
+}
+async function salvarFormComoModelo(widgetId) {
+  const { data: form } = await sb.from("form_formularios").select("*").eq("widget_id", widgetId).maybeSingle();
+  if (!form) { toast("Configure o formulário primeiro."); return; }
+  const { data: pergs } = await sb.from("form_perguntas").select("*").eq("formulario_id", form.id).order("ordem");
+  await salvarModelo("formulario", form.titulo, form.descricao, (pergs || []).map(p => ({ tipo: p.tipo, texto: p.texto, opcoes: p.opcoes, media_url: p.media_url, media_tipo: p.media_tipo, obrigatoria: p.obrigatoria })));
 }
 
 function novoQuestionario() {
