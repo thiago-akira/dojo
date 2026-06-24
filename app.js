@@ -1151,7 +1151,7 @@ async function verRespostasFormulario(formId, widgetId) {
     '<button class="rep-tab" data-rt="ia">Resumo IA</button></div>' +
     '<div data-pane="dash">' + (dash || '<p class="muted-note">Sem perguntas.</p>') + '</div>' +
     '<div data-pane="pessoa" style="display:none">' + porPessoa + '</div>' +
-    '<div data-pane="ia" style="display:none"><div class="ia-box"><p class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600">O resumo com IA (temas, sentimento, destaques das respostas abertas) fica disponível quando você configurar a API key da Anthropic. A estrutura já está pronta.</p><button class="btn" disabled>✨ Gerar resumo (requer API key)</button></div></div>' +
+    '<div data-pane="ia" style="display:none"><div class="ia-box" id="iaBox"><p class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600">A IA lê as respostas abertas e resume temas, sentimento e destaques.</p><button class="btn primary" onclick="gerarResumoIA(\'' + formId + '\')">✨ Gerar resumo</button></div></div>' +
     '<div class="modal-actions"><span class="grow"></span><button class="btn" data-x>Fechar</button></div>',
     m => {
       m.querySelector("[data-x]").onclick = closeModal;
@@ -1160,6 +1160,24 @@ async function verRespostasFormulario(formId, widgetId) {
         m.querySelectorAll("[data-pane]").forEach(pane => pane.style.display = pane.dataset.pane === b.dataset.rt ? "" : "none");
       });
     });
+}
+
+async function gerarResumoIA(formId) {
+  const box = document.getElementById("iaBox"); if (!box) return;
+  box.innerHTML = '<p class="muted-note">✨ Lendo as respostas e gerando o resumo…</p>';
+  const { data, error } = await sb.functions.invoke("resumo-ia", { body: { formulario_id: formId } });
+  let errMsg = null;
+  if (error) { errMsg = error.message; try { const c = await error.context.json(); if (c && c.error) errMsg = c.error; } catch (e) {} }
+  else if (data && data.error) errMsg = data.error;
+  if (errMsg) {
+    box.innerHTML = '<p class="muted-note" style="color:var(--danger)">' + esc(errMsg) + '</p>' +
+      '<button class="btn" onclick="gerarResumoIA(\'' + formId + '\')">Tentar de novo</button>';
+    return;
+  }
+  const resumo = (data && data.resumo) || "Sem conteúdo.";
+  box.innerHTML = '<div class="ia-resumo">' + esc(resumo) + '</div>' +
+    '<div style="display:flex;gap:8px;align-items:center;margin-top:10px"><button class="btn sm" onclick="gerarResumoIA(\'' + formId + '\')">↻ Regenerar</button>' +
+    '<span class="muted-note" style="font-size:11.5px">Gerado por IA a partir de ' + ((data && data.respostas) || 0) + ' respostas · revise antes de usar</span></div>';
 }
 
 async function loadChecklistProjeto(c) {
