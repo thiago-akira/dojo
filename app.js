@@ -1929,7 +1929,7 @@ function paintTools() {
   $("#adminBtn").classList.toggle("on", view === "console" && consoleTab === "clientes");
   $("#meusBtn").style.display = isAdmin ? "" : "none";
   $("#meusBtn").classList.toggle("on", view === "console" && consoleTab === "meus-projetos");
-  $("#bellBtn").style.display = isAdmin ? "" : "none";
+  $("#bellBtn").style.display = me ? "" : "none";
   const pv = $("#previewBtn");
   if (pv) {
     pv.style.display = (canEditReal && view === "painel") ? "" : "none";
@@ -2063,12 +2063,12 @@ function authModal() {
 
 /* Carrega o perfil e decide a rota inicial conforme o papel */
 async function onSession(session) {
-  if (!session) { unsubscribeRealtime(); unsubscribeAcessosRealtime(); clearInterval(_pingTimer); me = null; isAdmin = false; view = "login"; route(); return; }
+  if (!session) { unsubscribeRealtime(); unsubscribeAcessosRealtime(); unsubscribeNotifRealtime(); clearInterval(_pingTimer); me = null; isAdmin = false; view = "login"; route(); return; }
   const { data: pessoa } = await sb.from("pessoas").select("*").eq("id", session.user.id).maybeSingle();
   me = pessoa || { id: session.user.id, email: session.user.email, nome: session.user.email };
   isAdmin = !!(pessoa && pessoa.is_admin);
   if (isAdmin) { subscribeAcessosRealtime(); updateBell(); view = "console"; route(); }
-  else { registrarAcesso(); await rotaCliente(); }
+  else { registrarAcesso(); subscribeNotifRealtime(); updateBell(); await rotaCliente(); }
 }
 
 /* ===== Registro de acesso (frequência, último acesso, tempo de sessão) ===== */
@@ -2102,39 +2102,21 @@ function subscribeAcessosRealtime() {
 }
 function unsubscribeAcessosRealtime() { if (_acessosChannel) { sb.removeChannel(_acessosChannel); _acessosChannel = null; } }
 
-async function updateBell() {
-  if (!isAdmin) return;
-  const { data } = await sb.from("acessos").select("id, started_at, pessoa:pessoas!pessoa_id(nome,email)").order("started_at", { ascending: false }).limit(30);
-  _alertasCache = data || [];
-  const lastSeen = localStorage.getItem("dojo_alertas_visto") || "1970-01-01T00:00:00Z";
-  const unseen = _alertasCache.filter(a => a.started_at > lastSeen).length;
-  const badge = document.getElementById("bellBadge");
-  if (!badge) return;
-  if (unseen > 0) { badge.textContent = unseen > 99 ? "99+" : String(unseen); badge.style.display = ""; }
-  else badge.style.display = "none";
-}
+const NOTIF_ICON = { mensagem: "💬", aprovacao: "✅", reuniao: "📅", questionario: "📝", material: "📎", etapa: "✔" };
 
-function toggleBell() {
-  const existing = document.getElementById("bellPanel");
-  if (existing) { existing.remove(); document.removeEventListener("click", _closeBellOutside, true); return; }
-  const lastSeen = localStorage.getItem("dojo_alertas_visto") || "1970-01-01T00:00:00Z";
-  const items = (_alertasCache || []).length
-    ? _alertasCache.map(a => {
-        const who = (a.pessoa && (a.pessoa.nome || a.pessoa.email)) || "Alguém";
-        const novo = a.started_at > lastSeen;
-        return '<div class="bell-item' + (novo ? " novo" : "") + '"><span class="bell-dot"></span><div class="bell-body"><div class="bell-who">' + esc(who) + '</div><div class="bell-when">acessou ' + fmtRel(a.started_at) + '</div></div></div>';
-      }).join("")
-    : '<p class="muted-note" style="padding:14px;text-align:center">Nenhum acesso registrado ainda.</p>';
+/* Despacha por papel: admin vê acessos; cliente/equipe vê novidades */
+function updateBell() { return isAdmin ? updateBellAdmin() : updateBellCliente(); }
+function toggleBell() { return isAdmin ? toggleBellAdmin() : toggleBellCliente(); }
+function _bellPanel(headHtml, listHtml) {
   const panel = document.createElement("div");
   panel.id = "bellPanel"; panel.className = "bell-panel";
-  panel.innerHTML = '<div class="bell-head">Avisos de acesso</div><div class="bell-list">' + items + '</div>';
+  panel.innerHTML = '<div class="bell-head">' + headHtml + '</div><div class="bell-list">' + listHtml + '</div>';
   document.body.appendChild(panel);
   const r = document.getElementById("bellBtn").getBoundingClientRect();
   panel.style.top = (r.bottom + 6) + "px";
   panel.style.right = Math.max(8, window.innerWidth - r.right) + "px";
-  localStorage.setItem("dojo_alertas_visto", new Date().toISOString());
-  setTimeout(updateBell, 30);
   setTimeout(() => document.addEventListener("click", _closeBellOutside, true), 0);
+  return panel;
 }
 function _closeBellOutside(e) {
   const panel = document.getElementById("bellPanel");
@@ -2142,6 +2124,75 @@ function _closeBellOutside(e) {
     panel.remove(); document.removeEventListener("click", _closeBellOutside, true);
   }
 }
+
+/* — Admin: acessos — */
+async function updateBellAdmin() {
+  const { data } = await sb.from("acessos").select("id, started_at, pessoa:pessoas!pessoa_id(nome,email)").order("started_at", { ascending: false }).limit(30);
+  _alertasCache = data || [];
+  const lastSeen = localStorage.getItem("dojo_alertas_visto") || "1970-01-01T00:00:00Z";
+  const unseen = _alertasCache.filter(a => a.started_at > lastSeen).length;
+  const badge = document.getElementById("bellBadge"); if (!badge) return;
+  if (unseen > 0) { badge.textContent = unseen > 99 ? "99+" : String(unseen); badge.style.display = ""; }
+  else badge.style.display = "none";
+}
+function toggleBellAdmin() {
+  const existing = document.getElementById("bellPanel");
+  if (existing) { existing.remove(); document.removeEventListener("click", _closeBellOutside, true); return; }
+  const lastSeen = localStorage.getItem("dojo_alertas_visto") || "1970-01-01T00:00:00Z";
+  const items = (_alertasCache || []).length
+    ? _alertasCache.map(a => {
+        const who = (a.pessoa && (a.pessoa.nome || a.pessoa.email)) || "Alguém";
+        return '<div class="bell-item' + (a.started_at > lastSeen ? " novo" : "") + '"><span class="bell-dot"></span><div class="bell-body"><div class="bell-who">' + esc(who) + '</div><div class="bell-when">acessou ' + fmtRel(a.started_at) + '</div></div></div>';
+      }).join("")
+    : '<p class="muted-note" style="padding:14px;text-align:center">Nenhum acesso registrado ainda.</p>';
+  _bellPanel("Avisos de acesso", items);
+  localStorage.setItem("dojo_alertas_visto", new Date().toISOString());
+  setTimeout(updateBellAdmin, 30);
+}
+
+/* — Cliente/equipe: novidades — */
+async function updateBellCliente() {
+  if (!me) return;
+  const { count } = await sb.from("notificacoes").select("*", { count: "exact", head: true }).eq("pessoa_id", me.id).eq("lida", false);
+  const badge = document.getElementById("bellBadge"); if (!badge) return;
+  if (count > 0) { badge.textContent = count > 99 ? "99+" : String(count); badge.style.display = ""; }
+  else badge.style.display = "none";
+}
+async function toggleBellCliente() {
+  const existing = document.getElementById("bellPanel");
+  if (existing) { existing.remove(); document.removeEventListener("click", _closeBellOutside, true); return; }
+  const panel = _bellPanel("Novidades", '<p class="muted-note" style="padding:14px">Carregando…</p>');
+  const { data } = await sb.from("notificacoes").select("*").eq("pessoa_id", me.id).order("created_at", { ascending: false }).limit(30);
+  const list = data || [];
+  const inner = list.length
+    ? list.map(n => '<div class="bell-item' + (n.lida ? "" : " novo") + '"><span class="bell-dot"></span><div class="bell-body"><div class="bell-who">' + (NOTIF_ICON[n.tipo] || "🔔") + ' ' + esc(n.titulo) + '</div>' + (n.corpo ? '<div class="bell-when">' + esc(n.corpo) + '</div>' : '') + '<div class="bell-when">' + fmtRel(n.created_at) + '</div></div></div>').join("")
+    : '<p class="muted-note" style="padding:14px;text-align:center">Nenhuma novidade ainda.</p>';
+  const pl = panel.querySelector(".bell-list"); if (pl) pl.innerHTML = inner;
+  await sb.from("notificacoes").update({ lida: true }).eq("pessoa_id", me.id).eq("lida", false);
+  updateBellCliente();
+}
+
+/* Caixa de aviso (toast) que some ao fechar */
+function notifToast(n) {
+  let host = document.getElementById("ntoastHost");
+  if (!host) { host = document.createElement("div"); host.id = "ntoastHost"; document.body.appendChild(host); }
+  const el = document.createElement("div"); el.className = "ntoast";
+  el.innerHTML = '<div class="ntoast-ico">' + (NOTIF_ICON[n.tipo] || "🔔") + '</div>' +
+    '<div class="ntoast-body"><div class="ntoast-t">' + esc(n.titulo) + '</div>' + (n.corpo ? '<div class="ntoast-c">' + esc(n.corpo) + '</div>' : '') + '</div>' +
+    '<button class="ntoast-x" title="Fechar">✕</button>';
+  el.querySelector(".ntoast-x").onclick = () => { el.classList.remove("show"); setTimeout(() => el.remove(), 250); };
+  host.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("show"));
+}
+
+let _notifChannel = null;
+function subscribeNotifRealtime() {
+  if (_notifChannel || !me) return;
+  _notifChannel = sb.channel("notif-" + me.id)
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "notificacoes", filter: "pessoa_id=eq." + me.id }, (payload) => { if (payload.new) notifToast(payload.new); updateBell(); })
+    .subscribe();
+}
+function unsubscribeNotifRealtime() { if (_notifChannel) { sb.removeChannel(_notifChannel); _notifChannel = null; } }
 
 /* Cliente: abre direto o projeto se houver só um; senão lista */
 async function rotaCliente() {
