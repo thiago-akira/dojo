@@ -404,6 +404,17 @@ body.edit .para-edit{background:var(--surface-solid)}
 .risk-txt{font-size:13px;font-weight:600;line-height:1.35;flex:1}
 .risk-del{opacity:0;transition:opacity .12s;font-size:11px;padding:0 3px}
 .risk-row:hover .risk-del{opacity:1}
+/* Riscos — modo edição com drag, sev cíclico, setas */
+.risk-grip{color:var(--muted);font-size:14px;cursor:grab;opacity:.45;flex:none}
+.risk-grip:hover{opacity:1}
+.risk-sev-btn{cursor:pointer;transition:opacity .1s;user-select:none}
+.risk-sev-btn:hover{opacity:.7}
+.risk-edit-inp{flex:1;background:transparent;border:none;border-bottom:1px solid transparent;color:var(--text);font-size:13px;font-weight:600;padding:3px 2px;font-family:inherit;min-width:0}
+.risk-edit-inp:focus{outline:none;border-bottom-color:var(--accent)}
+.risk-order-btns{display:flex;flex-direction:column;flex:none;gap:0}
+.risk-mv{font-size:11px;padding:0 2px;opacity:.3;line-height:1.15;font-weight:800}
+.risk-mv:hover{opacity:1}
+.risk-mv-ph{display:inline-block;width:18px;height:13px}
 .risk-add-btn{font-size:12px;padding:4px 10px;margin-left:auto}
 .risk-add-btn.on{background:var(--accent);color:#1a1300;border-color:transparent}
 .risk-add-row{display:none;gap:6px;align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
@@ -739,6 +750,12 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 .msgs{display:flex;flex-direction:column;height:calc(100vh - 195px)}
 .msg-list{flex:1;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:6px 2px}
 .msg{max-width:70%;align-self:flex-start}
+/* Comentários de widgets na timeline de Mensagens */
+.msg-comment{align-self:stretch;padding:8px 12px;border-left:3px solid var(--accent);background:var(--surface-solid);border-radius:0 8px 8px 0}
+.msg-src{font-size:11px;color:var(--muted);margin-bottom:2px}
+.msg-src-link{font-size:11px;color:var(--accent);font-weight:700}
+.msg-comment .msg-meta{font-size:11px;margin:1px 0 3px}
+.msg-comment .msg-bubble{background:transparent;border:none;padding:0;border-radius:0;max-width:100%;font-size:13.5px;color:var(--text)}
 .msg.mine{align-self:flex-end;text-align:right}
 .msg-meta{font-size:11px;color:var(--faint);font-weight:700;margin:0 4px 3px}
 .msg-priv{color:var(--accent-2)}

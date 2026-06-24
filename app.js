@@ -685,14 +685,29 @@ const WIDGETS = {
       }
       const items = p.items || [];
       const SEV = { alto: "Alto", medio: "Médio", baixo: "Baixo" };
-      const rows = items.map((it, i) => {
-        const sev = it.sev || "medio";
-        return '<div class="risk-row ' + sev + '" data-item="' + escAttr(itemKey(it.text || "")) + '" data-itemlabel="' + escAttr(it.text || "") + '">' +
-          '<span class="risk-sev">' + (SEV[sev] || "Médio") + '</span>' +
-          '<span class="risk-txt">' + esc(it.text || "") + '</span>' +
-          (canEdit ? '<button class="lnk del risk-del" onclick="delRisco(\'' + t.id + '\',' + i + ')" title="Remover">✕</button>' : '') +
-          '</div>';
-      }).join("") || '<p class="muted-note">Nenhum risco. Use ＋ para adicionar.</p>';
+      const rows = items.length === 0
+        ? '<p class="muted-note">Nenhum risco. Use ＋ para adicionar.</p>'
+        : items.map((it, i) => {
+          const sev = it.sev || "medio";
+          if (canEdit) {
+            return '<div class="risk-row ' + sev + ' risk-row-edit" draggable="true"' +
+              ' ondragstart="riscoDragStart(event,\'' + t.id + '\',' + i + ')"' +
+              ' ondragover="riscoDragOver(event)" ondrop="riscoDrop(event,\'' + t.id + '\',' + i + ')">' +
+              '<span class="risk-grip" title="Arrastar para reordenar">⠿</span>' +
+              '<span class="risk-sev risk-sev-btn" onclick="riscoNextSev(\'' + t.id + '\',' + i + ')" title="Clique para alterar nível">' + (SEV[sev] || "Médio") + '</span>' +
+              '<input class="risk-edit-inp" value="' + escAttr(it.text || "") + '" oninput="onRiscoText(\'' + t.id + '\',' + i + ',this)">' +
+              '<div class="risk-order-btns">' +
+              (i > 0 ? '<button class="lnk risk-mv" onclick="riscoMover(\'' + t.id + '\',' + i + ',-1)" title="Subir">↑</button>' : '<span class="risk-mv-ph"></span>') +
+              (i < items.length - 1 ? '<button class="lnk risk-mv" onclick="riscoMover(\'' + t.id + '\',' + i + ',1)" title="Descer">↓</button>' : '<span class="risk-mv-ph"></span>') +
+              '</div>' +
+              '<button class="lnk del risk-del" onclick="delRisco(\'' + t.id + '\',' + i + ')" title="Remover">✕</button>' +
+              '</div>';
+          }
+          return '<div class="risk-row ' + sev + '" data-item="' + escAttr(itemKey(it.text || "")) + '" data-itemlabel="' + escAttr(it.text || "") + '">' +
+            '<span class="risk-sev">' + (SEV[sev] || "Médio") + '</span>' +
+            '<span class="risk-txt">' + esc(it.text || "") + '</span>' +
+            '</div>';
+        }).join("");
       const addForm = canEdit
         ? '<div class="risk-add-row" id="risk-add-' + t.id + '">' +
           '<select class="risk-add-sev" id="risk-add-sev-' + t.id + '">' +
@@ -955,6 +970,45 @@ function saveRisco(tid) {
 function delRisco(tid, idx) {
   const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
   t.props.items = (t.props.items || []).filter((_, i) => i !== idx);
+  save();
+  const content = document.querySelector('.tile[data-id="' + tid + '"] .content');
+  if (content) WIDGETS.riscos.render(t, content);
+}
+function riscoNextSev(tid, idx) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const items = t.props.items || []; if (!items[idx]) return;
+  const cycle = { baixo: "medio", medio: "alto", alto: "baixo" };
+  items[idx].sev = cycle[items[idx].sev || "medio"] || "medio";
+  save();
+  const content = document.querySelector('.tile[data-id="' + tid + '"] .content');
+  if (content) WIDGETS.riscos.render(t, content);
+}
+function riscoMover(tid, idx, dir) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const items = t.props.items || []; const to = idx + dir;
+  if (to < 0 || to >= items.length) return;
+  [items[idx], items[to]] = [items[to], items[idx]];
+  save();
+  const content = document.querySelector('.tile[data-id="' + tid + '"] .content');
+  if (content) WIDGETS.riscos.render(t, content);
+}
+function onRiscoText(tid, idx, el) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const items = t.props.items || []; if (!items[idx]) return;
+  items[idx].text = el.value; save();
+}
+let _riscoDragFrom = null;
+function riscoDragStart(event, tid, idx) { _riscoDragFrom = { tid, idx }; event.dataTransfer.effectAllowed = "move"; }
+function riscoDragOver(event) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }
+function riscoDrop(event, tid, dropIdx) {
+  event.preventDefault();
+  if (!_riscoDragFrom || _riscoDragFrom.tid !== tid) { _riscoDragFrom = null; return; }
+  const fromIdx = _riscoDragFrom.idx; _riscoDragFrom = null;
+  if (fromIdx === dropIdx) return;
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const items = t.props.items || [];
+  const item = items.splice(fromIdx, 1)[0];
+  items.splice(dropIdx, 0, item);
   save();
   const content = document.querySelector('.tile[data-id="' + tid + '"] .content');
   if (content) WIDGETS.riscos.render(t, content);
@@ -1792,11 +1846,22 @@ async function applyUrlRoute() {
   if (!parts.length) return;
   const [cliSlug, projSlug] = parts;
   if (projSlug) {
-    // Skip if already on this exact project (evita dupla carga no rotaCliente)
     if (curProjeto && curProjeto.slug === projSlug && view === "painel") return;
-    const { data } = await sb.from("projetos").select("id, slug, clientes(slug)").eq("slug", projSlug);
-    const match = (data || []).find(p => !p.clientes || p.clientes.slug === cliSlug) || (data || [])[0];
-    if (match) { await abrirProjeto(match.id); return; }
+    let projId = null;
+    if (isAdmin && cliSlug) {
+      // Admin: usa cliente para desambiguar projetos com slug igual em clientes distintos
+      const { data: cli } = await sb.from("clientes").select("id").eq("slug", cliSlug).maybeSingle();
+      if (cli) {
+        const { data: proj } = await sb.from("projetos").select("id").eq("slug", projSlug).eq("cliente_id", cli.id).maybeSingle();
+        if (proj) projId = proj.id;
+      }
+    }
+    if (!projId) {
+      // Fallback: só por slug (RLS limita ao acessível para não-admins)
+      const { data: proj } = await sb.from("projetos").select("id").eq("slug", projSlug).maybeSingle();
+      if (proj) projId = proj.id;
+    }
+    if (projId) { await abrirProjeto(projId); return; }
   }
   if (cliSlug && isAdmin) {
     if (curCliente && curCliente.slug === cliSlug && view === "cliente") return;
@@ -3108,25 +3173,47 @@ async function delItem(id) { await sb.from("checklist_itens").delete().eq("id", 
 async function renderMensagens(canvas, hint) {
   const pid = curProjeto.id;
   hint.style.display = "block";
-  const [msgs, mbs] = await Promise.all([
+  const allTiles = (state.spaces || []).flatMap(sp => sp.tiles || []);
+  const tileIds = allTiles.map(t => t.id);
+  const [msgs, mbs, cmtsRes] = await Promise.all([
     sb.from("mensagens").select("*, autor:pessoas!autor_id(nome,email)").eq("projeto_id", pid).order("created_at"),
-    sb.from("membros").select("pessoa_id, papel, pessoas(nome,email)").eq("projeto_id", pid)
+    sb.from("membros").select("pessoa_id, papel, pessoas(nome,email)").eq("projeto_id", pid),
+    tileIds.length
+      ? sb.from("comentarios_painel").select("id, corpo, autor_id, widget_id, item_ref, created_at, autor:pessoas!autor_id(nome,email)").in("widget_id", tileIds).order("created_at")
+      : { data: [] }
   ]);
   const participantes = (mbs.data || []).filter(x => x.pessoa_id !== me.id);
-  const lista = (msgs.data || []).map(mm => {
-    const mine = mm.autor_id === me.id;
-    const who = (mm.autor && (mm.autor.nome || mm.autor.email)) || "—";
-    const priv = mm.destinatario_id ? ' · <span class="msg-priv">privado</span>' : "";
-    const anexo = mm.anexo_storage_path
-      ? '<div class="msg-anexo"><button class="lnk" onclick="baixarChatAnexo(\'' + escAttr(mm.anexo_storage_path) + '\')">📎 ' + esc(mm.anexo_nome || "Arquivo") + '</button></div>'
-      : "";
-    return '<div class="msg' + (mine ? " mine" : "") + '"><div class="msg-meta">' + esc(who) + priv + '</div>' +
-      '<div class="msg-bubble">' + (mm.corpo ? esc(mm.corpo) : "") + anexo + '</div></div>';
+
+  // Timeline unificada: mensagens do chat + comentários de widgets, ordenados por data
+  const timeline = [
+    ...(msgs.data || []).map(m => ({ kind: "msg", ts: m.created_at, data: m })),
+    ...(cmtsRes.data || []).map(c => ({ kind: "cmt", ts: c.created_at, data: c }))
+  ].sort((a, b) => a.ts < b.ts ? -1 : 1);
+
+  const lista = timeline.map(item => {
+    if (item.kind === "msg") {
+      const mm = item.data, mine = mm.autor_id === me.id;
+      const who = (mm.autor && (mm.autor.nome || mm.autor.email)) || "—";
+      const priv = mm.destinatario_id ? ' · <span class="msg-priv">privado</span>' : "";
+      const anexo = mm.anexo_storage_path
+        ? '<div class="msg-anexo"><button class="lnk" onclick="baixarChatAnexo(\'' + escAttr(mm.anexo_storage_path) + '\')">📎 ' + esc(mm.anexo_nome || "Arquivo") + '</button></div>'
+        : "";
+      return '<div class="msg' + (mine ? " mine" : "") + '"><div class="msg-meta">' + esc(who) + priv + '</div>' +
+        '<div class="msg-bubble">' + (mm.corpo ? esc(mm.corpo) : "") + anexo + '</div></div>';
+    }
+    // Comentário de widget
+    const cm = item.data;
+    const who = (cm.autor && (cm.autor.nome || cm.autor.email)) || "—";
+    const tile = allTiles.find(t => t.id === cm.widget_id);
+    const tname = (tile && ((tile.props && tile.props.title) || (WIDGETS[tile.type] && WIDGETS[tile.type].name))) || "Widget";
+    return '<div class="msg-comment">' +
+      '<div class="msg-src">📌 <button class="lnk msg-src-link" onclick="irParaComentarioWidget(\'' + escAttr(cm.widget_id) + '\',\'' + escAttr(tname) + '\')">' + esc(tname) + '</button></div>' +
+      '<div class="msg-meta">' + esc(who) + '</div>' +
+      '<div class="msg-bubble">' + esc(cm.corpo || "") + '</div></div>';
   }).join("") || '<p class="muted-note" style="text-align:center;margin-top:30px">Nenhuma mensagem ainda. Diga olá 👋</p>';
 
   const opts = '<option value="">📢 Todos os participantes</option>' +
     participantes.map(p => '<option value="' + p.pessoa_id + '">' + esc((p.pessoas && (p.pessoas.nome || p.pessoas.email)) || p.pessoa_id) + (p.papel === "gestor" ? " (gestor)" : "") + '</option>').join("");
-
   const composerHtml = perm("pode_enviar_mensagens")
     ? '<div class="composer">' +
       '<select id="msgTo">' + opts + '</select>' +
@@ -3181,6 +3268,10 @@ async function baixarChatAnexo(path) {
   const { data, error } = await sb.storage.from("chat").createSignedUrl(path, 3600);
   if (error) { toast("Erro: " + error.message); return; }
   window.open(data.signedUrl, "_blank");
+}
+function irParaComentarioWidget(tid, label) {
+  projTab = "painel"; route();
+  setTimeout(() => abrirComentariosPainel(tid, null, label), 150);
 }
 
 /* ===== 13d) Aprovações (Fase 3) ===== */
@@ -4041,4 +4132,9 @@ function wireTopbar() {
    O evento INITIAL_SESSION já entrega a sessão persistida no load. */
 applyPrefs();
 wireTopbar();
-sb.auth.onAuthStateChange((_e, session) => { setTimeout(() => onSession(session), 0); });
+sb.auth.onAuthStateChange((event, session) => {
+  // Ignora null intermediário durante renovação de token (TOKEN_REFRESHED chega com session válida)
+  // Só SIGNED_OUT e INITIAL_SESSION(null) indicam "sem sessão real"
+  if (!session && event !== "SIGNED_OUT" && event !== "INITIAL_SESSION") return;
+  setTimeout(() => onSession(session), 0);
+});
