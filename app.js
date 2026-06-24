@@ -389,6 +389,28 @@ const WIDGETS = {
         (p.subtitulo ? '<div class="sec-sub">' + esc(p.subtitulo) + '</div>' : '') + '</div><div class="sec-rule"></div></div>';
     },
     form(p) { return field("Título", "titulo", p.titulo) + field("Subtítulo (opcional)", "subtitulo", p.subtitulo); }
+  },
+  proxima_reuniao: {
+    emoji: "📅", name: "Próxima reunião", desc: "Mostra a próxima reunião agendada — automático.",
+    w: 4, h: 2, defaults: { title: "Próxima reunião" },
+    render(t, c) {
+      const p = t.props;
+      const head = p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '';
+      c.innerHTML = head + '<div class="w-body"><p class="muted-note">Carregando…</p></div>';
+      loadProximaReuniao(c);
+    },
+    form(p) { return field("Título", "title", p.title); }
+  },
+  aprovacoes_pendentes: {
+    emoji: "✅", name: "Aprovações pendentes", desc: "Conta e lista o que falta aprovar — automático.",
+    w: 4, h: 3, defaults: { title: "Aprovações pendentes" },
+    render(t, c) {
+      const p = t.props;
+      const head = p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '';
+      c.innerHTML = head + '<div class="w-body"><p class="muted-note">Carregando…</p></div>';
+      loadAprovacoesPendentes(c);
+    },
+    form(p) { return field("Título", "title", p.title); }
   }
 };
 function field(label, k, v) { return '<label>' + esc(label) + '</label><input data-k="' + k + '" value="' + escAttr(v) + '">'; }
@@ -434,6 +456,39 @@ function parseRefColumns(raw) {
     }
   });
   return cols;
+}
+
+/* — Loaders dos widgets dinâmicos (puxam dados reais do projeto) — */
+async function loadProximaReuniao(c) {
+  if (!curProjeto) return;
+  const nowIso = new Date().toISOString();
+  const { data } = await sb.from("reunioes").select("titulo,data_hora,duracao_min,local_ou_link")
+    .eq("projeto_id", curProjeto.id).eq("status", "agendada").gte("data_hora", nowIso)
+    .order("data_hora").limit(1);
+  const body = c.querySelector(".w-body");
+  if (!body) return;
+  const r = data && data[0];
+  if (!r) { body.innerHTML = '<p class="muted-note">Nenhuma reunião agendada.</p>'; return; }
+  body.innerHTML = '<div class="next-reu"><div class="next-reu-title">' + esc(r.titulo) + '</div>' +
+    '<div class="next-reu-when">📅 ' + fmtDt(r.data_hora) + ' · ' + r.duracao_min + ' min</div>' +
+    (r.local_ou_link ? '<div class="next-reu-local">' + (r.local_ou_link.startsWith("http")
+      ? '<a href="' + escAttr(r.local_ou_link) + '" target="_blank" rel="noopener" class="lnk">🔗 Entrar</a>'
+      : '📍 ' + esc(r.local_ou_link)) + '</div>' : '') + '</div>';
+}
+
+async function loadAprovacoesPendentes(c) {
+  if (!curProjeto) return;
+  const { data } = await sb.from("aprovacoes").select("titulo")
+    .eq("projeto_id", curProjeto.id).eq("status", "pendente")
+    .order("created_at", { ascending: false });
+  const body = c.querySelector(".w-body");
+  if (!body) return;
+  const list = data || [];
+  if (!list.length) { body.innerHTML = '<div class="ap-pend-empty">✓ Tudo aprovado</div>'; return; }
+  body.innerHTML = '<div class="ap-pend"><span class="ap-pend-count">' + list.length + '</span>' +
+    '<span class="ap-pend-lbl">pendente' + (list.length === 1 ? "" : "s") + '</span></div>' +
+    '<div class="ap-pend-list">' + list.slice(0, 5).map(a => '<div class="ap-pend-item">⏳ ' + esc(a.titulo) + '</div>').join("") +
+    (list.length > 5 ? '<div class="muted-note" style="font-size:12px">+' + (list.length - 5) + ' mais…</div>' : '') + '</div>';
 }
 
 /* ===== 5) Roteamento de telas ===== */
