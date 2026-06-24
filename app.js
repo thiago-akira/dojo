@@ -1938,15 +1938,18 @@ async function editarProjeto() {
   const pr = priv || {};
   const entregas = (p.dados && p.dados.entregas) || [];
   const entregasTxt = entregas.map(e => (e.nome || "") + " | " + (e.data || "")).join("\n");
+  const entreguesHtml = entregas.length ? '<label style="margin-top:8px;font-size:11.5px">Marcar entregue ✓ (conta na evolução)</label><div id="entregasChk" class="entregas-chk">' +
+    entregas.map(e => '<label class="ent-row"><input type="checkbox" data-ent="' + escAttr((e.nome || "").toLowerCase()) + '"' + (e.entregue ? " checked" : "") + '> ' + esc(e.nome || "") + '</label>').join("") + '</div>' : '';
   openModal('<h3>Editar projeto</h3>' +
     field("Nome", "nome", p.nome || "") +
     '<label>Descrição</label><textarea data-k="descricao">' + esc(p.descricao || "") + '</textarea>' +
     '<label>Status</label><select data-k="status"><option value="ativo"' + (p.status === "ativo" ? " selected" : "") + '>Ativo</option><option value="pausado"' + (p.status === "pausado" ? " selected" : "") + '>Pausado</option><option value="concluido"' + (p.status === "concluido" ? " selected" : "") + '>Concluído</option></select>' +
     '<label>Evolução: <b id="evoLbl">' + (p.progresso || 0) + '%</b></label><input type="range" min="0" max="100" step="5" data-k="progresso" id="evoSlider" value="' + (p.progresso || 0) + '" style="width:100%" oninput="document.getElementById(\'evoLbl\').textContent=this.value+\'%\'">' +
-    '<label class="pz-toggle" style="margin-top:6px"><input type="checkbox" id="autoEvo"' + ((p.dados && p.dados.auto_evolucao) ? " checked" : "") + '> Calcular automaticamente pelas tarefas concluídas (checklists, Kanban, marcos, próximos passos)</label>' +
+    '<label class="pz-toggle" style="margin-top:6px"><input type="checkbox" id="autoEvo"' + ((p.dados && p.dados.auto_evolucao) ? " checked" : "") + '> Calcular automaticamente pelas tarefas concluídas (checklists, Kanban, marcos, próximos passos, aprovações, questionários, entregas e metas)</label>' +
     '<div class="pz-sec-tit" style="margin-top:16px">Entregas <span class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:11px">(o cliente vê)</span></div>' +
     '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Uma por linha: <b>nome | AAAA-MM-DD</b></p>' +
     '<textarea data-k="entregas" placeholder="Logo final | 2026-07-10\nSite no ar | 2026-08-01" style="min-height:70px;font-family:var(--font-mono);font-size:12.5px">' + esc(entregasTxt) + '</textarea>' +
+    entreguesHtml +
     '<div class="pz-sec-tit" style="margin-top:16px">🔒 Só você (privado)</div>' +
     field("Link da proposta", "proposta_url", pr.proposta_url || "") +
     field("Valor do projeto (R$)", "valor", pr.valor != null ? pr.valor : "") +
@@ -1959,7 +1962,8 @@ async function editarProjeto() {
       autoChk.onchange = applyAuto; applyAuto();
       m.querySelector("[data-ok]").onclick = async () => {
         const get = k => (m.querySelector('[data-k="' + k + '"]') || {}).value;
-        const ents = (get("entregas") || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]).map(a => ({ nome: a[0], data: a[1] || "" }));
+        const entregueSet = new Set(Array.from(m.querySelectorAll("#entregasChk [data-ent]")).filter(x => x.checked).map(x => x.dataset.ent));
+        const ents = (get("entregas") || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]).map(a => ({ nome: a[0], data: a[1] || "", entregue: entregueSet.has(a[0].toLowerCase()) }));
         const auto = autoChk.checked;
         const dados = Object.assign({}, p.dados || {}, { entregas: ents, auto_evolucao: auto });
         // se auto, recalcula já; senão usa o slider
@@ -2222,8 +2226,18 @@ function togglePasso(widgetId, key) {
 }
 async function computeAutoEvolucao() {
   let done = 0, total = 0;
-  const { data: chs } = await sb.from("checklists").select("checklist_itens(concluido)").eq("projeto_id", curProjeto.id);
-  (chs || []).forEach(c => (c.checklist_itens || []).forEach(i => { total++; if (i.concluido) done++; }));
+  // Fontes do banco: checklists (itens), aprovações (aprovado), questionários (fechado)
+  const [chs, aps, qz] = await Promise.all([
+    sb.from("checklists").select("checklist_itens(concluido)").eq("projeto_id", curProjeto.id),
+    sb.from("aprovacoes").select("status").eq("projeto_id", curProjeto.id),
+    sb.from("questionarios").select("status").eq("projeto_id", curProjeto.id),
+  ]);
+  (chs.data || []).forEach(c => (c.checklist_itens || []).forEach(i => { total++; if (i.concluido) done++; }));
+  (aps.data || []).forEach(a => { total++; if (a.status === "aprovado") done++; });
+  (qz.data || []).forEach(q => { total++; if (q.status && q.status !== "aberto") done++; });
+  // Entregas (projetos.dados.entregas): marcadas como entregue
+  ((curProjeto.dados && curProjeto.dados.entregas) || []).forEach(e => { total++; if (e.entregue) done++; });
+  // Fontes nos widgets do layout
   (state.spaces || []).forEach(s => (s.tiles || []).forEach(t => {
     if (t.type === "kanban") {
       parseKanban(t.props.raw).forEach(col => { const dcol = /feito|conclu|done|pronto/i.test(col.title); col.cards.forEach(() => { total++; if (dcol) done++; }); });
@@ -2233,6 +2247,11 @@ async function computeAutoEvolucao() {
       const items = (t.props.raw || "").split("\n").map(l => l.split("|").map(x => x.trim())).filter(a => a[0]);
       const ds = new Set(t.props.done || []);
       items.forEach(a => { total++; if (ds.has(itemKey(a[0]))) done++; });
+    } else if (t.type === "progresso") {
+      // Metas: cada uma entra como progresso parcial (%/100)
+      (t.props.raw || "").split("\n").map(l => l.split("|").map(x => x.trim())).filter(a => a[0]).forEach(a => {
+        const pct = Math.max(0, Math.min(100, parseFloat(a[1]) || 0)); total++; done += pct / 100;
+      });
     }
   }));
   return total ? Math.round(done / total * 100) : 0;
@@ -3047,7 +3066,7 @@ function decidir(apId, status) {
       m.querySelector("[data-ok]").onclick = async () => {
         const { error } = await sb.from("aprovacoes").update({ status, parecer: m.querySelector('[data-k="parecer"]').value.trim() || null, decidido_por: me.id, decidido_em: new Date().toISOString() }).eq("id", apId);
         if (error) { toast("Erro: " + error.message); return; }
-        closeModal(); route();
+        recomputeEvolucaoSeAuto(); closeModal(); route();
       };
     });
 }
@@ -3290,7 +3309,7 @@ async function delPergunta(pid, qid) {
 
 async function toggleQStatus(qid, cur) {
   await sb.from("questionarios").update({ status: cur === "aberto" ? "fechado" : "aberto" }).eq("id", qid);
-  route();
+  recomputeEvolucaoSeAuto(); route();
 }
 
 async function delQuestionario(qid) {

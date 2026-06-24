@@ -399,6 +399,9 @@ body.edit .para-edit{background:var(--surface-solid)}
 .step-meta{font-size:11.5px;color:var(--muted);font-weight:600;margin-top:1px}
 .step-row.done .step-txt{text-decoration:line-through;color:var(--muted)}
 .step-row.done .step-meta{opacity:.6}
+.entregas-chk{display:flex;flex-direction:column;gap:5px;margin:4px 0 2px}
+.ent-row{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;text-transform:none;letter-spacing:0;cursor:pointer}
+.ent-row input[type=checkbox]{width:auto;accent-color:var(--accent);margin:0}
 
 /* ===== Widget: Mural de ideias (colaborativo) ===== */
 .mural{display:flex;flex-wrap:wrap;gap:10px;align-content:flex-start}
