@@ -425,6 +425,9 @@ body.edit .para-edit{background:var(--surface-solid)}
 .risk-mv{font-size:11px;padding:0 2px;opacity:.3;line-height:1.15;font-weight:800}
 .risk-mv:hover{opacity:1}
 .risk-mv-ph{display:inline-block;width:18px;height:13px}
+.risk-title-editable{cursor:text;border-radius:4px;padding:0 3px;margin:-0 -3px;transition:background .12s}
+.risk-title-editable:hover{background:var(--line)}
+.risk-title-editable:focus{outline:none;background:var(--line)}
 .risk-add-btn{font-size:12px;padding:4px 10px;margin-left:auto}
 .risk-add-btn.on{background:var(--accent);color:#1a1300;border-color:transparent}
 .risk-add-row{display:none;gap:6px;align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}

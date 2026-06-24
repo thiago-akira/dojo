@@ -717,10 +717,18 @@ const WIDGETS = {
           'onkeydown="if(event.key===\'Enter\')saveRisco(\'' + t.id + '\')">' +
           '<button class="btn sm primary" onclick="saveRisco(\'' + t.id + '\')">Adicionar</button>' +
           '</div>' : '';
-      c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Riscos & bloqueios") + '</span>' +
+      const titleEl = canEdit
+        ? '<span class="w-title risk-title-editable" contenteditable="true" spellcheck="false" ' +
+          'onblur="saveRiscoTitle(\'' + t.id + '\',this)" ' +
+          'onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}">' +
+          esc(p.title || "Riscos & bloqueios") + '</span>'
+        : '<span class="w-title">' + esc(p.title || "Riscos & bloqueios") + '</span>';
+      c.innerHTML = '<div class="w-head">' + titleEl +
         (canEdit ? '<button class="btn sm risk-add-btn" id="risk-btn-' + t.id + '" onclick="toggleRiscoForm(\'' + t.id + '\')">＋ Risco</button>' : '') +
         '</div><div class="w-body"><div class="risks">' + rows + '</div>' + addForm + '</div>';
-      if (canEdit) c.querySelectorAll('.risk-edit-inp').forEach(ta => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; });
+      if (canEdit) requestAnimationFrame(() => {
+        c.querySelectorAll('.risk-edit-inp').forEach(ta => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; });
+      });
     },
     form(p) { return field("Título", "title", p.title); }
   },
@@ -997,6 +1005,11 @@ function onRiscoText(tid, idx, el) {
   const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
   const items = t.props.items || []; if (!items[idx]) return;
   items[idx].text = el.value; save();
+}
+function saveRiscoTitle(tid, el) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.title = el.textContent.trim() || "Riscos & bloqueios";
+  save();
 }
 let _riscoDragFrom = null;
 function riscoDragStart(event, tid, idx) { _riscoDragFrom = { tid, idx }; event.dataTransfer.effectAllowed = "move"; }
