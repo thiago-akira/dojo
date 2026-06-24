@@ -1358,7 +1358,7 @@ function showLogin(hint) {
 /* ===== 6) Console do admin: lista de clientes e meus projetos ===== */
 async function renderConsole(canvas, hint) {
   view = "console"; curCliente = null; curProjeto = null;
-  $("#crumb").innerHTML = '<span class="cr-cur">' + (consoleTab === "meus-projetos" ? "Meus Projetos" : "Clientes") + '</span>';
+  $("#crumb").innerHTML = '<span class="cr-cur">' + (consoleTab === "meus-projetos" ? "Meus Projetos" : consoleTab === "uso" ? "Uso" : "Clientes") + '</span>';
   const since24h = new Date(Date.now() - 86400000).toISOString();
   const [cliRes, projRes, apRes, msgRes] = await Promise.all([
     sb.from("clientes").select("*, projetos(count)").order("nome"),
@@ -1386,10 +1386,15 @@ async function renderConsole(canvas, hint) {
     '<div class="console-nav">' +
     '<button class="console-tab' + (consoleTab === "clientes" ? " on" : "") + '" onclick="switchConsoleTab(\'clientes\')">👥 Clientes</button>' +
     '<button class="console-tab' + (consoleTab === "meus-projetos" ? " on" : "") + '" onclick="switchConsoleTab(\'meus-projetos\')">🏢 Meus Projetos</button>' +
+    '<button class="console-tab' + (consoleTab === "uso" ? " on" : "") + '" onclick="switchConsoleTab(\'uso\')">📊 Uso</button>' +
     '</div>';
 
   if (consoleTab === "meus-projetos") {
     await renderMeusProjetos(hint, internoCliente, navHtml);
+    return;
+  }
+  if (consoleTab === "uso") {
+    await renderUso(hint, navHtml);
     return;
   }
 
@@ -1438,6 +1443,64 @@ async function renderMeusProjetos(hint, internoCliente, navHtml) {
     (internoCliente ? '<button class="btn" onclick="editarClienteInterno()">✏ Renomear</button>' : '') +
     '<button class="btn primary" onclick="novoMeuProjeto(' + (iid ? '\'' + iid + '\'' : 'null') + ')">＋ Novo projeto</button>' +
     '</div></div>' + projetosHtml + '</div>';
+}
+
+/* ===== Painel de Uso (métricas de acesso e engajamento) ===== */
+function _statusUso(ultimo) {
+  if (!ultimo) return { k: "nunca", t: "nunca acessou" };
+  const dias = (Date.now() - new Date(ultimo).getTime()) / 86400000;
+  if (dias < 7) return { k: "ativo", t: "ativo" };
+  if (dias < 14) return { k: "esfriando", t: "esfriando" };
+  return { k: "sumido", t: "sumido" };
+}
+function _fmtDur(seg) {
+  if (!seg || seg < 1) return "—";
+  const m = Math.round(seg / 60);
+  if (m < 1) return "<1 min";
+  if (m < 60) return m + " min";
+  return (m / 60).toFixed(1) + " h";
+}
+async function renderUso(hint, navHtml) {
+  hint.innerHTML = '<div class="page">' + navHtml + '<div class="page-head"><h2>📊 Uso</h2></div><p class="muted-note">Carregando métricas…</p></div>';
+  const { data, error } = await sb.rpc("metricas_uso");
+  const page = hint.querySelector(".page");
+  if (error) { page.innerHTML = navHtml + '<div class="page-head"><h2>📊 Uso</h2></div><p class="muted-note">Erro: ' + esc(error.message) + '</p>'; return; }
+  const rows = data || [];
+
+  // resumo no topo
+  const ativos = rows.filter(r => _statusUso(r.ultimo_acesso).k === "ativo").length;
+  const sumidos = rows.filter(r => { const k = _statusUso(r.ultimo_acesso).k; return k === "sumido" || k === "nunca"; }).length;
+  const acessos7d = rows.reduce((s, r) => s + Number(r.n_7d || 0), 0);
+  const stats = '<div class="dash-stats">' +
+    '<div class="dstat"><span class="dstat-n">' + rows.length + '</span><span class="dstat-l">pessoas</span></div>' +
+    '<div class="dstat"><span class="dstat-n">' + ativos + '</span><span class="dstat-l">ativas (7d)</span></div>' +
+    '<div class="dstat' + (sumidos ? " dstat-alert" : "") + '"><span class="dstat-n">' + sumidos + '</span><span class="dstat-l">sumidas</span></div>' +
+    '<div class="dstat"><span class="dstat-n">' + acessos7d + '</span><span class="dstat-l">acessos (7d)</span></div>' +
+    '</div>';
+
+  let body;
+  if (!rows.length) {
+    body = '<p class="muted-note">Nenhum cliente ou membro ainda. Os dados de acesso aparecem aqui conforme as pessoas usam o portal.</p>';
+  } else {
+    const trs = rows.map(r => {
+      const st = _statusUso(r.ultimo_acesso);
+      const contrib = Number(r.n_mensagens || 0) + Number(r.n_forms || 0) + Number(r.n_comentarios || 0) + Number(r.n_aprovacoes || 0);
+      const breakdown = '💬 ' + (r.n_mensagens || 0) + ' · 📋 ' + (r.n_forms || 0) + ' · 🗨 ' + (r.n_comentarios || 0) + ' · ✅ ' + (r.n_aprovacoes || 0);
+      return '<tr>' +
+        '<td><div class="uso-nome">' + esc(r.nome || r.email || "—") + '</div><div class="uso-email">' + esc(r.email || "") + '</div></td>' +
+        '<td><span class="uso-st ' + st.k + '">' + st.t + '</span></td>' +
+        '<td>' + (r.ultimo_acesso ? fmtRel(r.ultimo_acesso) : "—") + '</td>' +
+        '<td>' + (r.n_7d || 0) + '<span class="uso-sub">/sem</span></td>' +
+        '<td>' + _fmtDur(Number(r.dur_media_seg)) + '</td>' +
+        '<td><div class="uso-contrib" title="' + escAttr(breakdown) + '">' + contrib + '</div><div class="uso-breakdown">' + breakdown + '</div></td>' +
+        '</tr>';
+    }).join("");
+    body = '<div class="uso-table-wrap"><table class="data-table uso-table"><thead><tr>' +
+      '<th>Pessoa</th><th>Status</th><th>Último acesso</th><th>Freq.</th><th>Sessão méd.</th><th>Contribuições</th>' +
+      '</tr></thead><tbody>' + trs + '</tbody></table></div>';
+  }
+
+  page.innerHTML = navHtml + '<div class="page-head"><h2>📊 Uso</h2><button class="btn sm" onclick="route()">↻ Atualizar</button></div>' + stats + body;
 }
 
 function novoCliente() {
