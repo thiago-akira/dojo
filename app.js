@@ -1602,8 +1602,9 @@ function novoCliente() {
         const get = k => m.querySelector('[data-k="' + k + '"]').value.trim();
         const empresa = get("empresa"), nome = get("nome") || empresa, cor = get("cor");
         if (!empresa) { toast("Informe a empresa."); return; }
+        const slug = await uniqueSlug("clientes", empresa);
         const { error } = await sb.from("clientes").insert({
-          nome, empresa, criado_por: me.id,
+          nome, empresa, slug, criado_por: me.id,
           marca: { titulo: empresa, cor, logoUrl: "" }
         });
         if (error) { toast("Erro: " + error.message); return; }
@@ -1613,10 +1614,48 @@ function novoCliente() {
 }
 
 /* ===== 7) Detalhe do cliente: lista de projetos ===== */
+/* ===== Item 1: links próprios (slugs) — dominio.com/cliente/projeto ===== */
+function slugify(s) {
+  return (s || "").toString().normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "item";
+}
+async function uniqueSlug(table, base, scopeCol, scopeVal) {
+  base = slugify(base); let slug = base, n = 1;
+  for (; ;) {
+    let q = sb.from(table).select("id").eq("slug", slug);
+    if (scopeCol) q = q.eq(scopeCol, scopeVal);
+    const { data } = await q.maybeSingle();
+    if (!data) return slug;
+    n++; slug = base + "-" + n;
+  }
+}
+function setUrl(path) { if (location.pathname !== path) history.pushState(null, "", path); }
+async function applyUrlRoute() {
+  const parts = location.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  if (!parts.length) return;
+  const [cliSlug, projSlug] = parts;
+  if (projSlug) {
+    const { data } = await sb.from("projetos").select("id, slug, clientes(slug)").eq("slug", projSlug);
+    const match = (data || []).find(p => !p.clientes || p.clientes.slug === cliSlug) || (data || [])[0];
+    if (match) { await abrirProjeto(match.id); return; }
+  }
+  if (cliSlug && isAdmin) {
+    const { data } = await sb.from("clientes").select("id").eq("slug", cliSlug).maybeSingle();
+    if (data) { await abrirCliente(data.id); return; }
+  }
+}
+window.addEventListener("popstate", () => {
+  const parts = location.pathname.split("/").filter(Boolean);
+  if (!parts.length) { if (isAdmin) irConsole(); else if (me) rotaCliente(); }
+  else applyUrlRoute();
+});
+
 async function abrirCliente(id) {
   const { data, error } = await sb.from("clientes").select("*").eq("id", id).single();
   if (error) { toast("Erro ao abrir cliente."); return; }
-  curCliente = data; view = "cliente"; route();
+  curCliente = data; view = "cliente";
+  if (data.slug) setUrl("/" + data.slug);
+  route();
 }
 
 async function renderClienteDetail(canvas, hint) {
@@ -1663,7 +1702,8 @@ function novoMeuProjeto(internoClienteId) {
         const nome = m.querySelector('[data-k="nome"]').value.trim();
         const descricao = m.querySelector('[data-k="descricao"]').value.trim();
         if (!nome) { toast("Informe o nome."); return; }
-        const { error } = await sb.from("projetos").insert({ cliente_id: internoClienteId, nome, descricao });
+        const slug = await uniqueSlug("projetos", nome, "cliente_id", internoClienteId);
+        const { error } = await sb.from("projetos").insert({ cliente_id: internoClienteId, nome, descricao, slug });
         if (error) { toast("Erro: " + error.message); return; }
         closeModal(); route();
       };
@@ -1703,7 +1743,8 @@ function novoProjeto() {
         const nome = m.querySelector('[data-k="nome"]').value.trim();
         const descricao = m.querySelector('[data-k="descricao"]').value.trim();
         if (!nome) { toast("Informe o nome."); return; }
-        const { error } = await sb.from("projetos").insert({ cliente_id: curCliente.id, nome, descricao });
+        const slug = await uniqueSlug("projetos", nome, "cliente_id", curCliente.id);
+        const { error } = await sb.from("projetos").insert({ cliente_id: curCliente.id, nome, descricao, slug });
         if (error) { toast("Erro: " + error.message); return; }
         closeModal(); route();
       };
@@ -1716,6 +1757,7 @@ async function abrirProjeto(id) {
   if (error) { toast("Erro ao abrir projeto."); return; }
   curProjeto = data;
   curCliente = data.clientes || curCliente;
+  if (curCliente && curCliente.slug && data.slug) setUrl("/" + curCliente.slug + "/" + data.slug);
   previewCliente = false; // sempre abre no modo real
   if (isAdmin) {
     canEditReal = true; myMembro = null;
@@ -2386,7 +2428,7 @@ function paintTools() {
   else _ab.textContent = "Entrar";
   document.body.classList.toggle("edit", editMode && inPainel);
 }
-function irConsole() { unsubscribeRealtime(); previewCliente = false; consoleTab = "clientes"; view = "console"; route(); }
+function irConsole() { unsubscribeRealtime(); previewCliente = false; consoleTab = "clientes"; view = "console"; setUrl("/"); route(); }
 function irMeusProjetos() { unsubscribeRealtime(); previewCliente = false; consoleTab = "meus-projetos"; view = "console"; route(); }
 function switchConsoleTab(tab) { consoleTab = tab; route(); }
 
@@ -2566,6 +2608,7 @@ async function onSession(session) {
   isAdmin = !!(pessoa && pessoa.is_admin);
   if (isAdmin) { subscribeAcessosRealtime(); updateBell(); view = "console"; route(); }
   else { registrarAcesso(); subscribeNotifRealtime(); updateBell(); await rotaCliente(); }
+  await applyUrlRoute();
 }
 
 /* ===== Registro de acesso (frequência, último acesso, tempo de sessão) ===== */
