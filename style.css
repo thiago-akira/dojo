@@ -555,6 +555,15 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 .cli-status.ativo{color:var(--ok);border:1px solid var(--ok)}
 .cli-status.pausado{color:var(--danger);border:1px solid var(--danger)}
 
+/* perfil do cliente (página do cliente) */
+.cli-perfil{display:flex;gap:16px;background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:16px;margin-bottom:18px}
+.cli-perfil-logo{flex:none}
+.cli-perfil-logo img{width:64px;height:64px;object-fit:contain;border-radius:10px;border:1px solid var(--line);background:var(--bg)}
+.cli-perfil-body{flex:1;min-width:0}
+.cli-info{display:flex;flex-wrap:wrap;gap:14px;font-size:13px}
+.cli-info-item{color:var(--muted);font-weight:600}
+.cli-obs{margin-top:10px;font-size:13px;line-height:1.5;color:var(--text);white-space:pre-wrap;border-top:1px solid var(--line);padding-top:10px}
+
 /* picker de widgets */
 .pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:6px}
 .pick-card{border:1px solid var(--line);border-radius:11px;padding:12px;cursor:pointer;text-align:center;background:var(--surface-solid)}

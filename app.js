@@ -1633,11 +1633,23 @@ async function renderClienteDetail(canvas, hint) {
   $("#crumb").innerHTML = '<a class="cr-link" onclick="irConsole()">Clientes</a><span class="cr-sep">›</span><span class="cr-cur">' + esc(c.empresa || c.nome) + '</span>';
   const { data: projetos } = await sb.from("projetos").select("*").eq("cliente_id", c.id).order("created_at");
   hint.style.display = "block";
+  const d = c.dados || {};
+  const logo = c.marca && c.marca.logoUrl;
+  const info = [["✉️", d.email], ["📞", d.telefone], ["🌐", d.site], ["📍", d.endereco], ["🏷", d.segmento], ["📅", d.inicio]]
+    .filter(r => r[1]).map(r => '<span class="cli-info-item">' + r[0] + ' ' + esc(r[1]) + '</span>').join("");
+  const temPerfil = logo || info || d.observacoes;
+  const perfil = temPerfil ? '<div class="cli-perfil">' +
+    (logo ? '<div class="cli-perfil-logo"><img src="' + escAttr(logo) + '" alt=""></div>' : '') +
+    '<div class="cli-perfil-body">' +
+    (info ? '<div class="cli-info">' + info + '</div>' : '') +
+    (d.observacoes ? '<div class="cli-obs">' + esc(d.observacoes) + '</div>' : '') +
+    '</div></div>' : '';
   hint.innerHTML = '<div class="page">' +
-    '<div class="page-head"><h2>' + esc(c.empresa || c.nome) + '</h2><div style="display:flex;gap:8px">' +
+    '<div class="page-head"><h2>' + esc(c.empresa || c.nome) + ' <span class="cli-status ' + (c.status === "ativo" ? "ativo" : "pausado") + '" style="vertical-align:middle">' + esc(c.status) + '</span></h2><div style="display:flex;gap:8px">' +
     '<button class="btn danger" onclick="excluirCliente()">🗑 Excluir</button>' +
-    '<button class="btn" onclick="editarCliente()">✏ Editar</button>' +
+    '<button class="btn" onclick="editarCliente()">⚙ Configurar cliente</button>' +
     '<button class="btn primary" onclick="novoProjeto()">＋ Novo projeto</button></div></div>' +
+    perfil +
     ((projetos && projetos.length) ? '<div class="cli-grid">' + projetos.map(p =>
       '<div class="cli-card" onclick="abrirProjeto(\'' + p.id + '\')">' +
       '<div class="cli-name">' + esc(p.nome) + '</div>' +
@@ -3290,27 +3302,44 @@ async function editarMembro(id) {
 }
 async function removerMembro(id) { if (!(await confirmDialog("Remover este participante do projeto?"))) return; await sb.from("membros").delete().eq("id", id); route(); }
 
-/* — Editar / Excluir cliente — */
+/* — Configurar cliente (identidade + contato + dados) — */
 function editarCliente() {
   const c = curCliente;
-  openModal('<h3>Editar cliente</h3>' +
+  const d = c.dados || {};
+  const mk = c.marca || {};
+  const urlLogo = (mk.logoUrl && !String(mk.logoUrl).startsWith("data:")) ? mk.logoUrl : "";
+  openModal('<h3>⚙ Configurar cliente</h3>' +
+    '<div class="pz-sec-tit">Identidade</div>' +
     field("Empresa", "empresa", c.empresa || "") +
     field("Contato / nome", "nome", c.nome || "") +
-    '<label>Status</label><select data-k="status">' +
-    '<option value="ativo"' + (c.status === "ativo" ? " selected" : "") + '>Ativo</option>' +
-    '<option value="pausado"' + (c.status !== "ativo" ? " selected" : "") + '>Pausado</option></select>' +
-    '<label>Cor da marca</label><input type="color" data-k="cor" value="' + escAttr((c.marca && c.marca.cor) || "#e8a33d") + '" style="height:40px;padding:4px">' +
-    field("Logo do cliente (URL — opcional)", "logoUrl", (c.marca && c.marca.logoUrl) || "") +
-    '<p class="muted-note" style="font-size:11.5px;margin-top:4px;text-transform:none;letter-spacing:0;font-weight:600">Se informar uma logo, ela aparece no topo no lugar do nome.</p>' +
+    '<label>Status</label><select data-k="status"><option value="ativo"' + (c.status === "ativo" ? " selected" : "") + '>Ativo</option><option value="pausado"' + (c.status !== "ativo" ? " selected" : "") + '>Pausado</option></select>' +
+    '<label>Cor da marca</label><input type="color" data-k="cor" value="' + escAttr(mk.cor || "#e8a33d") + '" style="height:40px;padding:4px">' +
+    field("Logo (cole uma URL)", "logoUrl", urlLogo) +
+    '<label class="btn sm" style="cursor:pointer;display:inline-block;margin-top:6px">📁 Enviar logo<input type="file" id="logoUp" accept="image/*" style="display:none"></label> <span id="logoMsg" class="muted-note" style="font-size:12px">' + (mk.logoUrl && String(mk.logoUrl).startsWith("data:") ? "logo enviada ✓" : "") + '</span>' +
+    '<div class="pz-sec-tit" style="margin-top:18px">Contato</div>' +
+    field("E-mail", "email", d.email || "") + field("Telefone", "telefone", d.telefone || "") +
+    field("Site", "site", d.site || "") + field("Endereço", "endereco", d.endereco || "") +
+    '<div class="pz-sec-tit" style="margin-top:18px">Sobre o cliente</div>' +
+    field("Segmento / área", "segmento", d.segmento || "") +
+    '<label>Cliente desde</label><input type="date" data-k="inicio" value="' + escAttr(d.inicio || "") + '">' +
+    '<label>Observações (anotações internas)</label><textarea data-k="observacoes" style="min-height:80px">' + esc(d.observacoes || "") + '</textarea>' +
     actions("Salvar"),
     m => {
+      let logoData = (mk.logoUrl && String(mk.logoUrl).startsWith("data:")) ? mk.logoUrl : null;
+      m.querySelector("#logoUp").onchange = e => {
+        const f = e.target.files[0]; if (!f) return;
+        if (f.size > 400000) { toast("Logo grande demais (máx ~400KB). Use uma URL."); return; }
+        const r = new FileReader(); r.onload = () => { logoData = r.result; m.querySelector("#logoMsg").textContent = "logo enviada ✓"; }; r.readAsDataURL(f);
+      };
       m.querySelector("[data-x]").onclick = closeModal;
       m.querySelector("[data-ok]").onclick = async () => {
-        const get = k => m.querySelector('[data-k="' + k + '"]').value.trim();
+        const get = k => ((m.querySelector('[data-k="' + k + '"]') || {}).value || "").trim();
         const empresa = get("empresa");
         if (!empresa) { toast("Informe a empresa."); return; }
-        const marca = Object.assign({}, c.marca || {}, { cor: get("cor"), titulo: empresa, logoUrl: get("logoUrl") || "" });
-        const upd = { empresa, nome: get("nome") || empresa, status: get("status"), marca };
+        const logoUrl = logoData || get("logoUrl") || "";
+        const marca = Object.assign({}, mk, { cor: get("cor"), titulo: empresa, logoUrl });
+        const dados = { email: get("email"), telefone: get("telefone"), site: get("site"), endereco: get("endereco"), segmento: get("segmento"), inicio: get("inicio"), observacoes: get("observacoes") };
+        const upd = { empresa, nome: get("nome") || empresa, status: get("status"), marca, dados };
         const { error } = await sb.from("clientes").update(upd).eq("id", c.id);
         if (error) { toast("Erro: " + error.message); return; }
         curCliente = Object.assign({}, c, upd);
