@@ -3281,35 +3281,76 @@ function fmtDt(iso) {
     d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
+function _reuLocalHtml(r) {
+  return String(r.local_ou_link).startsWith("http")
+    ? '<a href="' + escAttr(r.local_ou_link) + '" target="_blank" rel="noopener" class="lnk">🔗 Link da reunião</a>'
+    : '📍 ' + esc(r.local_ou_link);
+}
 async function renderReunioes(canvas, hint) {
   const pid = curProjeto.id;
   hint.style.display = "block";
-  const { data: rs } = await sb.from("reunioes")
-    .select("*")
-    .eq("projeto_id", pid)
-    .order("data_hora");
+  const { data: rs } = await sb.from("reunioes").select("*").eq("projeto_id", pid).order("data_hora", { ascending: false });
+  const all = rs || [];
+  const agendadas = all.filter(r => r.status === "agendada").sort((a, b) => a.data_hora.localeCompare(b.data_hora));
+  const realizadas = all.filter(r => r.status === "realizada");
 
-  const SBADGE = { agendada: "⏳ agendada", realizada: "✓ realizada", cancelada: "✕ cancelada" };
-  const cards = (rs || []).map(r => {
+  const cardAgendada = r => '<div class="reucard">' +
+    '<div class="reu-head"><span class="reu-title">' + esc(r.titulo) + '</span><span class="reubadge agendada">⏳ agendada</span></div>' +
+    '<div class="reu-when">📅 ' + fmtDt(r.data_hora) + ' · ' + r.duracao_min + ' min</div>' +
+    (r.local_ou_link ? '<div class="reu-local">' + _reuLocalHtml(r) + '</div>' : '') +
+    (r.descricao ? '<div class="reu-desc">' + esc(r.descricao) + '</div>' : '') +
+    (canEdit ? '<div class="reu-actions"><button class="lnk" onclick="editarReuniao(\'' + r.id + '\')">editar</button><button class="lnk ok" onclick="realizarReuniao(\'' + r.id + '\')">marcar como realizada</button><button class="lnk del" onclick="delReuniao(\'' + r.id + '\')">excluir</button></div>' : '') +
+    '</div>';
+
+  const cardRealizada = r => {
+    const d = r.dados || {};
+    const tarefas = (d.tarefas || []).map(t => '<li>' + esc(t.texto) + (t.responsavel ? ' <span class="reu-resp">— ' + esc(t.responsavel) + '</span>' : '') + '</li>').join("");
+    const prints = (d.prints || []).map(u => '<a href="' + escAttr(u) + '" target="_blank" rel="noopener"><img src="' + escAttr(u) + '" class="reu-print" loading="lazy"></a>').join("");
     return '<div class="reucard">' +
-      '<div class="reu-head"><span class="reu-title">' + esc(r.titulo) + '</span>' +
-      '<span class="reubadge ' + r.status + '">' + SBADGE[r.status] + '</span></div>' +
-      '<div class="reu-when">📅 ' + fmtDt(r.data_hora) + ' · ' + r.duracao_min + ' min</div>' +
-      (r.local_ou_link ? '<div class="reu-local">' + (r.local_ou_link.startsWith("http") ?
-        '<a href="' + escAttr(r.local_ou_link) + '" target="_blank" rel="noopener" class="lnk">🔗 Link da reunião</a>' :
-        '📍 ' + esc(r.local_ou_link)) + '</div>' : '') +
-      (r.descricao ? '<div class="reu-desc">' + esc(r.descricao) + '</div>' : '') +
-      (r.notas ? '<div class="reu-notas"><b>📋 Ata:</b> ' + esc(r.notas) + '</div>' : '') +
-      (canEdit ? '<div class="reu-actions">' +
-        '<button class="lnk" onclick="editarReuniao(\'' + r.id + '\')">editar</button>' +
-        (r.status === "agendada" ? '<button class="lnk ok" onclick="realizarReuniao(\'' + r.id + '\')">marcar como realizada</button>' : '') +
-        '<button class="lnk del" onclick="delReuniao(\'' + r.id + '\')">excluir</button></div>' : '') +
+      '<div class="reu-head"><span class="reu-title">' + esc(r.titulo) + '</span><span class="reubadge realizada">✓ realizada</span></div>' +
+      '<div class="reu-when">📅 ' + fmtDt(r.data_hora) + '</div>' +
+      (d.gravacao_url ? '<div class="reu-local"><a href="' + escAttr(d.gravacao_url) + '" target="_blank" rel="noopener" class="lnk">🎥 Gravação</a></div>' : '') +
+      (d.resumo ? '<div class="reu-notas"><b>📝 Resumo:</b> ' + esc(d.resumo) + '</div>' : (r.notas ? '<div class="reu-notas"><b>📋 Ata:</b> ' + esc(r.notas) + '</div>' : '')) +
+      (tarefas ? '<div class="reu-tarefas"><b>✅ Tarefas:</b><ul>' + tarefas + '</ul></div>' : '') +
+      (prints ? '<div class="reu-prints">' + prints + '</div>' : '') +
+      (d.transcricao ? '<details class="reu-transc"><summary>📄 Transcrição</summary><div>' + esc(d.transcricao) + '</div></details>' : (d.transcricao_url ? '<div class="reu-local"><a href="' + escAttr(d.transcricao_url) + '" target="_blank" rel="noopener" class="lnk">📄 Transcrição (arquivo)</a></div>' : '')) +
+      (canEdit ? '<div class="reu-actions"><button class="lnk" onclick="registrarReuniaoRealizada(\'' + r.id + '\')">✏ editar registro</button><button class="lnk del" onclick="delReuniao(\'' + r.id + '\')">excluir</button></div>' : '') +
       '</div>';
-  }).join("") || '<p class="muted-note">Nenhuma reunião agendada.</p>';
+  };
 
   hint.innerHTML = '<div class="page"><div class="page-head"><h2>📅 Reuniões</h2>' +
-    (canEdit || perm("pode_marcar_reunioes") ? '<button class="btn primary" onclick="novaReuniao()">＋ Agendar reunião</button>' : '') +
-    '</div>' + cards + '</div>';
+    (canEdit || perm("pode_marcar_reunioes") ? '<button class="btn primary" onclick="novaReuniao()">＋ Agendar reunião</button>' : '') + '</div>' +
+    '<div class="gsec"><div class="gsec-head"><h3>⏳ Agendadas</h3></div>' + (agendadas.map(cardAgendada).join("") || '<p class="muted-note">Nenhuma reunião agendada.</p>') + '</div>' +
+    '<div class="gsec"><div class="gsec-head"><h3>✅ Realizadas</h3></div>' + (realizadas.map(cardRealizada).join("") || '<p class="muted-note">Nenhuma reunião realizada ainda.</p>') + '</div>' +
+    '</div>';
+}
+
+/* Item 12: registro completo da reunião realizada */
+async function registrarReuniaoRealizada(rid) {
+  const { data: r } = await sb.from("reunioes").select("*").eq("id", rid).single();
+  const d = r.dados || {};
+  const tarefasTxt = (d.tarefas || []).map(t => t.texto + (t.responsavel ? " | " + t.responsavel : "")).join("\n");
+  const printsTxt = (d.prints || []).join("\n");
+  openModal('<h3>📝 Registro — ' + esc(r.titulo) + '</h3>' +
+    field("🎥 Link da gravação", "gravacao_url", d.gravacao_url || "") +
+    '<label>Resumo da reunião</label><textarea data-k="resumo" style="min-height:70px">' + esc(d.resumo || r.notas || "") + '</textarea>' +
+    '<label>Transcrição (texto)</label><textarea data-k="transcricao" style="min-height:90px">' + esc(d.transcricao || "") + '</textarea>' +
+    field("📄 Link do arquivo de transcrição", "transcricao_url", d.transcricao_url || "") +
+    '<label>Prints / fotos <span class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:11px">(uma URL por linha)</span></label><textarea data-k="prints" style="min-height:50px;font-family:var(--font-mono);font-size:12px">' + esc(printsTxt) + '</textarea>' +
+    '<label>Tarefas <span class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:11px">(uma por linha: <b>tarefa | responsável</b> — participante ou externo)</span></label><textarea data-k="tarefas" style="min-height:70px;font-family:var(--font-mono);font-size:12.5px">' + esc(tarefasTxt) + '</textarea>' +
+    actions("Salvar registro"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const get = k => (m.querySelector('[data-k="' + k + '"]') || {}).value || "";
+        const tarefas = get("tarefas").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]).map(a => ({ texto: a[0], responsavel: a[1] || "" }));
+        const prints = get("prints").split("\n").map(s => s.trim()).filter(Boolean);
+        const dados = Object.assign({}, r.dados || {}, { gravacao_url: get("gravacao_url").trim() || null, resumo: get("resumo").trim() || null, transcricao: get("transcricao").trim() || null, transcricao_url: get("transcricao_url").trim() || null, prints, tarefas });
+        const { error } = await sb.from("reunioes").update({ dados, notas: get("resumo").trim() || r.notas }).eq("id", rid);
+        if (error) { toast("Erro: " + error.message); return; }
+        closeModal(); route(); toast("Registro salvo.");
+      };
+    });
 }
 
 function reuForm(r) {

@@ -775,6 +775,15 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 .reu-desc{font-size:13.5px;line-height:1.5;white-space:pre-wrap;color:var(--text);margin-bottom:8px}
 .reu-notas{font-size:13px;background:var(--surface-solid);border-radius:9px;padding:10px 12px;line-height:1.55;white-space:pre-wrap;margin-bottom:8px;color:var(--muted)}
 .reu-actions{display:flex;gap:10px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+.reu-tarefas{font-size:13px;margin-bottom:8px}
+.reu-tarefas ul{margin:5px 0 0;padding-left:20px}
+.reu-tarefas li{line-height:1.5;margin-bottom:2px}
+.reu-resp{color:var(--accent-2);font-weight:700;font-size:12px}
+.reu-prints{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.reu-print{width:90px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.reu-transc{margin-bottom:8px;font-size:13px}
+.reu-transc summary{cursor:pointer;font-weight:700;color:var(--muted);padding:4px 0}
+.reu-transc>div{font-size:13px;line-height:1.5;white-space:pre-wrap;background:var(--surface-solid);border-radius:9px;padding:10px 12px;margin-top:6px;max-height:220px;overflow:auto}
 .lnk.ok:hover{color:var(--ok)}
 .perm-aviso{text-align:center;padding:16px;border:1px dashed var(--line-strong);border-radius:10px;color:var(--faint);font-size:13px}
 
