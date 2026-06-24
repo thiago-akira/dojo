@@ -1866,6 +1866,7 @@ function paintTools() {
   $("#adminBtn").classList.toggle("on", view === "console" && consoleTab === "clientes");
   $("#meusBtn").style.display = isAdmin ? "" : "none";
   $("#meusBtn").classList.toggle("on", view === "console" && consoleTab === "meus-projetos");
+  $("#bellBtn").style.display = isAdmin ? "" : "none";
   const pv = $("#previewBtn");
   if (pv) {
     pv.style.display = (canEditReal && view === "painel") ? "" : "none";
@@ -1999,12 +2000,84 @@ function authModal() {
 
 /* Carrega o perfil e decide a rota inicial conforme o papel */
 async function onSession(session) {
-  if (!session) { unsubscribeRealtime(); me = null; isAdmin = false; view = "login"; route(); return; }
+  if (!session) { unsubscribeRealtime(); unsubscribeAcessosRealtime(); clearInterval(_pingTimer); me = null; isAdmin = false; view = "login"; route(); return; }
   const { data: pessoa } = await sb.from("pessoas").select("*").eq("id", session.user.id).maybeSingle();
   me = pessoa || { id: session.user.id, email: session.user.email, nome: session.user.email };
   isAdmin = !!(pessoa && pessoa.is_admin);
-  if (isAdmin) { view = "console"; route(); }
-  else { await rotaCliente(); }
+  if (isAdmin) { subscribeAcessosRealtime(); updateBell(); view = "console"; route(); }
+  else { registrarAcesso(); await rotaCliente(); }
+}
+
+/* ===== Registro de acesso (frequência, último acesso, tempo de sessão) ===== */
+let _acessoId = null, _pingTimer = null;
+async function registrarAcesso() {
+  if (!me || isAdmin) return; // só clientes/equipe; o admin não se rastreia
+  try {
+    const cutoff = new Date(Date.now() - 30 * 60000).toISOString();
+    const { data: recent } = await sb.from("acessos").select("id").eq("pessoa_id", me.id).gte("last_ping", cutoff).order("last_ping", { ascending: false }).limit(1);
+    if (recent && recent.length) {
+      _acessoId = recent[0].id;
+      await sb.from("acessos").update({ last_ping: new Date().toISOString() }).eq("id", _acessoId);
+    } else {
+      const { data } = await sb.from("acessos").insert({ pessoa_id: me.id }).select("id").single();
+      _acessoId = data && data.id;
+    }
+  } catch (e) { /* silencioso */ }
+  clearInterval(_pingTimer);
+  _pingTimer = setInterval(() => {
+    if (_acessoId && document.visibilityState === "visible") sb.from("acessos").update({ last_ping: new Date().toISOString() }).eq("id", _acessoId);
+  }, 120000);
+}
+
+/* ===== Sino de avisos (admin): badge + card de acessos ===== */
+let _acessosChannel = null, _alertasCache = [];
+function subscribeAcessosRealtime() {
+  if (_acessosChannel) return;
+  _acessosChannel = sb.channel("acessos-admin")
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "acessos" }, () => updateBell())
+    .subscribe();
+}
+function unsubscribeAcessosRealtime() { if (_acessosChannel) { sb.removeChannel(_acessosChannel); _acessosChannel = null; } }
+
+async function updateBell() {
+  if (!isAdmin) return;
+  const { data } = await sb.from("acessos").select("id, started_at, pessoa:pessoas!pessoa_id(nome,email)").order("started_at", { ascending: false }).limit(30);
+  _alertasCache = data || [];
+  const lastSeen = localStorage.getItem("dojo_alertas_visto") || "1970-01-01T00:00:00Z";
+  const unseen = _alertasCache.filter(a => a.started_at > lastSeen).length;
+  const badge = document.getElementById("bellBadge");
+  if (!badge) return;
+  if (unseen > 0) { badge.textContent = unseen > 99 ? "99+" : String(unseen); badge.style.display = ""; }
+  else badge.style.display = "none";
+}
+
+function toggleBell() {
+  const existing = document.getElementById("bellPanel");
+  if (existing) { existing.remove(); document.removeEventListener("click", _closeBellOutside, true); return; }
+  const lastSeen = localStorage.getItem("dojo_alertas_visto") || "1970-01-01T00:00:00Z";
+  const items = (_alertasCache || []).length
+    ? _alertasCache.map(a => {
+        const who = (a.pessoa && (a.pessoa.nome || a.pessoa.email)) || "Alguém";
+        const novo = a.started_at > lastSeen;
+        return '<div class="bell-item' + (novo ? " novo" : "") + '"><span class="bell-dot"></span><div class="bell-body"><div class="bell-who">' + esc(who) + '</div><div class="bell-when">acessou ' + fmtRel(a.started_at) + '</div></div></div>';
+      }).join("")
+    : '<p class="muted-note" style="padding:14px;text-align:center">Nenhum acesso registrado ainda.</p>';
+  const panel = document.createElement("div");
+  panel.id = "bellPanel"; panel.className = "bell-panel";
+  panel.innerHTML = '<div class="bell-head">Avisos de acesso</div><div class="bell-list">' + items + '</div>';
+  document.body.appendChild(panel);
+  const r = document.getElementById("bellBtn").getBoundingClientRect();
+  panel.style.top = (r.bottom + 6) + "px";
+  panel.style.right = Math.max(8, window.innerWidth - r.right) + "px";
+  localStorage.setItem("dojo_alertas_visto", new Date().toISOString());
+  setTimeout(updateBell, 30);
+  setTimeout(() => document.addEventListener("click", _closeBellOutside, true), 0);
+}
+function _closeBellOutside(e) {
+  const panel = document.getElementById("bellPanel");
+  if (panel && !panel.contains(e.target) && e.target.id !== "bellBtn") {
+    panel.remove(); document.removeEventListener("click", _closeBellOutside, true);
+  }
 }
 
 /* Cliente: abre direto o projeto se houver só um; senão lista */
@@ -2857,6 +2930,7 @@ function wireTopbar() {
   $("#meusBtn").onclick = irMeusProjetos;
   $("#addBtn").onclick = openPicker;
   $("#previewBtn").onclick = () => setPreviewCliente(!previewCliente);
+  $("#bellBtn").onclick = (e) => { e.stopPropagation(); toggleBell(); };
   $("#editBtn").onclick = () => { editMode = !editMode; route(); };
 }
 
