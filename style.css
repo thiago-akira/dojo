@@ -3,7 +3,7 @@
   --bg:#0f0f14; --surface:#1a1b22; --surface-solid:#20212a; --line:#2c2e3a; --line-strong:#3a3d4d;
   --text:#e9eaf0; --muted:#9aa0b5; --faint:#6b7186;
   --accent:#e8a33d; --accent-2:#5b8def; --danger:#e0604a; --ok:#3fa873;
-  --radius:14px; --gap:14px; --row:96px; --cols:12;
+  --radius:14px; --gap:14px; --row:48px; --cols:24;
   --font-ui:"Bricolage Grotesque",system-ui,sans-serif; --font-mono:"JetBrains Mono",monospace;
   --shadow:0 10px 30px rgba(0,0,0,.35);
 }
@@ -117,7 +117,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);-webkit-f
 .canvas-wrap.dev-tablet,.canvas-wrap.dev-mobile{margin:16px auto;border:2px solid var(--line-strong);border-radius:20px;box-shadow:var(--shadow);min-height:auto;background:var(--bg);transition:max-width .25s}
 .canvas-wrap.dev-tablet{max-width:768px}
 .canvas-wrap.dev-mobile{max-width:390px}
-.canvas-wrap.dev-tablet .canvas,.canvas-wrap.dev-mobile .canvas{--cols:12}
+.canvas-wrap.dev-tablet .canvas,.canvas-wrap.dev-mobile .canvas{--cols:24}
 
 /* ===== Tile / card ===== */
 .tile{grid-column:var(--gc);grid-row:var(--gr);position:relative;min-width:0;min-height:0}
@@ -197,6 +197,14 @@ body.edit .tile.dragging .card{cursor:grabbing}
 /* ===== Widget: Parágrafo ===== */
 .para-body{flex:1;min-height:0;overflow:auto;padding:12px 14px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
 .para-edit{outline:none;cursor:text}
+/* widget Lista / Notas */
+.lista-body{flex:1;min-height:0;overflow:auto;padding:12px 14px;line-height:1.5}
+.lista-body h3{font-size:16px;font-weight:800;margin:8px 0 4px;letter-spacing:-.2px}
+.lista-body h4{font-size:13.5px;font-weight:700;margin:6px 0 3px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px}
+.lista-body p,.lista-body div{font-size:13.5px;margin:3px 0}
+.lista-body ul,.lista-body ol{margin:5px 0;padding-left:22px}
+.lista-body li{font-size:13.5px;line-height:1.5;margin-bottom:3px}
+.lista-body:first-child,.lista-body :first-child{margin-top:0}
 .para-tb{position:fixed;z-index:60;display:none;align-items:center;gap:3px;background:var(--surface);border:1px solid var(--line-strong);border-radius:9px;box-shadow:var(--shadow);padding:4px}
 .para-tb button{width:30px;height:30px;border:0;background:none;color:var(--text);font-size:14px;border-radius:6px;cursor:pointer;font-family:inherit}
 .para-tb button:hover{background:var(--surface-solid);color:var(--accent)}

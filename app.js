@@ -6,7 +6,8 @@
 /* ===== 1) Cliente Supabase ===== */
 const CFG = window.DOJO_CONFIG || {};
 const sb = supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);
-const COLS = 12;
+const COLS = 24;   // resolução do grid (era 12; dobrada p/ ajustes mais finos)
+const RES = 2;     // fator de migração de layouts antigos (12→24)
 
 /* ===== 2) Helpers ===== */
 const uid = () => "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -152,7 +153,7 @@ function perm(flag) {
 let state = defaultState();
 let _saveTimer = null;
 
-function defaultState() { return { spaces: [{ id: uid(), name: "Painel", visibility: "compartilhado", tiles: [] }] }; }
+function defaultState() { return { _res2: true, spaces: [{ id: uid(), name: "Painel", visibility: "compartilhado", tiles: [] }] }; }
 function space() {
   const ss = state.spaces || [];
   return ss.find(s => s.id === curSpaceId) || ss[0] || (ss.push({ id: uid(), name: "Painel", visibility: "compartilhado", tiles: [] }), ss[0]);
@@ -276,6 +277,21 @@ const WIDGETS = {
         '<label>Cor do texto (opcional)</label><input type="color" data-k="color" value="' + escAttr(p.color || "#e9eaf0") + '" style="height:40px;padding:4px">' +
         '<label>Texto</label><textarea data-k="text" style="min-height:110px">' + esc(p.text) + '</textarea>';
     }
+  },
+  lista: {
+    emoji: "📋", name: "Lista / Notas", desc: "Lista rica: títulos, subtítulos, marcadores e numeração.",
+    w: 4, h: 4, defaults: { title: "Lista", html: "" },
+    render(t, c) {
+      const p = t.props;
+      const head = p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '';
+      const body = p.html ? sanitizeHtml(p.html) : "";
+      if (editMode && canEdit) {
+        c.innerHTML = head + '<div class="lista-body para-edit" contenteditable="true" oninput="onParaInput(this,\'' + t.id + '\')" onfocus="listaToolbar(this)" onblur="hideParaToolbar()">' + body + '</div>';
+      } else {
+        c.innerHTML = head + '<div class="lista-body">' + (body || '<p class="muted-note">Lista vazia — clique em ✏ Editar e digite.</p>') + '</div>';
+      }
+    },
+    form(p) { return field("Título (opcional)", "title", p.title); }
   },
   referencias: {
     emoji: "🔗", name: "Referências", desc: "Colunas de links importantes, editáveis.",
@@ -761,20 +777,28 @@ function sanitizeHtml(s) {
   return d.innerHTML;
 }
 /* Barra de formatação rápida do parágrafo (item 7) */
-function paraToolbar(el) {
-  let tb = document.getElementById("paraTb");
-  if (!tb) {
-    tb = document.createElement("div"); tb.id = "paraTb"; tb.className = "para-tb";
-    tb.innerHTML = '<button data-cmd="bold" title="Negrito"><b>B</b></button><button data-cmd="italic" title="Itálico"><i>I</i></button><button data-cmd="underline" title="Sublinhado"><u>U</u></button><span class="ptb-sep"></span><button data-sz="2" title="Menor">A−</button><button data-sz="3" title="Médio">A</button><button data-sz="5" title="Maior">A+</button>';
-    document.body.appendChild(tb);
-    tb.querySelectorAll("button").forEach(b => b.onmousedown = e => { e.preventDefault(); if (b.dataset.cmd) document.execCommand(b.dataset.cmd, false, null); else document.execCommand("fontSize", false, b.dataset.sz); });
-  }
+function _showToolbar(el, html) {
+  let tb = document.getElementById("paraTb"); if (tb) tb.remove();
+  tb = document.createElement("div"); tb.id = "paraTb"; tb.className = "para-tb"; tb.innerHTML = html;
+  document.body.appendChild(tb);
+  tb.querySelectorAll("button").forEach(b => b.onmousedown = e => {
+    e.preventDefault();
+    if (b.dataset.cmd) document.execCommand(b.dataset.cmd, false, null);
+    else if (b.dataset.fb) document.execCommand("formatBlock", false, b.dataset.fb);
+    else if (b.dataset.sz) document.execCommand("fontSize", false, b.dataset.sz);
+  });
   const r = el.getBoundingClientRect();
   tb.style.display = "flex";
   tb.style.top = Math.max(8, r.top - 42) + "px";
-  tb.style.left = Math.min(r.left, window.innerWidth - 210) + "px";
+  tb.style.left = Math.min(r.left, window.innerWidth - 300) + "px";
 }
-function hideParaToolbar() { setTimeout(() => { const tb = document.getElementById("paraTb"); if (tb) tb.style.display = "none"; }, 150); }
+function paraToolbar(el) {
+  _showToolbar(el, '<button data-cmd="bold" title="Negrito"><b>B</b></button><button data-cmd="italic" title="Itálico"><i>I</i></button><button data-cmd="underline" title="Sublinhado"><u>U</u></button><span class="ptb-sep"></span><button data-sz="2" title="Menor">A−</button><button data-sz="3" title="Médio">A</button><button data-sz="5" title="Maior">A+</button>');
+}
+function listaToolbar(el) {
+  _showToolbar(el, '<button data-fb="h3" title="Título">T</button><button data-fb="h4" title="Subtítulo">t</button><button data-fb="div" title="Texto normal">¶</button><span class="ptb-sep"></span><button data-cmd="insertUnorderedList" title="Marcadores">•</button><button data-cmd="insertOrderedList" title="Numerada">1.</button><span class="ptb-sep"></span><button data-cmd="bold" title="Negrito"><b>B</b></button><button data-cmd="italic" title="Itálico"><i>I</i></button><button data-cmd="underline" title="Sublinhado"><u>U</u></button>');
+}
+function hideParaToolbar() { setTimeout(() => { const tb = document.getElementById("paraTb"); if (tb) tb.style.display = "none"; }, 180); }
 function parseRefColumns(raw) {
   const cols = [];
   let cur = null;
@@ -1708,6 +1732,14 @@ async function abrirProjeto(id) {
 async function loadPainel(projetoId) {
   const { data } = await sb.from("paineis").select("layout").eq("projeto_id", projetoId).maybeSingle();
   state = (data && data.layout && data.layout.spaces) ? data.layout : defaultState();
+  migrarResolucao();
+}
+/* Migra layouts antigos (12 col) para a nova resolução (24 col) — dobra x/y/w/h uma vez */
+function migrarResolucao() {
+  if (!state || state._res2) return;
+  (state.spaces || []).forEach(s => (s.tiles || []).forEach(t => { t.x *= RES; t.y *= RES; t.w *= RES; t.h *= RES; }));
+  state._res2 = true;
+  if (canEdit) save();
 }
 
 function save() {
@@ -2030,7 +2062,7 @@ function renderPainel(canvas, hint) {
 /* ===== 10) Edição de widgets (admin/gestor) ===== */
 function addWidget(type) {
   const W = WIDGETS[type]; if (!W) return;
-  const t = { id: uid(), type, x: 0, y: bottomRow(), w: W.w, h: W.h, props: JSON.parse(JSON.stringify(W.defaults || {})) };
+  const t = { id: uid(), type, x: 0, y: bottomRow(), w: W.w * RES, h: W.h * RES, props: JSON.parse(JSON.stringify(W.defaults || {})) };
   space().tiles.push(t); save(); pushHist("Adicionou " + (W.name || "widget")); route();
 }
 function bottomRow() { return space().tiles.reduce((m, t) => Math.max(m, t.y + t.h), 0); }
@@ -2042,7 +2074,7 @@ async function removeTile(id) {
   save(); pushHist("Removeu widget"); route();
 }
 
-function cellSize() { const c = $("#canvas"); const gap = 14; const w = (c.clientWidth - gap * (COLS - 1)) / COLS; return { w, h: 96, gap }; }
+function cellSize() { const c = $("#canvas"); const gap = 14; const w = (c.clientWidth - gap * (COLS - 1)) / COLS; return { w, h: 48, gap }; }
 function _xOverlap(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x; }
 /* Empurra os outros widgets para baixo para não sobrepor o widget fixo (arrastado) */
 function reflowPush(tiles, fixed) {
