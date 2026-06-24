@@ -3321,17 +3321,58 @@ function reuForm(r) {
     return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
       "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
   };
+  const dd = r.dados || {};
+  const tipo = dd.tipo || ((r.local_ou_link && String(r.local_ou_link).startsWith("http")) ? "online" : "presencial");
   return field("Título", "titulo", r.titulo || "") +
     '<label>Data e hora</label><input type="datetime-local" data-k="data_hora" value="' + escAttr(toLocalDt(r.data_hora)) + '">' +
     field("Duração (minutos)", "duracao_min", r.duracao_min || 60) +
-    field("Local ou link", "local_ou_link", r.local_ou_link || "") +
+    '<label>Tipo</label><select data-k="tipo" id="reuTipo"><option value="online"' + (tipo === "online" ? " selected" : "") + '>💻 Online</option><option value="presencial"' + (tipo === "presencial" ? " selected" : "") + '>📍 Presencial</option></select>' +
+    '<label id="reuLocalLbl">' + (tipo === "online" ? "Link da reunião" : "Endereço / local") + '</label>' +
+    '<div style="position:relative"><input data-k="local_ou_link" id="reuLocal" autocomplete="off" value="' + escAttr(r.local_ou_link || "") + '" placeholder="' + (tipo === "online" ? "https://meet…" : "Digite o endereço ou nome do lugar…") + '"><div id="placeAc" class="place-ac" style="display:none"></div></div>' +
     '<label>Descrição (pauta)</label><textarea data-k="descricao">' + esc(r.descricao || "") + '</textarea>';
+}
+/* Busca de lugares em tempo real (Photon/OSM, grátis, viés Brasil) — item 11 */
+let _placeTimer = null;
+function attachPlaceSearch(input, acBox) {
+  input.oninput = () => {
+    clearTimeout(_placeTimer);
+    const q = input.value.trim();
+    if (q.length < 3) { acBox.style.display = "none"; return; }
+    _placeTimer = setTimeout(async () => {
+      try {
+        const resp = await fetch("https://photon.komoot.io/api/?q=" + encodeURIComponent(q) + "&limit=6&lat=-14.24&lon=-51.93");
+        const j = await resp.json();
+        const feats = (j.features || []);
+        if (!feats.length) { acBox.style.display = "none"; return; }
+        acBox.innerHTML = feats.map(f => {
+          const p = f.properties || {};
+          const lbl = [p.name, [p.street, p.housenumber].filter(Boolean).join(" "), p.city || p.county, p.state, p.country].filter(Boolean).join(", ");
+          return '<div class="place-it" data-lbl="' + escAttr(lbl) + '">📍 ' + esc(lbl) + '</div>';
+        }).join("");
+        acBox.style.display = "block";
+        acBox.querySelectorAll(".place-it").forEach(el => el.onmousedown = e => { e.preventDefault(); input.value = el.dataset.lbl; acBox.style.display = "none"; });
+      } catch (e) { acBox.style.display = "none"; }
+    }, 350);
+  };
+  input.onblur = () => setTimeout(() => { acBox.style.display = "none"; }, 220);
+}
+function wireReuForm(m) {
+  const tipoSel = m.querySelector("#reuTipo"), input = m.querySelector("#reuLocal"), lbl = m.querySelector("#reuLocalLbl"), ac = m.querySelector("#placeAc");
+  if (!tipoSel) return;
+  const apply = () => {
+    const presencial = tipoSel.value === "presencial";
+    lbl.textContent = presencial ? "Endereço / local" : "Link da reunião";
+    input.placeholder = presencial ? "Digite o endereço ou nome do lugar…" : "https://meet…";
+    if (presencial) attachPlaceSearch(input, ac); else { input.oninput = null; ac.style.display = "none"; }
+  };
+  tipoSel.onchange = apply; apply();
 }
 
 function novaReuniao() {
   openModal('<h3>Agendar reunião</h3>' + reuForm() + actions("Agendar"),
     m => {
       m.querySelector("[data-x]").onclick = closeModal;
+      wireReuForm(m);
       m.querySelector("[data-ok]").onclick = async () => {
         const get = k => (m.querySelector('[data-k="' + k + '"]') || {}).value || "";
         const titulo = get("titulo").trim();
@@ -3343,6 +3384,7 @@ function novaReuniao() {
           duracao_min: parseInt(get("duracao_min")) || 60,
           local_ou_link: get("local_ou_link").trim() || null,
           descricao: get("descricao").trim() || null,
+          dados: { tipo: get("tipo") },
           criado_por: me.id
         });
         if (error) { toast("Erro: " + error.message); return; }
@@ -3358,6 +3400,7 @@ async function editarReuniao(rid) {
     actions("Salvar"),
     m => {
       m.querySelector("[data-x]").onclick = closeModal;
+      wireReuForm(m);
       m.querySelector("[data-ok]").onclick = async () => {
         const get = k => (m.querySelector('[data-k="' + k + '"]') || {}).value || "";
         const titulo = get("titulo").trim();
@@ -3368,6 +3411,7 @@ async function editarReuniao(rid) {
           duracao_min: parseInt(get("duracao_min")) || 60,
           local_ou_link: get("local_ou_link").trim() || null,
           descricao: get("descricao").trim() || null,
+          dados: Object.assign({}, r.dados || {}, { tipo: get("tipo") }),
           notas: get("notas").trim() || null
         }).eq("id", rid);
         if (error) { toast("Erro: " + error.message); return; }
@@ -3444,7 +3488,29 @@ async function renderParticipantes(canvas, hint) {
       (perms ? '<div class="perms">' + perms + '</div>' : "") + '</div>';
   }).join("") || '<p class="muted-note">' + (podeGerenciar ? "Nenhum participante ainda. Adicione alguém para liberar o portal do cliente." : "Ninguém na equipe ainda.") + '</p>';
   hint.innerHTML = '<div class="page"><div class="page-head"><h2>👥 ' + (podeGerenciar ? "Participantes" : "Equipe") + '</h2>' +
-    (podeGerenciar ? '<button class="btn primary" onclick="adicionarParticipante()">＋ Adicionar</button>' : '') + '</div>' + rows + '</div>';
+    (podeGerenciar ? '<button class="btn primary" onclick="adicionarParticipante()">＋ Adicionar</button>' : '') + '</div>' + rows +
+    (podeGerenciar ? '<div id="adesaoBox" style="margin-top:22px"></div>' : '') + '</div>';
+  if (podeGerenciar) carregarAdesaoProjeto(pid);
+}
+
+/* Item 10: adesão/uso de cada participante NESTE projeto */
+async function carregarAdesaoProjeto(pid) {
+  const box = document.getElementById("adesaoBox"); if (!box) return;
+  box.innerHTML = '<div class="gsec-head"><h3>📊 Adesão neste projeto</h3></div><p class="muted-note">Carregando…</p>';
+  const { data, error } = await sb.rpc("metricas_uso_projeto", { p_projeto: pid });
+  if (error) { box.innerHTML = '<div class="gsec-head"><h3>📊 Adesão neste projeto</h3></div><p class="muted-note">Erro: ' + esc(error.message) + '</p>'; return; }
+  const rows = data || [];
+  if (!rows.length) { box.innerHTML = '<div class="gsec-head"><h3>📊 Adesão neste projeto</h3></div><p class="muted-note">Sem participantes para medir.</p>'; return; }
+  const trs = rows.map(r => {
+    const st = _statusUso(r.ultimo_acesso);
+    const contrib = Number(r.n_mensagens || 0) + Number(r.n_forms || 0) + Number(r.n_aprovacoes || 0) + Number(r.n_comentarios || 0);
+    return '<tr><td><div class="uso-nome">' + esc(r.nome || r.email || "—") + ' <span class="papel ' + r.papel + '" style="font-size:9px">' + esc(r.papel) + '</span></div></td>' +
+      '<td><span class="uso-st ' + st.k + '">' + st.t + '</span></td>' +
+      '<td>' + (r.ultimo_acesso ? fmtRel(r.ultimo_acesso) : "—") + '</td>' +
+      '<td><div class="uso-contrib">' + contrib + '</div><div class="uso-breakdown">💬 ' + (r.n_mensagens || 0) + ' · 📋 ' + (r.n_forms || 0) + ' · ✅ ' + (r.n_aprovacoes || 0) + ' · 🗨 ' + (r.n_comentarios || 0) + '</div></td></tr>';
+  }).join("");
+  box.innerHTML = '<div class="gsec-head"><h3>📊 Adesão neste projeto</h3></div>' +
+    '<div class="uso-table-wrap"><table class="data-table uso-table"><thead><tr><th>Participante</th><th>Status</th><th>Último acesso</th><th>Contribuições aqui</th></tr></thead><tbody>' + trs + '</tbody></table></div>';
 }
 
 function adicionarParticipante() {

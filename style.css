@@ -714,6 +714,12 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 .msg-anexo{margin-top:6px;padding-top:5px;border-top:1px solid rgba(255,255,255,.08)}
 .msg.mine .msg-anexo{border-top-color:rgba(0,0,0,.15)}
 
+/* ===== Busca de lugares (autocomplete) ===== */
+.place-ac{position:absolute;left:0;right:0;top:100%;z-index:50;background:var(--surface);border:1px solid var(--line-strong);border-radius:9px;box-shadow:var(--shadow);margin-top:4px;max-height:240px;overflow:auto}
+.place-it{padding:9px 11px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--line)}
+.place-it:last-child{border-bottom:0}
+.place-it:hover{background:var(--surface-solid);color:var(--accent)}
+
 /* ===== Aprovações ===== */
 .btn.ok{color:var(--ok);border-color:var(--ok)}
 .apcard{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:14px 15px;margin-bottom:12px}
