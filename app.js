@@ -1890,22 +1890,37 @@ function _closeSwitchOutside(e) {
 }
 
 /* Editar projeto (nome, status, evolução) — canEdit */
-function editarProjeto() {
+async function editarProjeto() {
   if (!curProjeto || !canEdit) return;
   const p = curProjeto;
+  const { data: priv } = await sb.from("projetos_privado").select("*").eq("projeto_id", p.id).maybeSingle();
+  const pr = priv || {};
+  const entregas = (p.dados && p.dados.entregas) || [];
+  const entregasTxt = entregas.map(e => (e.nome || "") + " | " + (e.data || "")).join("\n");
   openModal('<h3>Editar projeto</h3>' +
     field("Nome", "nome", p.nome || "") +
     '<label>Descrição</label><textarea data-k="descricao">' + esc(p.descricao || "") + '</textarea>' +
     '<label>Status</label><select data-k="status"><option value="ativo"' + (p.status === "ativo" ? " selected" : "") + '>Ativo</option><option value="pausado"' + (p.status === "pausado" ? " selected" : "") + '>Pausado</option><option value="concluido"' + (p.status === "concluido" ? " selected" : "") + '>Concluído</option></select>' +
     '<label>Evolução: <b id="evoLbl">' + (p.progresso || 0) + '%</b></label><input type="range" min="0" max="100" step="5" data-k="progresso" value="' + (p.progresso || 0) + '" style="width:100%" oninput="document.getElementById(\'evoLbl\').textContent=this.value+\'%\'">' +
+    '<div class="pz-sec-tit" style="margin-top:16px">Entregas <span class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:11px">(o cliente vê)</span></div>' +
+    '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Uma por linha: <b>nome | AAAA-MM-DD</b></p>' +
+    '<textarea data-k="entregas" placeholder="Logo final | 2026-07-10\nSite no ar | 2026-08-01" style="min-height:70px;font-family:var(--font-mono);font-size:12.5px">' + esc(entregasTxt) + '</textarea>' +
+    '<div class="pz-sec-tit" style="margin-top:16px">🔒 Só você (privado)</div>' +
+    field("Link da proposta", "proposta_url", pr.proposta_url || "") +
+    field("Valor do projeto (R$)", "valor", pr.valor != null ? pr.valor : "") +
+    '<label>Notas privadas</label><textarea data-k="notas" style="min-height:60px">' + esc(pr.notas || "") + '</textarea>' +
     actions("Salvar"),
     m => {
       m.querySelector("[data-x]").onclick = closeModal;
       m.querySelector("[data-ok]").onclick = async () => {
         const get = k => (m.querySelector('[data-k="' + k + '"]') || {}).value;
-        const upd = { nome: get("nome").trim() || p.nome, descricao: get("descricao").trim() || null, status: get("status"), progresso: parseInt(get("progresso")) || 0 };
+        const ents = (get("entregas") || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]).map(a => ({ nome: a[0], data: a[1] || "" }));
+        const dados = Object.assign({}, p.dados || {}, { entregas: ents });
+        const upd = { nome: get("nome").trim() || p.nome, descricao: get("descricao").trim() || null, status: get("status"), progresso: parseInt(get("progresso")) || 0, dados };
         const { error } = await sb.from("projetos").update(upd).eq("id", p.id);
         if (error) { toast("Erro: " + error.message); return; }
+        const valorNum = parseFloat(String(get("valor")).replace(/[^\d.,]/g, "").replace(".", "").replace(",", ".")) || null;
+        await sb.from("projetos_privado").upsert({ projeto_id: p.id, proposta_url: get("proposta_url").trim() || null, valor: valorNum, notas: get("notas").trim() || null, updated_at: new Date().toISOString() });
         curProjeto = Object.assign({}, curProjeto, upd);
         closeModal(); route();
       };
@@ -3366,6 +3381,9 @@ function editarCliente() {
   const urlLogo = (mk.logoUrl && !String(mk.logoUrl).startsWith("data:")) ? mk.logoUrl : "";
   openModal('<h3>⚙ Configurar cliente</h3>' +
     '<div class="pz-sec-tit">Identidade</div>' +
+    '<label>CNPJ <span class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:11px">(digite e clique buscar — preenche o resto)</span></label>' +
+    '<div style="display:flex;gap:8px"><input data-k="cnpj" value="' + escAttr(d.cnpj || "") + '" placeholder="00.000.000/0000-00" style="flex:1"><button class="btn" id="cnpjBtn" type="button">🔎 Buscar</button></div>' +
+    '<span id="cnpjMsg" class="muted-note" style="font-size:12px"></span>' +
     field("Empresa", "empresa", c.empresa || "") +
     field("Contato / nome", "nome", c.nome || "") +
     '<label>Status</label><select data-k="status"><option value="ativo"' + (c.status === "ativo" ? " selected" : "") + '>Ativo</option><option value="pausado"' + (c.status !== "ativo" ? " selected" : "") + '>Pausado</option></select>' +
@@ -3387,6 +3405,25 @@ function editarCliente() {
         if (f.size > 400000) { toast("Logo grande demais (máx ~400KB). Use uma URL."); return; }
         const r = new FileReader(); r.onload = () => { logoData = r.result; m.querySelector("#logoMsg").textContent = "logo enviada ✓"; }; r.readAsDataURL(f);
       };
+      const setv = (k, v) => { const el = m.querySelector('[data-k="' + k + '"]'); if (el && v) el.value = v; };
+      m.querySelector("#cnpjBtn").onclick = async () => {
+        const cnpj = (m.querySelector('[data-k="cnpj"]').value || "").replace(/\D/g, "");
+        const msg = m.querySelector("#cnpjMsg");
+        if (cnpj.length !== 14) { msg.textContent = "CNPJ deve ter 14 dígitos."; return; }
+        msg.textContent = "Buscando…";
+        try {
+          const resp = await fetch("https://brasilapi.com.br/api/cnpj/v1/" + cnpj);
+          if (!resp.ok) { msg.textContent = "CNPJ não encontrado."; return; }
+          const j = await resp.json();
+          setv("empresa", j.nome_fantasia || j.razao_social);
+          const end = [j.logradouro, j.numero].filter(Boolean).join(", ") + (j.bairro ? " - " + j.bairro : "") + (j.municipio ? ", " + j.municipio : "") + (j.uf ? "/" + j.uf : "") + (j.cep ? " - CEP " + j.cep : "");
+          setv("endereco", end.replace(/^,\s*/, ""));
+          setv("telefone", j.ddd_telefone_1);
+          setv("email", j.email);
+          setv("segmento", j.cnae_fiscal_descricao);
+          msg.textContent = "✓ Dados preenchidos.";
+        } catch (e) { msg.textContent = "Erro na consulta (verifique a conexão)."; }
+      };
       m.querySelector("[data-x]").onclick = closeModal;
       m.querySelector("[data-ok]").onclick = async () => {
         const get = k => ((m.querySelector('[data-k="' + k + '"]') || {}).value || "").trim();
@@ -3394,7 +3431,7 @@ function editarCliente() {
         if (!empresa) { toast("Informe a empresa."); return; }
         const logoUrl = logoData || get("logoUrl") || "";
         const marca = Object.assign({}, mk, { cor: get("cor"), titulo: empresa, logoUrl });
-        const dados = { email: get("email"), telefone: get("telefone"), site: get("site"), endereco: get("endereco"), segmento: get("segmento"), inicio: get("inicio"), observacoes: get("observacoes") };
+        const dados = { cnpj: get("cnpj"), email: get("email"), telefone: get("telefone"), site: get("site"), endereco: get("endereco"), segmento: get("segmento"), inicio: get("inicio"), observacoes: get("observacoes") };
         const upd = { empresa, nome: get("nome") || empresa, status: get("status"), marca, dados };
         const { error } = await sb.from("clientes").update(upd).eq("id", c.id);
         if (error) { toast("Erro: " + error.message); return; }
