@@ -889,8 +889,8 @@ async function getVarsFor(pessoaId) {
 
 async function loadFormularioWidget(widgetId) {
   if (!curProjeto) return;
-  const box = document.getElementById("formw-" + widgetId); if (!box) return;
   const { data: form } = await sb.from("form_formularios").select("*").eq("widget_id", widgetId).maybeSingle();
+  const box = document.getElementById("formw-" + widgetId); if (!box) return;
   const titleEl = box.closest(".content") && box.closest(".content").querySelector(".w-title");
   if (!form) {
     box.innerHTML = canEdit
