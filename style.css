@@ -7,10 +7,30 @@
   --font-ui:"Bricolage Grotesque",system-ui,sans-serif; --font-mono:"JetBrains Mono",monospace;
   --shadow:0 10px 30px rgba(0,0,0,.35);
 }
-html[data-theme="light"]{
+/* ===== Temas (2 escuros + 2 claros) ===== */
+/* Escuro = :root (padrão). "dark" mapeia pro padrão também. */
+html[data-theme="noturno"]{
+  --bg:#080c15; --surface:#111826; --surface-solid:#18202f; --line:#222c3e; --line-strong:#33405a;
+  --text:#e7ecf6; --muted:#8e9ab5; --faint:#5f6c8a; --accent-2:#6ea8ff; --shadow:0 10px 30px rgba(0,0,0,.5);
+}
+html[data-theme="light"],html[data-theme="claro"]{
   --bg:#f3f4f8; --surface:#ffffff; --surface-solid:#ffffff; --line:#e3e5ee; --line-strong:#cfd2e0;
   --text:#1d2030; --muted:#6b7186; --accent:#c9842a; --shadow:0 10px 24px rgba(20,24,60,.10);
 }
+html[data-theme="areia"]{
+  --bg:#f3ece0; --surface:#fffdf8; --surface-solid:#fffdf8; --line:#e7ddca; --line-strong:#d6c8ad;
+  --text:#3a3328; --muted:#8a7d66; --faint:#a89b82; --accent:#bf7d2a; --shadow:0 10px 24px rgba(80,60,20,.12);
+}
+/* Alto contraste (acessibilidade) — reforça sobre o tema atual */
+html.hc{ --line:var(--text); --line-strong:var(--text); --muted:var(--text); --faint:var(--text); }
+html.hc:not([data-theme="claro"]):not([data-theme="areia"]){ --bg:#000; --surface:#0a0a0a; --surface-solid:#111; --text:#fff; }
+html.hc[data-theme="claro"],html.hc[data-theme="areia"]{ --bg:#fff; --surface:#fff; --surface-solid:#fff; --text:#000; }
+html.hc *{text-shadow:none !important}
+html.hc .iconbtn,html.hc .btn,html.hc .card,html.hc .sntab{border-width:2px}
+
+/* Fundo personalizado fixo */
+body{background-attachment:fixed}
+
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
 body{background:var(--bg);color:var(--text);font-family:var(--font-ui);-webkit-font-smoothing:antialiased}
@@ -416,6 +436,34 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 .toast{background:var(--surface-solid);border:1px solid var(--line-strong);color:var(--text);border-radius:10px;padding:11px 16px;font-size:13.5px;font-weight:600;box-shadow:var(--shadow);opacity:0;transform:translateY(10px);transition:opacity .25s,transform .25s;max-width:90vw;text-align:center}
 .toast.show{opacity:1;transform:translateY(0)}
 .toast.err{border-color:var(--danger);color:var(--danger)}
+
+/* ===== Personalização (menu ⋮) ===== */
+.pz-sec{margin-bottom:18px}
+.pz-sec-tit{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);margin-bottom:9px;display:flex;align-items:center;gap:7px}
+.theme-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.theme-opt{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:10px;padding:9px 11px;cursor:pointer;background:var(--surface-solid);font-family:inherit;color:var(--text);font-size:13px;font-weight:700;text-align:left}
+.theme-opt:hover{border-color:var(--accent)}
+.theme-opt.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.theme-chip{width:26px;height:26px;border-radius:7px;border:1px solid rgba(128,128,128,.3);flex:none}
+.bg-grid{display:flex;flex-wrap:wrap;gap:8px}
+.bg-opt{border:1px solid var(--line);border-radius:9px;padding:7px 11px;cursor:pointer;background:var(--surface-solid);font-family:inherit;color:var(--text);font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px}
+.bg-opt:hover{border-color:var(--accent)}
+.bg-opt.on{border-color:var(--accent);color:var(--accent)}
+.grad-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.grad-opt{width:42px;height:30px;border-radius:8px;border:2px solid transparent;cursor:pointer;padding:0}
+.grad-opt.on{border-color:var(--text)}
+.font-ctrl{display:flex;align-items:center;gap:10px}
+.font-ctrl button{width:34px;height:34px;border-radius:9px;border:1px solid var(--line);background:var(--surface-solid);color:var(--text);font-size:16px;font-weight:800;cursor:pointer}
+.font-ctrl .font-val{font-weight:800;min-width:54px;text-align:center}
+.pz-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.pz-sec .pz-toggle{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;cursor:pointer;text-transform:none;letter-spacing:0;margin:0;color:var(--text)}
+.pz-sec .pz-toggle input{width:18px;height:18px;accent-color:var(--accent)}
+/* checkbox/radio nunca devem esticar (a regra genérica do modal usa width:100%) */
+.panel-modal input[type=checkbox],.panel-modal input[type=radio]{width:auto}
+.pz-actions{display:flex;gap:8px;flex-wrap:wrap}
+.ajuda h4{margin:16px 0 6px;font-size:14px}
+.ajuda p{font-size:13px;line-height:1.55;color:var(--muted);margin:0 0 8px}
+.ajuda b{color:var(--text)}
 
 /* ===== Modal genérico ===== */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40}

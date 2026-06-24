@@ -14,6 +14,103 @@ const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s == null ? "" : s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 const escAttr = s => String(s == null ? "" : s).replace(/"/g, "&quot;");
 
+/* ===== 2b) Personalização por usuário (localStorage) ===== */
+const DEFAULT_PREFS = { theme: "escuro", bg: { type: "none" }, fontScale: 100, contrast: false };
+let prefs = (() => { try { return Object.assign({}, DEFAULT_PREFS, JSON.parse(localStorage.getItem("dojo_prefs") || "{}")); } catch (e) { return Object.assign({}, DEFAULT_PREFS); } })();
+function savePrefs() { try { localStorage.setItem("dojo_prefs", JSON.stringify(prefs)); } catch (e) { } }
+function applyPrefs() {
+  const root = document.documentElement;
+  root.setAttribute("data-theme", prefs.theme || "escuro");
+  root.classList.toggle("hc", !!prefs.contrast);
+  document.body.style.zoom = (prefs.fontScale || 100) / 100;
+  const b = prefs.bg || { type: "none" };
+  if (b.type === "solid" || b.type === "gradient") document.body.style.background = b.value || "";
+  else if (b.type === "photo" && b.value) document.body.style.background = "#0f0f14 url('" + String(b.value).replace(/['"\\]/g, "") + "') center/cover fixed";
+  else document.body.style.background = "";
+}
+const GRADIENTES = [
+  "linear-gradient(135deg,#1a1b2e,#2d1b3d)", "linear-gradient(135deg,#0f2027,#203a43,#2c5364)",
+  "linear-gradient(135deg,#42275a,#734b6d)", "linear-gradient(135deg,#232526,#414345)",
+  "linear-gradient(135deg,#3a1c71,#d76d77,#ffaf7b)", "linear-gradient(135deg,#16222a,#3a6073)"
+];
+const TEMAS = [
+  { k: "escuro", nome: "Escuro", chip: "#1a1b22" }, { k: "noturno", nome: "Noturno", chip: "#0b1220" },
+  { k: "claro", nome: "Claro", chip: "#ffffff" }, { k: "areia", nome: "Areia", chip: "#f3ece0" }
+];
+
+function abrirPersonalizar() {
+  const themeBtns = TEMAS.map(t => '<button class="theme-opt' + (prefs.theme === t.k ? " on" : "") + '" data-theme="' + t.k + '"><span class="theme-chip" style="background:' + t.chip + '"></span>' + t.nome + '</button>').join("");
+  const gradBtns = GRADIENTES.map((g, i) => '<button class="grad-opt" data-grad="' + i + '" style="background:' + g + '"></button>').join("");
+  const canExport = canEdit && curProjeto;
+  openModal('<h3>⚙ Personalizar</h3>' +
+    '<div class="pz-sec"><div class="pz-sec-tit">🎨 Tema</div><div class="theme-grid">' + themeBtns + '</div></div>' +
+    '<div class="pz-sec"><div class="pz-sec-tit">🖼 Plano de fundo</div><div class="bg-grid">' +
+      '<button class="bg-opt" data-bg="none">Nenhum</button><button class="bg-opt" data-bg="gradient">Degradê</button>' +
+      '<button class="bg-opt" data-bg="solid">Cor sólida</button><button class="bg-opt" data-bg="foto">🎲 Foto aleatória</button>' +
+      '<button class="bg-opt" data-bg="link">Link/Upload</button></div>' +
+      '<div class="grad-row" id="gradRow" style="display:none">' + gradBtns + '</div><div id="bgExtra" style="margin-top:8px"></div></div>' +
+    '<div class="pz-sec"><div class="pz-sec-tit">🔤 Acessibilidade</div>' +
+      '<div class="pz-row"><span style="font-size:13px">Tamanho de tudo</span><div class="font-ctrl"><button data-font="-">−</button><span class="font-val" id="fontVal">' + (prefs.fontScale || 100) + '%</span><button data-font="+">＋</button></div></div>' +
+      '<label class="pz-toggle" style="margin-top:10px"><input type="checkbox" id="hcChk"' + (prefs.contrast ? " checked" : "") + '> Alto contraste</label></div>' +
+    (canExport ? '<div class="pz-sec"><div class="pz-sec-tit">💾 Painel (JSON)</div><div class="pz-actions"><button class="btn sm" id="expBtn">📥 Exportar</button><label class="btn sm" style="cursor:pointer">📤 Importar<input type="file" id="impFile" accept="application/json" style="display:none"></label></div></div>' : '') +
+    '<div class="pz-sec"><button class="btn" id="ajudaBtn">❓ Como usar o Dojo</button></div>' +
+    '<div class="modal-actions"><span class="grow"></span><button class="btn primary" data-x>Fechar</button></div>',
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelectorAll(".theme-opt").forEach(b => b.onclick = () => { prefs.theme = b.dataset.theme; savePrefs(); applyPrefs(); m.querySelectorAll(".theme-opt").forEach(x => x.classList.toggle("on", x === b)); });
+      const gradRow = m.querySelector("#gradRow"), bgExtra = m.querySelector("#bgExtra");
+      const markBg = t => m.querySelectorAll(".bg-opt").forEach(x => x.classList.toggle("on", x.dataset.bg === t));
+      const sortearFoto = () => { const seed = "d" + Math.random().toString(36).slice(2, 9); prefs.bg = { type: "photo", value: "https://picsum.photos/seed/" + seed + "/1600/900" }; savePrefs(); applyPrefs(); };
+      const uploadFundo = file => { if (!file) return; if (file.size > 1600000) { toast("Imagem grande demais (máx ~1.5MB). Use um link."); return; } const r = new FileReader(); r.onload = () => { prefs.bg = { type: "photo", value: r.result }; savePrefs(); applyPrefs(); }; r.readAsDataURL(file); };
+      m.querySelectorAll(".bg-opt").forEach(b => b.onclick = () => {
+        const t = b.dataset.bg; gradRow.style.display = "none"; bgExtra.innerHTML = "";
+        if (t === "none") { prefs.bg = { type: "none" }; savePrefs(); applyPrefs(); markBg("none"); }
+        else if (t === "gradient") { gradRow.style.display = "flex"; markBg("gradient"); }
+        else if (t === "solid") { markBg("solid"); bgExtra.innerHTML = '<input type="color" id="bgColor" value="#1a1b2e" style="height:40px;padding:4px;width:100%">'; m.querySelector("#bgColor").oninput = e => { prefs.bg = { type: "solid", value: e.target.value }; savePrefs(); applyPrefs(); }; }
+        else if (t === "foto") { markBg("foto"); sortearFoto(); bgExtra.innerHTML = '<button class="btn sm" id="reFoto">🎲 Outra foto</button> <span class="muted-note" style="font-size:12px">salva automaticamente — clique pra manter outra</span>'; m.querySelector("#reFoto").onclick = sortearFoto; }
+        else if (t === "link") { markBg("link"); bgExtra.innerHTML = '<input id="bgUrl" placeholder="Cole o link de uma imagem…" style="width:100%"><label class="btn sm" style="cursor:pointer;margin-top:8px;display:inline-block">📁 Enviar imagem<input type="file" id="bgUpload" accept="image/*" style="display:none"></label>'; m.querySelector("#bgUrl").onchange = e => { const v = e.target.value.trim(); if (v) { prefs.bg = { type: "photo", value: v }; savePrefs(); applyPrefs(); } }; m.querySelector("#bgUpload").onchange = e => uploadFundo(e.target.files[0]); }
+      });
+      m.querySelectorAll(".grad-opt").forEach(b => b.onclick = () => { prefs.bg = { type: "gradient", value: GRADIENTES[+b.dataset.grad] }; savePrefs(); applyPrefs(); m.querySelectorAll(".grad-opt").forEach(x => x.classList.toggle("on", x === b)); });
+      const cur = prefs.bg || { type: "none" };
+      markBg(cur.type === "photo" ? (String(cur.value).includes("picsum") ? "foto" : "link") : cur.type);
+      if (cur.type === "gradient") gradRow.style.display = "flex";
+      m.querySelectorAll("[data-font]").forEach(b => b.onclick = () => { let v = (prefs.fontScale || 100) + (b.dataset.font === "+" ? 10 : -10); v = Math.max(80, Math.min(160, v)); prefs.fontScale = v; savePrefs(); applyPrefs(); m.querySelector("#fontVal").textContent = v + "%"; });
+      m.querySelector("#hcChk").onchange = e => { prefs.contrast = e.target.checked; savePrefs(); applyPrefs(); };
+      if (canExport) { m.querySelector("#expBtn").onclick = exportarPainel; m.querySelector("#impFile").onchange = e => { if (e.target.files[0]) importarPainel(e.target.files[0]); }; }
+      m.querySelector("#ajudaBtn").onclick = abrirAjuda;
+    });
+}
+function exportarPainel() {
+  if (!curProjeto) { toast("Abra um projeto para exportar."); return; }
+  const data = JSON.stringify({ projeto: curProjeto.nome, layout: state, exportado_em: new Date().toISOString() }, null, 2);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([data], { type: "application/json" }));
+  a.download = "dojo-" + String(curProjeto.nome || "painel").replace(/\W+/g, "_").toLowerCase() + ".json";
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+function importarPainel(file) {
+  const r = new FileReader();
+  r.onload = async () => {
+    let layout;
+    try { const obj = JSON.parse(r.result); layout = obj.layout || obj; if (!layout || !layout.spaces) throw 0; } catch (e) { toast("Erro: arquivo JSON inválido."); return; }
+    if (!(await confirmDialog("Substituir o painel atual pelo conteúdo do arquivo? O atual será sobrescrito."))) return;
+    state = layout; save(); closeModal(); route(); toast("Painel importado.");
+  };
+  r.readAsText(file);
+}
+function abrirAjuda() {
+  openModal('<h3>❓ Como usar o Dojo</h3><div class="ajuda">' +
+    '<h4>📋 Painel e widgets</h4><p>No modo <b>Editar</b>, clique em <b>＋ Adicionar</b> para inserir widgets. Arraste pela borda para mover e use o canto inferior direito para redimensionar. O ⚙ configura cada widget.</p>' +
+    '<h4>🗂 Abas e espaço Admin</h4><p><b>Painel</b> = o que o cliente vê; <b>🔒 Admin</b> = só você. Use <b>＋ Aba</b> para criar novas abas de painel.</p>' +
+    '<h4>👁 Ver como cliente</h4><p>Mostra o portal exatamente como o cliente enxerga, sem os controles de admin.</p>' +
+    '<h4>💬 Comentários</h4><p>Passe o mouse sobre um widget (ou item dentro dele) e clique no 💬 para conversar. Aparece ao vivo.</p>' +
+    '<h4>📋 Formulários</h4><p>O widget <b>Formulário</b> mostra as perguntas no painel; você vê o dashboard de respostas com médias e resumo por IA.</p>' +
+    '<h4>🔔 Avisos</h4><p>O sino mostra novidades. Você vê acessos dos clientes; o cliente vê mensagens, aprovações, etapas concluídas, etc.</p>' +
+    '<h4>🎨 Personalizar</h4><p>Neste menu (⋮): tema, fundo, tamanho das fontes e alto contraste — salvo só pra você.</p>' +
+    '</div><div class="modal-actions"><span class="grow"></span><button class="btn primary" data-x>Entendi</button></div>',
+    m => { m.querySelector("[data-x]").onclick = closeModal; });
+}
+
 /* ===== 3) Estado de sessão e navegação ===== */
 let me = null;                 // linha de `pessoas` do usuário logado
 let isAdmin = false;
@@ -3045,6 +3142,7 @@ function wireTopbar() {
   $("#addBtn").onclick = openPicker;
   $("#previewBtn").onclick = () => setPreviewCliente(!previewCliente);
   $("#bellBtn").onclick = (e) => { e.stopPropagation(); toggleBell(); };
+  $("#menuBtn").onclick = abrirPersonalizar;
   $("#editBtn").onclick = () => { editMode = !editMode; route(); };
 }
 
@@ -3052,5 +3150,6 @@ function wireTopbar() {
 /* IMPORTANTE: não chamar `await sb.from(...)` dentro do callback de
    onAuthStateChange (deadlock no lock interno). Adiamos com setTimeout(0).
    O evento INITIAL_SESSION já entrega a sessão persistida no load. */
+applyPrefs();
 wireTopbar();
 sb.auth.onAuthStateChange((_e, session) => { setTimeout(() => onSession(session), 0); });
