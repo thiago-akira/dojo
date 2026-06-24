@@ -760,6 +760,57 @@ async function votarEnquete(widgetId, opcao) {
   loadEnquete(widgetId);
 }
 
+/* — Comentários no painel (estilo Figma, por widget) — */
+let _cmtWidgetAberto = null;
+async function loadPainelComentarioCounts(widgetIds) {
+  if (!curProjeto || !widgetIds.length) return;
+  const { data } = await sb.from("comentarios_painel").select("widget_id").eq("projeto_id", curProjeto.id).in("widget_id", widgetIds);
+  const counts = {}; (data || []).forEach(r => counts[r.widget_id] = (counts[r.widget_id] || 0) + 1);
+  document.querySelectorAll(".cmt-btn").forEach(btn => {
+    const n = counts[btn.dataset.wid] || 0;
+    const badge = btn.querySelector(".cmt-badge");
+    if (n) { badge.textContent = n; badge.style.display = ""; btn.classList.add("has"); }
+    else { badge.style.display = "none"; btn.classList.remove("has"); }
+  });
+}
+function abrirComentariosPainel(widgetId) {
+  _cmtWidgetAberto = widgetId;
+  openModal('<h3>💬 Comentários</h3>' +
+    '<div id="cmtThread" class="cmt-thread"><p class="muted-note">Carregando…</p></div>' +
+    '<div class="cmt-add"><textarea id="cmtInput" placeholder="Escreva um comentário…" onkeydown="if(event.key===\'Enter\'&&(event.metaKey||event.ctrlKey))enviarComentarioPainel(\'' + widgetId + '\')"></textarea>' +
+    '<button class="btn primary" onclick="enviarComentarioPainel(\'' + widgetId + '\')">Enviar</button></div>' +
+    '<div class="modal-actions"><span class="grow"></span><button class="btn" data-x>Fechar</button></div>',
+    m => { m.querySelector("[data-x]").onclick = () => { _cmtWidgetAberto = null; closeModal(); }; });
+  loadComentariosPainel(widgetId);
+}
+async function loadComentariosPainel(widgetId) {
+  if (!curProjeto) return;
+  const { data } = await sb.from("comentarios_painel")
+    .select("id, corpo, autor_id, created_at, autor:pessoas!autor_id(nome,email)")
+    .eq("widget_id", widgetId).order("created_at");
+  const thread = document.getElementById("cmtThread"); if (!thread) return;
+  const list = data || [];
+  thread.innerHTML = list.length ? list.map(c => {
+    const who = (c.autor && (c.autor.nome || c.autor.email)) || "—";
+    const canDel = c.autor_id === me.id || isAdmin || canEdit;
+    return '<div class="cmt"><div class="cmt-head"><span class="cmt-who">' + esc(who) + '</span><span class="cmt-when">' + fmtRel(c.created_at) + '</span>' +
+      (canDel ? '<button class="lnk del" onclick="delComentarioPainel(\'' + c.id + '\',\'' + widgetId + '\')">✕</button>' : '') +
+      '</div><div class="cmt-body">' + esc(c.corpo) + '</div></div>';
+  }).join("") : '<p class="muted-note">Nenhum comentário ainda. Seja o primeiro.</p>';
+  thread.scrollTop = thread.scrollHeight;
+}
+async function enviarComentarioPainel(widgetId) {
+  const inp = document.getElementById("cmtInput"); const corpo = (inp.value || "").trim(); if (!corpo) return;
+  const { error } = await sb.from("comentarios_painel").insert({ projeto_id: curProjeto.id, widget_id: widgetId, autor_id: me.id, corpo });
+  if (error) { alert("Erro: " + error.message); return; }
+  inp.value = ""; loadComentariosPainel(widgetId);
+}
+async function delComentarioPainel(id, widgetId) {
+  if (!confirm("Excluir este comentário?")) return;
+  await sb.from("comentarios_painel").delete().eq("id", id);
+  loadComentariosPainel(widgetId);
+}
+
 async function loadChecklistProjeto(c) {
   if (!curProjeto) return;
   const { data } = await sb.from("checklists").select("titulo, checklist_itens(concluido)").eq("projeto_id", curProjeto.id).order("ordem");
@@ -1179,9 +1230,16 @@ function renderPainel(canvas, hint) {
       card.appendChild(bar);
       const h = document.createElement("div"); h.className = "thandle"; card.appendChild(h);
       enableDrag(tile, card, t); enableResize(tile, h, t);
+    } else {
+      const cbtn = document.createElement("button");
+      cbtn.className = "cmt-btn"; cbtn.dataset.wid = t.id; cbtn.title = "Comentários";
+      cbtn.innerHTML = '💬<span class="cmt-badge" style="display:none"></span>';
+      cbtn.onclick = e => { e.stopPropagation(); abrirComentariosPainel(t.id); };
+      card.appendChild(cbtn);
     }
     tile.appendChild(card); canvas.appendChild(tile);
   });
+  if (!editMode) loadPainelComentarioCounts(tiles.map(t => t.id));
 }
 
 /* ===== 10) Edição de widgets (admin/gestor) ===== */
@@ -1320,6 +1378,7 @@ function subscribeRealtime(projetoId) {
     .on("postgres_changes", { event: "*", schema: "public", table: "comentarios" }, onRealtime)
     .on("postgres_changes", { event: "*", schema: "public", table: "mural_notas", filter: "projeto_id=eq." + projetoId }, onMuralRealtime)
     .on("postgres_changes", { event: "*", schema: "public", table: "enquete_votos", filter: "projeto_id=eq." + projetoId }, onEnqueteRealtime)
+    .on("postgres_changes", { event: "*", schema: "public", table: "comentarios_painel", filter: "projeto_id=eq." + projetoId }, onComentarioPainelRealtime)
     .subscribe();
 }
 function unsubscribeRealtime() {
@@ -1348,6 +1407,13 @@ function onEnqueteRealtime(payload) {
   if (view !== "painel" || projTab !== "painel") return;
   const wid = (payload.new && payload.new.widget_id) || (payload.old && payload.old.widget_id);
   if (wid && document.getElementById("poll-" + wid)) loadEnquete(wid);
+}
+function onComentarioPainelRealtime(payload) {
+  if (view !== "painel" || projTab !== "painel") return;
+  const wid = (payload.new && payload.new.widget_id) || (payload.old && payload.old.widget_id);
+  const ids = [...document.querySelectorAll(".cmt-btn")].map(b => b.dataset.wid);
+  if (ids.length) loadPainelComentarioCounts(ids);
+  if (wid && _cmtWidgetAberto === wid && document.getElementById("cmtThread")) loadComentariosPainel(wid);
 }
 
 /* ===== 13) Autenticação ===== */

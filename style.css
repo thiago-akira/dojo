@@ -289,6 +289,23 @@ body.edit .para-edit{background:var(--surface-solid)}
 .poll-count{position:relative;z-index:1;font-size:12px;font-weight:700;color:var(--muted)}
 .poll-total{font-size:11.5px;font-weight:700;color:var(--faint);margin-top:9px}
 
+/* ===== Comentários no painel (estilo Figma, por widget) ===== */
+.cmt-btn{position:absolute;left:8px;bottom:8px;min-width:30px;height:28px;padding:0 7px;border:1px solid var(--line);background:rgba(0,0,0,.45);color:var(--muted);border-radius:8px;cursor:pointer;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:4px;z-index:4;opacity:0;transition:opacity .15s}
+html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
+.tile:hover .cmt-btn{opacity:1}
+.cmt-btn.has{opacity:1;border-color:var(--accent);color:var(--accent)}
+.cmt-btn:hover{border-color:var(--accent);color:var(--accent)}
+.cmt-badge{font-size:10.5px;font-weight:800}
+.cmt-thread{max-height:340px;overflow:auto;display:flex;flex-direction:column;gap:9px;margin-bottom:12px}
+.cmt{background:var(--surface-solid);border:1px solid var(--line);border-radius:9px;padding:9px 11px}
+.cmt-head{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.cmt-who{font-size:12px;font-weight:800;color:var(--accent-2)}
+.cmt-when{font-size:11px;color:var(--faint);font-weight:600}
+.cmt-head .lnk.del{margin-left:auto}
+.cmt-body{font-size:13.5px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+.cmt-add{display:flex;gap:8px;align-items:flex-end}
+.cmt-add textarea{flex:1;min-height:44px;max-height:140px;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px 11px;color:var(--text);font-family:inherit;font-size:14px;resize:vertical}
+
 /* ===== Modal genérico ===== */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40}
 .panel-modal{position:fixed;z-index:41;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,94vw);max-height:88vh;overflow:auto;
