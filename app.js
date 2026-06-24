@@ -31,7 +31,7 @@ function applyPrefs() {
 }
 /* Fundo POR PROJETO, por usuário (item 6) — localStorage por projeto */
 function getProjBg() {
-  if (!curProjeto) return { type: "none" };
+  if (!curProjeto || view !== "painel") return { type: "none" };   // fundo só vale dentro do projeto
   try { return JSON.parse(localStorage.getItem("dojo_bg_" + curProjeto.id) || '{"type":"none"}'); } catch (e) { return { type: "none" }; }
 }
 function setProjBg(bg) {
