@@ -681,11 +681,15 @@ const WIDGETS = {
     w: 4, h: 3, defaults: { title: "Próximos passos", raw: "Aprovar layout final | Cliente · sex\nIntegrar gateway de pagamento | Bruno\nEnviar contrato assinado | Ana · seg" },
     render(t, c) {
       const p = t.props;
+      const done = new Set(p.done || []);
       const items = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]);
       c.innerHTML = (p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '') +
-        '<div class="w-body"><div class="steps">' + items.map(a =>
-          '<div class="step-row" data-item="' + escAttr(itemKey(a[0])) + '" data-itemlabel="' + escAttr(a[0]) + '"><span class="step-ico">→</span><div class="step-body"><div class="step-txt">' + esc(a[0]) + '</div>' + (a[1] ? '<div class="step-meta">' + esc(a[1]) + '</div>' : '') + '</div></div>'
-        ).join("") + '</div></div>';
+        '<div class="w-body"><div class="steps">' + items.map(a => {
+          const k = itemKey(a[0]), isDone = done.has(k);
+          return '<div class="step-row' + (isDone ? " done" : "") + '" data-item="' + escAttr(k) + '" data-itemlabel="' + escAttr(a[0]) + '">' +
+            '<input type="checkbox" class="step-chk"' + (isDone ? " checked" : "") + (canEdit ? '' : ' disabled') + ' onchange="togglePasso(\'' + t.id + '\',\'' + escAttr(k) + '\')">' +
+            '<div class="step-body"><div class="step-txt">' + esc(a[0]) + '</div>' + (a[1] ? '<div class="step-meta">' + esc(a[1]) + '</div>' : '') + '</div></div>';
+        }).join("") + '</div></div>';
     },
     form(p) {
       return field("Título", "title", p.title) + '<label>Ações</label>' +
@@ -1727,6 +1731,7 @@ async function abrirProjeto(id) {
   curSpaceId = vis.length ? vis[0].id : (state.spaces[0] && state.spaces[0].id) || null;
   subscribeRealtime(id);
   view = "painel"; projTab = "painel"; editMode = false; route();
+  recomputeEvolucaoSeAuto();
 }
 
 async function loadPainel(projetoId) {
@@ -1895,7 +1900,8 @@ async function editarProjeto() {
     field("Nome", "nome", p.nome || "") +
     '<label>Descrição</label><textarea data-k="descricao">' + esc(p.descricao || "") + '</textarea>' +
     '<label>Status</label><select data-k="status"><option value="ativo"' + (p.status === "ativo" ? " selected" : "") + '>Ativo</option><option value="pausado"' + (p.status === "pausado" ? " selected" : "") + '>Pausado</option><option value="concluido"' + (p.status === "concluido" ? " selected" : "") + '>Concluído</option></select>' +
-    '<label>Evolução: <b id="evoLbl">' + (p.progresso || 0) + '%</b></label><input type="range" min="0" max="100" step="5" data-k="progresso" value="' + (p.progresso || 0) + '" style="width:100%" oninput="document.getElementById(\'evoLbl\').textContent=this.value+\'%\'">' +
+    '<label>Evolução: <b id="evoLbl">' + (p.progresso || 0) + '%</b></label><input type="range" min="0" max="100" step="5" data-k="progresso" id="evoSlider" value="' + (p.progresso || 0) + '" style="width:100%" oninput="document.getElementById(\'evoLbl\').textContent=this.value+\'%\'">' +
+    '<label class="pz-toggle" style="margin-top:6px"><input type="checkbox" id="autoEvo"' + ((p.dados && p.dados.auto_evolucao) ? " checked" : "") + '> Calcular automaticamente pelas tarefas concluídas (checklists, Kanban, marcos, próximos passos)</label>' +
     '<div class="pz-sec-tit" style="margin-top:16px">Entregas <span class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:11px">(o cliente vê)</span></div>' +
     '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Uma por linha: <b>nome | AAAA-MM-DD</b></p>' +
     '<textarea data-k="entregas" placeholder="Logo final | 2026-07-10\nSite no ar | 2026-08-01" style="min-height:70px;font-family:var(--font-mono);font-size:12.5px">' + esc(entregasTxt) + '</textarea>' +
@@ -1906,11 +1912,18 @@ async function editarProjeto() {
     actions("Salvar"),
     m => {
       m.querySelector("[data-x]").onclick = closeModal;
+      const autoChk = m.querySelector("#autoEvo"), slider = m.querySelector("#evoSlider");
+      const applyAuto = () => { slider.disabled = autoChk.checked; slider.style.opacity = autoChk.checked ? ".4" : "1"; };
+      autoChk.onchange = applyAuto; applyAuto();
       m.querySelector("[data-ok]").onclick = async () => {
         const get = k => (m.querySelector('[data-k="' + k + '"]') || {}).value;
         const ents = (get("entregas") || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]).map(a => ({ nome: a[0], data: a[1] || "" }));
-        const dados = Object.assign({}, p.dados || {}, { entregas: ents });
-        const upd = { nome: get("nome").trim() || p.nome, descricao: get("descricao").trim() || null, status: get("status"), progresso: parseInt(get("progresso")) || 0, dados };
+        const auto = autoChk.checked;
+        const dados = Object.assign({}, p.dados || {}, { entregas: ents, auto_evolucao: auto });
+        // se auto, recalcula já; senão usa o slider
+        curProjeto.dados = dados;
+        const progresso = auto ? await computeAutoEvolucao() : (parseInt(get("progresso")) || 0);
+        const upd = { nome: get("nome").trim() || p.nome, descricao: get("descricao").trim() || null, status: get("status"), progresso, dados };
         const { error } = await sb.from("projetos").update(upd).eq("id", p.id);
         if (error) { toast("Erro: " + error.message); return; }
         const valorNum = parseFloat(String(get("valor")).replace(/[^\d.,]/g, "").replace(".", "").replace(",", ".")) || null;
@@ -2157,6 +2170,44 @@ function moverTile(t, spaceId) {
   save(); pushHist("Moveu para outra aba"); route(); toast('Movido para "' + dest.name + '".');
 }
 
+/* Item 4: tarefas concluídas → evolução automática */
+function togglePasso(widgetId, key) {
+  const t = space().tiles.find(x => x.id === widgetId); if (!t || !canEdit) return;
+  const done = new Set(t.props.done || []);
+  if (done.has(key)) done.delete(key); else done.add(key);
+  t.props.done = [...done];
+  save(); recomputeEvolucaoSeAuto(); route();
+}
+async function computeAutoEvolucao() {
+  let done = 0, total = 0;
+  const { data: chs } = await sb.from("checklists").select("checklist_itens(concluido)").eq("projeto_id", curProjeto.id);
+  (chs || []).forEach(c => (c.checklist_itens || []).forEach(i => { total++; if (i.concluido) done++; }));
+  (state.spaces || []).forEach(s => (s.tiles || []).forEach(t => {
+    if (t.type === "kanban") {
+      parseKanban(t.props.raw).forEach(col => { const dcol = /feito|conclu|done|pronto/i.test(col.title); col.cards.forEach(() => { total++; if (dcol) done++; }); });
+    } else if (t.type === "marcos") {
+      (t.props.raw || "").split("\n").map(l => l.split("|").map(x => x.trim())).filter(a => a.some(x => x)).forEach(a => { total++; if ((a[0] || "").toLowerCase() === "feito") done++; });
+    } else if (t.type === "proximos_passos") {
+      const items = (t.props.raw || "").split("\n").map(l => l.split("|").map(x => x.trim())).filter(a => a[0]);
+      const ds = new Set(t.props.done || []);
+      items.forEach(a => { total++; if (ds.has(itemKey(a[0]))) done++; });
+    }
+  }));
+  return total ? Math.round(done / total * 100) : 0;
+}
+let _evoTimer = null;
+function recomputeEvolucaoSeAuto() {
+  if (!canEdit || !curProjeto || !(curProjeto.dados && curProjeto.dados.auto_evolucao)) return;
+  clearTimeout(_evoTimer);
+  _evoTimer = setTimeout(async () => {
+    const pct = await computeAutoEvolucao();
+    if (pct !== (curProjeto.progresso || 0)) {
+      await sb.from("projetos").update({ progresso: pct }).eq("id", curProjeto.id);
+      curProjeto.progresso = pct; applyBrand();
+    }
+  }, 500);
+}
+
 /* Arrastar abas para reordenar — item 5 */
 function attachTabReorder() {
   let dragId = null;
@@ -2187,7 +2238,7 @@ function widgetSettings(t) {
       m.querySelector("[data-x]").onclick = closeModal;
       m.querySelector("[data-ok]").onclick = () => {
         m.querySelectorAll("[data-k]").forEach(el => { t.props[el.dataset.k] = el.value; });
-        save(); pushHist("Editou widget"); route(); closeModal();
+        save(); pushHist("Editou widget"); recomputeEvolucaoSeAuto(); route(); closeModal();
       };
     });
 }
@@ -2816,7 +2867,7 @@ async function addItem(clId) {
 async function toggleItem(id, cur) {
   const done = !cur;
   await sb.from("checklist_itens").update({ concluido: done, concluido_por: done ? me.id : null, concluido_em: done ? new Date().toISOString() : null }).eq("id", id);
-  route();
+  recomputeEvolucaoSeAuto(); route();
 }
 async function delItem(id) { await sb.from("checklist_itens").delete().eq("id", id); route(); }
 

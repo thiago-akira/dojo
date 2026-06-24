@@ -391,10 +391,14 @@ body.edit .para-edit{background:var(--surface-solid)}
 
 /* ===== Widget: Próximos passos ===== */
 .steps{display:flex;flex-direction:column;gap:9px}
-.step-row{display:flex;gap:10px;align-items:flex-start}
+.step-row{display:flex;gap:10px;align-items:flex-start;margin-bottom:7px}
 .step-ico{color:var(--accent);font-weight:800;font-size:15px;flex:none;line-height:1.3}
+.step-chk{flex:none;width:16px;height:16px;margin:2px 0 0;accent-color:var(--accent);cursor:pointer}
+.step-chk:disabled{cursor:default;opacity:.7}
 .step-txt{font-size:13.5px;font-weight:600;line-height:1.35}
 .step-meta{font-size:11.5px;color:var(--muted);font-weight:600;margin-top:1px}
+.step-row.done .step-txt{text-decoration:line-through;color:var(--muted)}
+.step-row.done .step-meta{opacity:.6}
 
 /* ===== Widget: Mural de ideias (colaborativo) ===== */
 .mural{display:flex;flex-wrap:wrap;gap:10px;align-content:flex-start}
