@@ -4192,8 +4192,6 @@ function wireTopbar() {
 applyPrefs();
 wireTopbar();
 
-/* _authLog definido em index.html — app.js apenas usa window._authLog */
-if (window._authLog) window._authLog("app.js carregado ✓");
 
 let _authBooted = false;
 const _bootSafety = setTimeout(async () => {

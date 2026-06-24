@@ -12,7 +12,7 @@
 <!-- Supabase JS (UMD) — expõe o global `supabase` -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<link rel="stylesheet" href="style.css?v=52">
+<link rel="stylesheet" href="style.css?v=53">
 </head>
 <body>
 
@@ -53,23 +53,8 @@
 <div class="scrim" id="scrim" style="display:none"></div>
 <div class="panel-modal" id="modal" style="display:none"></div>
 
-<!-- DEBUG TEMPORÁRIO: overlay de auth — remover após diagnóstico -->
-<div id="_authDbg" style="position:fixed;top:0;left:0;right:0;z-index:99999;background:#000d;color:#0f0;font:12px/1.5 monospace;padding:8px 12px;pointer-events:none">⏳ carregando scripts…</div>
 
-<script src="config.js?v=52"></script>
-<script>
-/* Debug inline — roda ANTES de app.js, captura erros de carregamento */
-window._authLog = function(msg) {
-  var el = document.getElementById('_authDbg');
-  if (!el) return;
-  var ts = new Date().toISOString().slice(11,23);
-  el.innerHTML += '<br>' + ts + ' ' + msg;
-  console.log('[AUTH]', msg);
-};
-window.addEventListener('error', function(e) {
-  window._authLog('JS ERROR: ' + (e.message||'') + ' ' + (e.filename||'').split('/').pop() + ':' + (e.lineno||''));
-});
-</script>
-<script src="app.js?v=52"></script>
+<script src="config.js?v=53"></script>
+<script src="app.js?v=53"></script>
 </body>
 </html>
