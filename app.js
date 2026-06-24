@@ -4192,19 +4192,8 @@ function wireTopbar() {
 applyPrefs();
 wireTopbar();
 
-/* Debug overlay temporário — mostra eventos de auth na tela */
-(function() {
-  const el = document.createElement("div");
-  el.id = "_authDbg";
-  el.style.cssText = "position:fixed;bottom:8px;right:8px;z-index:99999;background:#000c;color:#0f0;font:11px/1.4 monospace;padding:8px 10px;border-radius:8px;max-width:320px;pointer-events:none";
-  el.textContent = "auth: aguardando…";
-  document.body.appendChild(el);
-  window._authLog = function(msg) {
-    const ts = new Date().toISOString().slice(11,23);
-    el.textContent = el.textContent.replace("auth: aguardando…","") + "\n" + ts + " " + msg;
-    console.log("[AUTH]", msg);
-  };
-})();
+/* _authLog definido em index.html — app.js apenas usa window._authLog */
+if (window._authLog) window._authLog("app.js carregado ✓");
 
 let _authBooted = false;
 const _bootSafety = setTimeout(async () => {
