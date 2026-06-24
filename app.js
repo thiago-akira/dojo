@@ -279,16 +279,30 @@ const WIDGETS = {
     }
   },
   lista: {
-    emoji: "📋", name: "Lista / Notas", desc: "Lista rica: títulos, subtítulos, marcadores e numeração.",
-    w: 4, h: 4, defaults: { title: "Lista", html: "" },
+    emoji: "📋", name: "Lista / Notas", desc: "Lista estruturada: títulos, subtítulos, parágrafos, marcadores e numeração.",
+    w: 4, h: 4, defaults: { title: "Lista", items: [] },
     render(t, c) {
       const p = t.props;
+      // Migração: lista antiga usava props.html (contenteditable)
+      if (p.html !== undefined && !p.items) { p.items = parseListaHtml(p.html); delete p.html; if (canEdit) save(); }
+      const items = p.items || [];
       const head = p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '';
-      const body = p.html ? sanitizeHtml(p.html) : "";
       if (editMode && canEdit) {
-        c.innerHTML = head + '<div class="lista-body para-edit" contenteditable="true" oninput="onParaInput(this,\'' + t.id + '\')" onfocus="listaToolbar(this)" onblur="hideParaToolbar()">' + body + '</div>';
+        const TYPE_LABELS = { h3: 'H', h4: 'h', p: '¶', bullet: '•', num: '1.' };
+        const TYPES = ['h3', 'h4', 'p', 'bullet', 'num'];
+        const rows = items.map((item, i) => {
+          const opts = TYPES.map(tp => '<option value="' + tp + '"' + (item.type === tp ? ' selected' : '') + '>' + TYPE_LABELS[tp] + '</option>').join('');
+          return '<div class="lista-row">' +
+            '<select class="lista-type" onchange="onListaType(\'' + t.id + '\',' + i + ',this.value)">' + opts + '</select>' +
+            '<input class="lista-item-text" type="text" value="' + escAttr(item.text || '') + '" placeholder="Texto do item…" ' +
+            'oninput="onListaText(\'' + t.id + '\',' + i + ',this)" ' +
+            'onkeydown="listaItemKeydown(event,\'' + t.id + '\',' + i + ')">' +
+            '<button class="lnk del lista-del" onclick="delListaItem(\'' + t.id + '\',' + i + ')" title="Remover">✕</button></div>';
+        }).join('');
+        c.innerHTML = head + '<div class="lista-body lista-editor">' + rows +
+          '<button class="lnk lista-add" onclick="addListaItem(\'' + t.id + '\')">＋ Item</button></div>';
       } else {
-        c.innerHTML = head + '<div class="lista-body">' + (body || '<p class="muted-note">Lista vazia — clique em ✏ Editar e digite.</p>') + '</div>';
+        c.innerHTML = head + '<div class="lista-body">' + (renderListaViewHtml(items) || '<p class="muted-note">Lista vazia — clique em ✏ Editar para adicionar itens.</p>') + '</div>';
       }
     },
     form(p) { return field("Título (opcional)", "title", p.title); }
@@ -803,6 +817,92 @@ function listaToolbar(el) {
   _showToolbar(el, '<button data-fb="h3" title="Título">T</button><button data-fb="h4" title="Subtítulo">t</button><button data-fb="div" title="Texto normal">¶</button><span class="ptb-sep"></span><button data-cmd="insertUnorderedList" title="Marcadores">•</button><button data-cmd="insertOrderedList" title="Numerada">1.</button><span class="ptb-sep"></span><button data-cmd="bold" title="Negrito"><b>B</b></button><button data-cmd="italic" title="Itálico"><i>I</i></button><button data-cmd="underline" title="Sublinhado"><u>U</u></button>');
 }
 function hideParaToolbar() { setTimeout(() => { const tb = document.getElementById("paraTb"); if (tb) tb.style.display = "none"; }, 180); }
+
+/* ===== Funções do widget Lista (editor estruturado por linhas) ===== */
+function parseListaHtml(html) {
+  if (!html) return [];
+  const tmp = document.createElement("div"); tmp.innerHTML = html;
+  const items = [];
+  function walk(node) {
+    const tag = node.tagName;
+    if (tag === "H3") { items.push({ type: "h3", text: node.textContent.trim() }); }
+    else if (tag === "H4") { items.push({ type: "h4", text: node.textContent.trim() }); }
+    else if (tag === "UL") { node.querySelectorAll("li").forEach(li => items.push({ type: "bullet", text: li.textContent.trim() })); }
+    else if (tag === "OL") { node.querySelectorAll("li").forEach(li => items.push({ type: "num", text: li.textContent.trim() })); }
+    else if (tag === "P" || tag === "DIV") { const t = node.textContent.trim(); if (t) items.push({ type: "p", text: t }); }
+    else { Array.from(node.children || []).forEach(walk); }
+  }
+  Array.from(tmp.children).forEach(walk);
+  return items;
+}
+function renderListaViewHtml(items) {
+  if (!items || !items.length) return "";
+  const out = []; let inUl = false, inOl = false;
+  for (const it of items) {
+    const tp = it.type || "bullet", txt = esc(it.text || "");
+    if (tp === "bullet") {
+      if (inOl) { out.push("</ol>"); inOl = false; }
+      if (!inUl) { out.push("<ul>"); inUl = true; }
+      out.push("<li>" + txt + "</li>");
+    } else if (tp === "num") {
+      if (inUl) { out.push("</ul>"); inUl = false; }
+      if (!inOl) { out.push("<ol>"); inOl = true; }
+      out.push("<li>" + txt + "</li>");
+    } else {
+      if (inUl) { out.push("</ul>"); inUl = false; }
+      if (inOl) { out.push("</ol>"); inOl = false; }
+      if (tp === "h3") out.push("<h3>" + txt + "</h3>");
+      else if (tp === "h4") out.push("<h4>" + txt + "</h4>");
+      else out.push("<p>" + txt + "</p>");
+    }
+  }
+  if (inUl) out.push("</ul>");
+  if (inOl) out.push("</ol>");
+  return out.join("");
+}
+function _reRenderLista(tid, t, focusIdx) {
+  const content = document.querySelector('.tile[data-id="' + tid + '"] .content');
+  if (content) {
+    WIDGETS.lista.render(t, content);
+    if (focusIdx != null) {
+      const inputs = content.querySelectorAll(".lista-item-text");
+      const el = inputs[focusIdx] || inputs[inputs.length - 1];
+      if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+    }
+  }
+}
+function addListaItem(tid, afterIdx) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  if (!t.props.items) t.props.items = [];
+  const ref = t.props.items[afterIdx != null ? afterIdx : t.props.items.length - 1];
+  const newType = ref ? (["h3", "h4", "p"].includes(ref.type) ? "bullet" : ref.type) : "bullet";
+  const at = afterIdx != null ? afterIdx + 1 : t.props.items.length;
+  t.props.items.splice(at, 0, { type: newType, text: "" });
+  save(); _reRenderLista(tid, t, at);
+}
+function delListaItem(tid, idx) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.items = (t.props.items || []).filter((_, i) => i !== idx);
+  save(); _reRenderLista(tid, t, Math.max(0, idx - 1));
+}
+function onListaType(tid, idx, type) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  if (t.props.items && t.props.items[idx]) t.props.items[idx].type = type;
+  save(); _reRenderLista(tid, t, idx);
+}
+function onListaText(tid, idx, el) {
+  const t = space().tiles.find(x => x.id === tid); if (!t) return;
+  if (!t.props.items) t.props.items = [];
+  if (t.props.items[idx]) t.props.items[idx].text = el.value;
+  save();
+}
+function listaItemKeydown(e, tid, idx) {
+  if (e.key === "Enter") { e.preventDefault(); addListaItem(tid, idx); }
+  else if (e.key === "Backspace" && e.target.value === "") {
+    e.preventDefault(); delListaItem(tid, idx);
+  }
+}
+
 function parseRefColumns(raw) {
   const cols = [];
   let cur = null;
@@ -1425,6 +1525,7 @@ function route() {
   const canvas = $("#canvas"), hint = $("#emptyHint");
   canvas.style.display = "none"; hint.style.display = "none";
   canvas.innerHTML = ""; hint.innerHTML = "";
+  hint.style.background = ""; // reset — project tabs set this to var(--bg)
   const spTabs = $("#spaceTabs"); if (spTabs) { spTabs.style.display = "none"; spTabs.innerHTML = ""; }
   $("#crumb").innerHTML = "";
 
@@ -2014,6 +2115,9 @@ function renderProjeto(canvas, hint) {
   sn.innerHTML = tabs.map(([k, l]) =>
     '<button class="sntab' + (projTab === k ? " on" : "") + '" onclick="setProjTab(\'' + k + '\')">' + l + '</button>').join("") +
     (canEdit ? '<button class="sntab sn-edit" title="Renomear menus deste cliente" onclick="renomearMenus()">🏷</button>' : "");
+
+  // Abas de conteúdo precisam de fundo sólido quando o projeto tem background customizado
+  if (projTab !== "painel" && projTab !== "admin") hint.style.background = "var(--bg)";
 
   if (projTab === "gestao" && canEdit) return renderGestao(canvas, hint);
   if (projTab === "materiais") return renderMateriais(canvas, hint);
