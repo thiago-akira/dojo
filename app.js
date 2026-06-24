@@ -592,6 +592,18 @@ const WIDGETS = {
         '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Uma opção por linha. Quem vê pode votar e trocar o voto.</p>' +
         '<textarea data-k="opcoes" spellcheck="false" style="min-height:110px;font-size:13px;line-height:1.6">' + esc(p.opcoes) + '</textarea>';
     }
+  },
+  formulario: {
+    emoji: "📋", name: "Formulário / Pesquisa", desc: "Perguntas multimídia; cada pessoa responde; relatório e médias.",
+    w: 6, h: 4, defaults: {},
+    render(t, c) {
+      c.innerHTML = '<div class="w-head"><span class="w-title">Formulário</span></div>' +
+        '<div class="w-body"><div class="form-w" id="formw-' + t.id + '"><p class="muted-note">Carregando…</p></div></div>';
+      loadFormularioWidget(t.id);
+    },
+    form() {
+      return '<p class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:13px">Use os botões dentro do widget para <b>editar as perguntas</b> e <b>ver as respostas</b>. As perguntas, mídias e respostas ficam salvas no banco (não aqui).</p>';
+    }
   }
 };
 function field(label, k, v) { return '<label>' + esc(label) + '</label><input data-k="' + k + '" value="' + escAttr(v) + '">'; }
@@ -814,6 +826,301 @@ async function delComentarioPainel(id, widgetId) {
   if (!(await confirmDialog("Excluir este comentário?"))) return;
   await sb.from("comentarios_painel").delete().eq("id", id);
   loadComentariosPainel(widgetId);
+}
+
+/* ===== Widget Formulário / Pesquisa (multimídia, respostas por pessoa, dashboard) ===== */
+const FTIPOS = { texto: "Texto aberto", paragrafo: "Parágrafo longo", unica: "Escolha única", multipla: "Múltipla escolha", escala: "Escala 1–5", nota: "Nota 0–10" };
+
+function substVars(text, vars) {
+  vars = vars || {};
+  return String(text || "").replace(/\{(\w+)\}/g, (m, k) => (vars[k] != null && vars[k] !== "") ? vars[k] : m);
+}
+function extractVars(text) {
+  const out = []; String(text || "").replace(/\{(\w+)\}/g, (m, k) => { if (!out.includes(k)) out.push(k); return m; });
+  return out;
+}
+async function getVarsFor(pessoaId) {
+  const map = {};
+  const { data: p } = await sb.from("pessoas").select("nome,email").eq("id", pessoaId).maybeSingle();
+  if (p) { map.nome = p.nome || ""; map.email = p.email || ""; }
+  const { data: pc } = await sb.from("pessoa_campos").select("chave,valor").eq("projeto_id", curProjeto.id).eq("pessoa_id", pessoaId);
+  (pc || []).forEach(r => { map[r.chave] = r.valor || ""; });
+  return map;
+}
+
+async function loadFormularioWidget(widgetId) {
+  if (!curProjeto) return;
+  const box = document.getElementById("formw-" + widgetId); if (!box) return;
+  const { data: form } = await sb.from("form_formularios").select("*").eq("widget_id", widgetId).maybeSingle();
+  const titleEl = box.closest(".content") && box.closest(".content").querySelector(".w-title");
+  if (!form) {
+    box.innerHTML = canEdit
+      ? '<div class="form-empty"><p class="muted-note">Formulário ainda não configurado.</p><button class="btn primary" onclick="editarFormulario(\'' + widgetId + '\')">Configurar formulário</button></div>'
+      : '<p class="muted-note">Formulário ainda não disponível.</p>';
+    return;
+  }
+  if (titleEl) titleEl.textContent = form.titulo || "Formulário";
+  const [{ data: pergs }, { data: minha }, { count }, vars] = await Promise.all([
+    sb.from("form_perguntas").select("id").eq("formulario_id", form.id),
+    sb.from("form_respostas").select("id").eq("formulario_id", form.id).eq("pessoa_id", me.id).maybeSingle(),
+    sb.from("form_respostas").select("*", { count: "exact", head: true }).eq("formulario_id", form.id),
+    getVarsFor(me.id)
+  ]);
+  const nPerg = (pergs || []).length;
+  const desc = substVars(form.descricao || "", vars);
+  let html = desc ? '<div class="form-desc">' + esc(desc) + '</div>' : '';
+  html += '<div class="form-meta">' + nPerg + ' pergunta' + (nPerg === 1 ? "" : "s") + '</div>';
+  if (canEdit) {
+    html += '<div class="form-actions">' +
+      '<button class="btn sm primary" onclick="verRespostasFormulario(\'' + form.id + '\',\'' + widgetId + '\')">📊 Respostas (' + (count || 0) + ')</button>' +
+      '<button class="btn sm" onclick="editarFormulario(\'' + widgetId + '\')">✏ Editar perguntas</button>' +
+      '<button class="btn sm" onclick="responderFormulario(\'' + widgetId + '\')">👁 Prévia</button></div>';
+  } else if (nPerg) {
+    html += minha
+      ? '<div class="form-actions"><span class="qbadge respondido">✓ respondido</span><button class="btn sm" onclick="responderFormulario(\'' + widgetId + '\')">editar resposta</button></div>'
+      : '<div class="form-actions"><button class="btn primary" onclick="responderFormulario(\'' + widgetId + '\')">Responder</button></div>';
+  } else {
+    html += '<p class="muted-note">Sem perguntas ainda.</p>';
+  }
+  box.innerHTML = html;
+}
+
+async function ensureFormulario(widgetId) {
+  let { data: form } = await sb.from("form_formularios").select("*").eq("widget_id", widgetId).maybeSingle();
+  if (!form) {
+    const r = await sb.from("form_formularios").insert({ projeto_id: curProjeto.id, widget_id: widgetId, titulo: "Formulário" }).select().single();
+    form = r.data;
+  }
+  return form;
+}
+
+async function editarFormulario(widgetId) {
+  const form = await ensureFormulario(widgetId);
+  if (!form) { toast("Erro ao criar formulário."); return; }
+  const [{ data: pergs }, { data: campos }] = await Promise.all([
+    sb.from("form_perguntas").select("*").eq("formulario_id", form.id).order("ordem"),
+    sb.from("form_campos").select("*").eq("projeto_id", curProjeto.id).order("label")
+  ]);
+  const varsDisp = ["nome", "email"].concat((campos || []).map(c => c.chave));
+  const hint = 'Variáveis: ' + varsDisp.map(v => '<code>{' + v + '}</code>').join(" ");
+
+  function pergRow(p, i) {
+    const tipoOpts = Object.keys(FTIPOS).map(tp => '<option value="' + tp + '"' + (p.tipo === tp ? " selected" : "") + '>' + FTIPOS[tp] + '</option>').join("");
+    const showOpc = (p.tipo === "unica" || p.tipo === "multipla");
+    return '<div class="perg-row" data-pid="' + p.id + '"><div class="perg-num">' + (i + 1) + '</div><div class="perg-body">' +
+      '<input data-k="texto" value="' + escAttr(p.texto) + '" placeholder="Pergunta… (pode usar {nome})" style="width:100%">' +
+      '<div style="display:flex;gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap">' +
+      '<select data-k="tipo" style="flex:1;min-width:140px" onchange="this.closest(\'.perg-row\').querySelector(\'[data-opc]\').style.display=(this.value===\'unica\'||this.value===\'multipla\')?\'block\':\'none\'">' + tipoOpts + '</select>' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);text-transform:none;letter-spacing:0;margin:0"><input type="checkbox" data-k="obrigatoria"' + (p.obrigatoria ? " checked" : "") + '> Obrigatória</label>' +
+      '</div>' +
+      '<div data-opc style="display:' + (showOpc ? "block" : "none") + '"><textarea data-k="opcoes" style="margin-top:6px;min-height:48px" placeholder="Uma opção por linha">' + esc((p.opcoes || []).join("\n")) + '</textarea></div>' +
+      '<div style="display:flex;gap:8px;margin-top:6px"><select data-k="media_tipo" style="width:120px"><option value=""' + (!p.media_tipo ? " selected" : "") + '>sem mídia</option><option value="imagem"' + (p.media_tipo === "imagem" ? " selected" : "") + '>imagem</option><option value="video"' + (p.media_tipo === "video" ? " selected" : "") + '>vídeo</option></select>' +
+      '<input data-k="media_url" value="' + escAttr(p.media_url || "") + '" placeholder="URL da imagem/vídeo" style="flex:1"></div>' +
+      '</div><button class="lnk del" onclick="delFormPergunta(\'' + p.id + '\',\'' + widgetId + '\')">✕</button></div>';
+  }
+
+  openModal('<h3>Editar formulário</h3>' +
+    field("Título", "titulo", form.titulo || "") +
+    '<label>Descrição / introdução</label><textarea data-k="descricao" style="min-height:60px">' + esc(form.descricao || "") + '</textarea>' +
+    '<p class="muted-note" style="font-size:11.5px;margin:4px 0 10px;text-transform:none;letter-spacing:0;font-weight:600">' + hint + ' · <a class="lnk" style="display:inline" onclick="gerenciarCamposDinamicos(\'' + widgetId + '\')">gerenciar campos</a></p>' +
+    '<div id="fpergList">' + (pergs || []).map(pergRow).join("") + '</div>' +
+    '<button class="btn sm" style="margin-top:8px" onclick="addFormPergunta(\'' + form.id + '\',\'' + widgetId + '\')">＋ Pergunta</button>' +
+    '<div class="modal-actions"><span class="grow"></span><button class="btn" data-x>Fechar</button><button class="btn primary" data-ok>Salvar</button></div>',
+    m => {
+      m.querySelector("[data-x]").onclick = () => { closeModal(); route(); };
+      m.querySelector("[data-ok]").onclick = async () => {
+        await sb.from("form_formularios").update({
+          titulo: m.querySelector('[data-k="titulo"]').value.trim() || "Formulário",
+          descricao: m.querySelector('[data-k="descricao"]').value.trim() || null
+        }).eq("id", form.id);
+        const rows = m.querySelectorAll("[data-pid]");
+        await Promise.all(Array.from(rows).map((row, i) => {
+          const get = k => (row.querySelector('[data-k="' + k + '"]') || {}).value;
+          const checked = k => !!(row.querySelector('[data-k="' + k + '"]') || {}).checked;
+          const tipo = get("tipo") || "texto";
+          const opcoes = (tipo === "unica" || tipo === "multipla") ? (get("opcoes") || "").split("\n").map(s => s.trim()).filter(Boolean) : null;
+          return sb.from("form_perguntas").update({
+            texto: get("texto"), tipo, obrigatoria: checked("obrigatoria"), opcoes,
+            media_tipo: get("media_tipo") || null, media_url: (get("media_url") || "").trim() || null, ordem: i
+          }).eq("id", row.dataset.pid);
+        }));
+        closeModal(); route();
+      };
+    });
+}
+
+async function addFormPergunta(formId, widgetId) {
+  await sb.from("form_perguntas").insert({ formulario_id: formId, texto: "Nova pergunta", tipo: "texto", ordem: 99 });
+  closeModal(); editarFormulario(widgetId);
+}
+async function delFormPergunta(pid, widgetId) {
+  if (!(await confirmDialog("Excluir esta pergunta?"))) return;
+  await sb.from("form_perguntas").delete().eq("id", pid);
+  closeModal(); editarFormulario(widgetId);
+}
+
+async function gerenciarCamposDinamicos(widgetId) {
+  const { data: campos } = await sb.from("form_campos").select("*").eq("projeto_id", curProjeto.id).order("label");
+  const rows = (campos || []).map(c =>
+    '<div class="grow-row" data-cid="' + c.id + '"><div class="gr-main"><span class="gr-name">{' + esc(c.chave) + '} — ' + esc(c.label) + '</span>' +
+    '<button class="lnk del" onclick="delCampoDinamico(\'' + c.id + '\',\'' + widgetId + '\')">excluir</button></div></div>').join("") || '<p class="muted-note">Nenhum campo personalizado ainda.</p>';
+  openModal('<h3>Campos dinâmicos</h3>' +
+    '<p class="muted-note" style="font-size:12px;text-transform:none;letter-spacing:0;font-weight:600">Crie variáveis que você usa nas perguntas como <code>{chave}</code>. Cada pessoa preenche o valor ao responder.</p>' +
+    '<div style="margin:10px 0">' + rows + '</div>' +
+    '<label>Nova variável</label><div style="display:flex;gap:8px"><input data-k="chave" placeholder="chave (ex.: departamento)" style="flex:1"><input data-k="label" placeholder="rótulo" style="flex:1"></div>' +
+    '<div class="modal-actions"><span class="grow"></span><button class="btn" data-x>Voltar</button><button class="btn primary" data-ok>Adicionar</button></div>',
+    m => {
+      m.querySelector("[data-x]").onclick = () => editarFormulario(widgetId);
+      m.querySelector("[data-ok]").onclick = async () => {
+        const chave = (m.querySelector('[data-k="chave"]').value || "").trim().toLowerCase().replace(/[^\w]/g, "");
+        const label = (m.querySelector('[data-k="label"]').value || "").trim() || chave;
+        if (!chave) { toast("Informe a chave."); return; }
+        const { error } = await sb.from("form_campos").insert({ projeto_id: curProjeto.id, chave, label });
+        if (error) { toast("Erro: " + error.message); return; }
+        gerenciarCamposDinamicos(widgetId);
+      };
+    });
+}
+async function delCampoDinamico(id, widgetId) {
+  if (!(await confirmDialog("Excluir este campo dinâmico?"))) return;
+  await sb.from("form_campos").delete().eq("id", id);
+  gerenciarCamposDinamicos(widgetId);
+}
+
+function fMediaHtml(p) {
+  if (!p.media_url) return "";
+  if (p.media_tipo === "imagem") return '<div class="f-media"><img src="' + escAttr(p.media_url) + '" loading="lazy" alt=""></div>';
+  if (p.media_tipo === "video") {
+    const e = videoEmbedUrl(p.media_url);
+    if (e.type === "iframe") return '<div class="f-media f-video"><iframe src="' + escAttr(e.url) + '" allowfullscreen></iframe></div>';
+    if (e.type === "video") return '<div class="f-media f-video"><video src="' + escAttr(e.url) + '" controls></video></div>';
+  }
+  return "";
+}
+
+async function responderFormulario(widgetId) {
+  const { data: form } = await sb.from("form_formularios").select("*").eq("widget_id", widgetId).maybeSingle();
+  if (!form) { toast("Formulário não encontrado."); return; }
+  const [{ data: pergs }, { data: respExist }, { data: campos }, vars] = await Promise.all([
+    sb.from("form_perguntas").select("*").eq("formulario_id", form.id).order("ordem"),
+    sb.from("form_respostas").select("*").eq("formulario_id", form.id).eq("pessoa_id", me.id).maybeSingle(),
+    sb.from("form_campos").select("*").eq("projeto_id", curProjeto.id),
+    getVarsFor(me.id)
+  ]);
+  const saved = (respExist && respExist.respostas) || {};
+  // descobre quais variáveis personalizadas são usadas e ainda faltam
+  const usadas = new Set();
+  extractVars(form.descricao).forEach(k => usadas.add(k));
+  (pergs || []).forEach(p => extractVars(p.texto).forEach(k => usadas.add(k)));
+  const camposUsados = (campos || []).filter(c => usadas.has(c.chave));
+
+  const camposHtml = camposUsados.length
+    ? '<div class="f-sobre"><div class="f-sobre-tit">Sobre você</div>' + camposUsados.map(c =>
+        '<div class="perg-resp"><div class="perg-label">' + esc(c.label) + '</div><input data-campo="' + escAttr(c.chave) + '" value="' + escAttr(vars[c.chave] || "") + '" style="width:100%"></div>').join("") + '</div>'
+    : "";
+
+  const pergsHtml = (pergs || []).map((p, i) => {
+    const txt = substVars(p.texto, vars);
+    const v = saved[p.id];
+    let input = "";
+    if (p.tipo === "texto") input = '<input data-pid="' + p.id + '" value="' + escAttr(v || "") + '" style="width:100%">';
+    else if (p.tipo === "paragrafo") input = '<textarea data-pid="' + p.id + '" style="width:100%;min-height:70px">' + esc(v || "") + '</textarea>';
+    else if (p.tipo === "escala" || p.tipo === "nota") {
+      const max = p.tipo === "escala" ? 5 : 10, start = p.tipo === "escala" ? 1 : 0;
+      const nums = []; for (let n = start; n <= max; n++) nums.push(n);
+      input = '<div class="escala-row">' + nums.map(n => '<label style="display:flex;align-items:center;gap:4px;font-size:13px;text-transform:none;letter-spacing:0;margin:0"><input type="radio" name="f-' + p.id + '" data-pid="' + p.id + '" value="' + n + '"' + (String(v) === String(n) ? " checked" : "") + '> ' + n + '</label>').join("") + '</div>';
+    } else {
+      const opts = p.opcoes || [], multi = p.tipo === "multipla";
+      const sel = Array.isArray(v) ? v : (v ? [v] : []);
+      input = '<div class="opts-list">' + opts.map(o => '<label style="display:flex;align-items:center;gap:8px;font-size:13.5px;text-transform:none;letter-spacing:0;margin:0;padding:4px 0"><input type="' + (multi ? "checkbox" : "radio") + '" name="fo-' + p.id + '" data-pid="' + p.id + '" value="' + escAttr(o) + '"' + (sel.includes(o) ? " checked" : "") + '> ' + esc(o) + '</label>').join("") + '</div>';
+    }
+    return '<div class="perg-resp"><div class="perg-label">' + (i + 1) + '. ' + esc(txt) + (p.obrigatoria ? ' <span style="color:var(--danger)">*</span>' : '') + '</div>' + fMediaHtml(p) + input + '</div>';
+  }).join("");
+
+  openModal('<h3>' + esc(substVars(form.titulo, vars)) + '</h3>' +
+    (form.descricao ? '<p class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600">' + esc(substVars(form.descricao, vars)) + '</p>' : "") +
+    camposHtml + pergsHtml +
+    '<div class="auth-err" id="fErr"></div>' +
+    actions(respExist ? "Atualizar respostas" : "Enviar respostas"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const errEl = m.querySelector("#fErr");
+        // salva campos dinâmicos da pessoa
+        const campoEls = m.querySelectorAll("[data-campo]");
+        if (campoEls.length) {
+          const ups = Array.from(campoEls).map(el => ({ projeto_id: curProjeto.id, pessoa_id: me.id, chave: el.dataset.campo, valor: el.value.trim() }));
+          await sb.from("pessoa_campos").upsert(ups, { onConflict: "projeto_id,pessoa_id,chave" });
+        }
+        // coleta respostas
+        const obj = {};
+        for (const p of (pergs || [])) {
+          if (p.tipo === "texto" || p.tipo === "paragrafo") { const el = m.querySelector('[data-pid="' + p.id + '"]'); obj[p.id] = el ? el.value.trim() : ""; }
+          else if (p.tipo === "escala" || p.tipo === "nota" || p.tipo === "unica") { const el = m.querySelector('[data-pid="' + p.id + '"]:checked'); obj[p.id] = el ? el.value : ""; }
+          else { obj[p.id] = Array.from(m.querySelectorAll('[data-pid="' + p.id + '"]:checked')).map(e => e.value); }
+          if (p.obrigatoria) { const r = obj[p.id]; if (!r || (Array.isArray(r) && !r.length)) { errEl.textContent = 'A pergunta "' + substVars(p.texto, vars) + '" é obrigatória.'; return; } }
+        }
+        errEl.textContent = "Salvando…";
+        let err;
+        if (respExist) ({ error: err } = await sb.from("form_respostas").update({ respostas: obj, updated_at: new Date().toISOString() }).eq("id", respExist.id));
+        else ({ error: err } = await sb.from("form_respostas").insert({ formulario_id: form.id, projeto_id: curProjeto.id, pessoa_id: me.id, respostas: obj }));
+        if (err) { errEl.textContent = "Erro: " + err.message; return; }
+        closeModal(); route();
+      };
+    });
+}
+
+async function verRespostasFormulario(formId, widgetId) {
+  const [{ data: pergs }, { data: resps }] = await Promise.all([
+    sb.from("form_perguntas").select("*").eq("formulario_id", formId).order("ordem"),
+    sb.from("form_respostas").select("respostas, updated_at, pessoa:pessoas!pessoa_id(nome,email)").eq("formulario_id", formId).order("updated_at", { ascending: false })
+  ]);
+  const lista = resps || [];
+  // Dashboard por pergunta
+  const dash = (pergs || []).map((p, i) => {
+    const vals = lista.map(r => r.respostas && r.respostas[p.id]).filter(v => v !== undefined && v !== "" && !(Array.isArray(v) && !v.length));
+    let body = '<p class="muted-note" style="font-size:12px">Sem respostas.</p>';
+    if (vals.length) {
+      if (p.tipo === "escala" || p.tipo === "nota") {
+        const nums = vals.map(Number).filter(n => !isNaN(n));
+        const avg = nums.reduce((a, b) => a + b, 0) / (nums.length || 1);
+        body = '<div class="dash-avg"><span class="dash-avg-n">' + avg.toFixed(1) + '</span><span class="dash-avg-l">média · ' + nums.length + ' resp.</span></div>';
+      } else if (p.tipo === "unica" || p.tipo === "multipla") {
+        const counts = {}; vals.forEach(v => (Array.isArray(v) ? v : [v]).forEach(o => counts[o] = (counts[o] || 0) + 1));
+        const tot = vals.length;
+        body = Object.keys(counts).map(o => { const pct = Math.round(counts[o] / tot * 100); return '<div class="dash-opt"><div class="dash-opt-top"><span>' + esc(o) + '</span><span>' + counts[o] + ' · ' + pct + '%</span></div><div class="prog-bar"><i style="width:' + pct + '%"></i></div></div>'; }).join("");
+      } else {
+        body = '<div class="dash-texts">' + vals.map(v => '<div class="dash-text">' + esc(v) + '</div>').join("") + '</div>';
+      }
+    }
+    return '<div class="dash-perg"><div class="dash-perg-q">' + (i + 1) + '. ' + esc(p.texto) + '</div>' + body + '</div>';
+  }).join("");
+
+  // Por pessoa
+  const porPessoa = lista.map((r, idx) => {
+    const who = (r.pessoa && (r.pessoa.nome || r.pessoa.email)) || "—";
+    const ans = (pergs || []).map(p => {
+      let v = r.respostas && r.respostas[p.id];
+      if (Array.isArray(v)) v = v.join(", ");
+      return (v === undefined || v === "") ? "" : '<div class="pp-a"><span class="pp-q">' + esc(p.texto) + '</span><span class="pp-v">' + esc(String(v)) + '</span></div>';
+    }).join("");
+    return '<details class="pp"><summary>' + esc(who) + '</summary>' + ans + '</details>';
+  }).join("") || '<p class="muted-note">Ninguém respondeu ainda.</p>';
+
+  openModal('<h3>📊 Respostas (' + lista.length + ')</h3>' +
+    '<div class="rep-tabs"><button class="rep-tab on" data-rt="dash">Dashboard</button><button class="rep-tab" data-rt="pessoa">Por pessoa</button>' +
+    '<button class="rep-tab" data-rt="ia">Resumo IA</button></div>' +
+    '<div data-pane="dash">' + (dash || '<p class="muted-note">Sem perguntas.</p>') + '</div>' +
+    '<div data-pane="pessoa" style="display:none">' + porPessoa + '</div>' +
+    '<div data-pane="ia" style="display:none"><div class="ia-box"><p class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600">O resumo com IA (temas, sentimento, destaques das respostas abertas) fica disponível quando você configurar a API key da Anthropic. A estrutura já está pronta.</p><button class="btn" disabled>✨ Gerar resumo (requer API key)</button></div></div>' +
+    '<div class="modal-actions"><span class="grow"></span><button class="btn" data-x>Fechar</button></div>',
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelectorAll(".rep-tab").forEach(b => b.onclick = () => {
+        m.querySelectorAll(".rep-tab").forEach(x => x.classList.toggle("on", x === b));
+        m.querySelectorAll("[data-pane]").forEach(pane => pane.style.display = pane.dataset.pane === b.dataset.rt ? "" : "none");
+      });
+    });
 }
 
 async function loadChecklistProjeto(c) {
@@ -1438,6 +1745,7 @@ function subscribeRealtime(projetoId) {
     .on("postgres_changes", { event: "*", schema: "public", table: "mural_notas", filter: "projeto_id=eq." + projetoId }, onMuralRealtime)
     .on("postgres_changes", { event: "*", schema: "public", table: "enquete_votos", filter: "projeto_id=eq." + projetoId }, onEnqueteRealtime)
     .on("postgres_changes", { event: "*", schema: "public", table: "comentarios_painel", filter: "projeto_id=eq." + projetoId }, onComentarioPainelRealtime)
+    .on("postgres_changes", { event: "*", schema: "public", table: "form_respostas", filter: "projeto_id=eq." + projetoId }, onFormRealtime)
     .subscribe();
 }
 function unsubscribeRealtime() {
@@ -1473,6 +1781,10 @@ function onComentarioPainelRealtime(payload) {
   const ids = [...document.querySelectorAll(".cmt-btn")].map(b => b.dataset.wid);
   if (ids.length) loadPainelComentarioCounts(ids);
   if (wid && _cmtWidgetAberto === wid && document.getElementById("cmtThread")) loadComentariosPainel(wid);
+}
+function onFormRealtime() {
+  if (view !== "painel" || (projTab !== "painel" && projTab !== "admin")) return;
+  document.querySelectorAll('[id^="formw-"]').forEach(el => loadFormularioWidget(el.id.replace("formw-", "")));
 }
 
 /* ===== 13) Autenticação ===== */
