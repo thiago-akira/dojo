@@ -1724,7 +1724,7 @@ async function abrirProjeto(id) {
   }
   canEdit = canEditReal;
   await loadPainel(id);
-  histReset();
+  histReset(); deviceView = "desktop";
   const vis = visibleSpaces();
   curSpaceId = vis.length ? vis[0].id : (state.spaces[0] && state.spaces[0].id) || null;
   subscribeRealtime(id);
@@ -1922,15 +1922,16 @@ function renderProjeto(canvas, hint) {
   }
 
   const tabs = [];
-  if (canEdit) tabs.push(["admin", "🔒 Admin"]);
-  tabs.push(["painel", "📋 Painel"]);
-  tabs.push([canEdit ? "gestao" : "materiais", "📎 Materiais"]);
-  tabs.push(["aprovacoes", "✅ Aprovações"], ["questionarios", "📝 Questionários"],
-    ["reunioes", "📅 Reuniões"], ["mensagens", "💬 Mensagens"]);
-  tabs.push(["participantes", "👥 Participantes"]);
+  if (canEdit) tabs.push(["admin", menuLabel("admin")]);
+  tabs.push(["painel", menuLabel("painel")]);
+  tabs.push([canEdit ? "gestao" : "materiais", menuLabel("materiais")]);
+  tabs.push(["aprovacoes", menuLabel("aprovacoes")], ["questionarios", menuLabel("questionarios")],
+    ["reunioes", menuLabel("reunioes")], ["mensagens", menuLabel("mensagens")]);
+  tabs.push(["participantes", menuLabel("participantes")]);
   const sn = $("#subnav"); sn.style.display = "flex";
   sn.innerHTML = tabs.map(([k, l]) =>
-    '<button class="sntab' + (projTab === k ? " on" : "") + '" onclick="setProjTab(\'' + k + '\')">' + l + '</button>').join("");
+    '<button class="sntab' + (projTab === k ? " on" : "") + '" onclick="setProjTab(\'' + k + '\')">' + l + '</button>').join("") +
+    (canEdit ? '<button class="sntab sn-edit" title="Renomear menus deste cliente" onclick="renomearMenus()">🏷</button>' : "");
 
   if (projTab === "gestao" && canEdit) return renderGestao(canvas, hint);
   if (projTab === "materiais") return renderMateriais(canvas, hint);
@@ -2222,6 +2223,8 @@ function paintTools() {
   $("#undoBtn").style.display = histOn ? "" : "none";
   $("#redoBtn").style.display = histOn ? "" : "none";
   $("#histBtn").style.display = histOn ? "" : "none";
+  $("#deviceBtn").style.display = (isAdmin && inPainel) ? "" : "none";
+  applyDevice();
   if (histOn) updateHistButtons();
   $("#addBtn").style.display = (inPainel && canEdit && editMode) ? "" : "none";
   $("#editBtn").classList.toggle("on", editMode);
@@ -3326,6 +3329,55 @@ async function excluirCliente() {
 }
 
 /* ===== 14) Topbar ===== */
+/* ===== Item 4: visualização responsiva (desktop/tablet/celular) — admin ===== */
+let deviceView = "desktop";
+const DEV_ICON = { desktop: "🖥", tablet: "📲", mobile: "📱" };
+const DEV_NOME = { desktop: "Desktop", tablet: "Tablet", mobile: "Celular" };
+function applyDevice() {
+  const wrap = document.querySelector(".canvas-wrap");
+  if (!wrap) return;
+  wrap.classList.remove("dev-tablet", "dev-mobile");
+  if (view === "painel" && (projTab === "painel" || projTab === "admin")) {
+    if (deviceView === "tablet") wrap.classList.add("dev-tablet");
+    else if (deviceView === "mobile") wrap.classList.add("dev-mobile");
+  }
+  const b = $("#deviceBtn"); if (b) { b.textContent = DEV_ICON[deviceView]; b.classList.toggle("on", deviceView !== "desktop"); }
+}
+function cycleDevice() {
+  const order = ["desktop", "tablet", "mobile"];
+  deviceView = order[(order.indexOf(deviceView) + 1) % 3];
+  applyDevice();
+  toast("Visualização: " + DEV_NOME[deviceView] + " " + DEV_ICON[deviceView]);
+}
+
+/* ===== Item 8: renomear menus (rótulos por cliente) — admin ===== */
+const MENU_DEF = { admin: "🔒 Admin", painel: "📋 Painel", gestao: "📎 Materiais", materiais: "📎 Materiais", aprovacoes: "✅ Aprovações", questionarios: "📝 Questionários", reunioes: "📅 Reuniões", mensagens: "💬 Mensagens", participantes: "👥 Participantes" };
+function menuLabel(key) {
+  const m = curCliente && curCliente.menu_labels;
+  return (m && m[key]) || MENU_DEF[key] || key;
+}
+function renomearMenus() {
+  if (!curCliente) { toast("Abra um projeto de um cliente."); return; }
+  const ml = curCliente.menu_labels || {};
+  const linhas = [["painel", "Painel"], ["materiais", "Materiais (Gestão p/ você)"], ["aprovacoes", "Aprovações"], ["questionarios", "Questionários"], ["reunioes", "Reuniões"], ["mensagens", "Mensagens"], ["participantes", "Participantes"], ["admin", "Admin (só você)"]]
+    .map(([k, lbl]) => '<label style="text-transform:none;letter-spacing:0;font-weight:700;font-size:12.5px">' + lbl + '</label><input data-mk="' + k + '" value="' + escAttr(ml[k] || "") + '" placeholder="' + escAttr(MENU_DEF[k]) + '">').join("");
+  openModal('<h3>🏷 Renomear menus</h3>' +
+    '<p class="muted-note" style="font-size:12px;text-transform:none;letter-spacing:0;font-weight:600">Personalize os nomes das abas deste cliente. Deixe em branco para usar o padrão.</p>' +
+    '<div style="margin-top:8px">' + linhas + '</div>' +
+    '<div class="modal-actions"><span class="grow"></span><button class="btn" data-x>Cancelar</button><button class="btn" id="resetMenus">Restaurar padrão</button><button class="btn primary" data-ok>Salvar</button></div>',
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("#resetMenus").onclick = async () => { await sb.from("clientes").update({ menu_labels: {} }).eq("id", curCliente.id); curCliente.menu_labels = {}; closeModal(); route(); };
+      m.querySelector("[data-ok]").onclick = async () => {
+        const labels = {};
+        m.querySelectorAll("[data-mk]").forEach(el => { const v = el.value.trim(); if (v) labels[el.dataset.mk] = v; });
+        const { error } = await sb.from("clientes").update({ menu_labels: labels }).eq("id", curCliente.id);
+        if (error) { toast("Erro: " + error.message); return; }
+        curCliente.menu_labels = labels; closeModal(); route(); toast("Menus atualizados.");
+      };
+    });
+}
+
 function wireTopbar() {
   $("#authBtn").onclick = authModal;
   $("#adminBtn").onclick = irConsole;
@@ -3337,6 +3389,7 @@ function wireTopbar() {
   $("#undoBtn").onclick = undo;
   $("#redoBtn").onclick = redo;
   $("#histBtn").onclick = () => abrirHistorico("hist");
+  $("#deviceBtn").onclick = cycleDevice;
   $("#editBtn").onclick = () => { editMode = !editMode; route(); };
 }
 
