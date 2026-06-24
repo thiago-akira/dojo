@@ -187,7 +187,7 @@ const WIDGETS = {
     }
   },
   nota: {
-    emoji: "📝", name: "Nota / Aviso", desc: "Texto livre para o cliente ler.",
+    emoji: "📝", name: "Nota / Aviso", hidden: true, desc: "Texto livre para o cliente ler.",
     w: 4, h: 3, defaults: { title: "Aviso", text: "Escreva aqui…" },
     render(t, c) {
       const p = t.props;
@@ -198,16 +198,34 @@ const WIDGETS = {
   },
   links: {
     emoji: "🔗", name: "Links / Atalhos", desc: "Lista de links úteis.",
-    w: 3, h: 3, defaults: { title: "Links", raw: "Site | https://exemplo.com" },
+    w: 3, h: 3, defaults: { title: "Links", items: [{label: "Site", url: "https://exemplo.com", desc: ""}] },
     render(t, c) {
       const p = t.props;
-      const items = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]);
-      c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' +
-        '<div class="w-body"><div class="links-list">' +
-        items.map(a => '<a href="' + escAttr(a[1] || "#") + '" target="_blank" rel="noopener">🔗 ' + esc(a[0]) + '</a>').join("") +
-        '</div></div>';
+      if (!p.items && p.raw !== undefined) {
+        p.items = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]).map(a => ({label: a[0], url: a[1] || "", desc: ""}));
+        delete p.raw; if (canEdit) save();
+      }
+      const items = p.items || [];
+      const head = '<div class="w-head"><span class="w-title">' + esc(p.title || "Links") + '</span>' + (canEdit ? '<button class="btn sm" onclick="linkAdd(\'' + t.id + '\')">＋ Link</button>' : '') + '</div>';
+      const body = items.map((a, i) => {
+        if (canEdit) {
+          return '<div class="link-row link-edit">' +
+            '<div class="link-fields">' +
+            '<input class="link-inp" value="' + escAttr(a.label || "") + '" placeholder="Nome" oninput="linkUpdate(\'' + t.id + '\',' + i + ',\'label\',this.value)">' +
+            '<input class="link-inp" value="' + escAttr(a.url || "") + '" placeholder="https://..." oninput="linkUpdate(\'' + t.id + '\',' + i + ',\'url\',this.value)">' +
+            '<input class="link-inp" value="' + escAttr(a.desc || "") + '" placeholder="Descrição (opcional)" oninput="linkUpdate(\'' + t.id + '\',' + i + ',\'desc\',this.value)">' +
+            '</div>' +
+            '<button class="lnk del link-del" onclick="linkDel(\'' + t.id + '\',' + i + ')" title="Remover">✕</button>' +
+            '</div>';
+        }
+        return '<div class="link-row">' +
+          '<a href="' + escAttr(a.url || "#") + '" target="_blank" rel="noopener" class="link-title">🔗 ' + esc(a.label || a.url || "") + '</a>' +
+          (a.desc ? '<div class="link-desc-txt">' + esc(a.desc) + '</div>' : '') +
+          '</div>';
+      }).join("");
+      c.innerHTML = head + '<div class="w-body"><div class="links-list">' + (body || '<p class="muted-note">Nenhum link.</p>') + '</div></div>';
     },
-    form(p) { return field("Título", "title", p.title) + '<label>Itens (um por linha: Rótulo | URL)</label><textarea data-k="raw">' + esc(p.raw) + '</textarea>'; }
+    form(p) { return field("Título", "title", p.title); }
   },
   progresso: {
     emoji: "📈", name: "Progresso / Metas", desc: "Barras de progresso (0–100).",
@@ -239,19 +257,25 @@ const WIDGETS = {
     form(p) { return field("Título (opcional)", "title", p.title) + field("Link do vídeo", "url", p.url); }
   },
   code: {
-    emoji: "💻", name: "Código", desc: "Bloco de código monoespaçado com botão copiar.",
+    emoji: "💻", name: "Código", desc: "Bloco de código editável com botão copiar.",
     w: 5, h: 4, defaults: { title: "Código", lang: "", code: "" },
     render(t, c) {
       const p = t.props;
-      c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Código") + '</span>' +
-        (p.lang ? '<span class="code-lang">' + esc(p.lang) + '</span>' : '') +
-        '<span class="grow"></span><button class="code-copy" title="Copiar código" onclick="copyCode(this)">⧉</button></div>' +
-        '<div class="code-body"><pre><code>' + esc(p.code || "") + '</code></pre></div>';
+      const LANGS = ["Texto", "JSON", "Python", "JavaScript", "CSS", "HTML"];
+      const langSel = '<select class="code-lang-sel" onchange="codeLangChange(\'' + t.id + '\',this.value)">' +
+        '<option value=""' + (!p.lang ? " selected" : "") + '>linguagem…</option>' +
+        LANGS.map(l => '<option value="' + l + '"' + (p.lang === l ? " selected" : "") + '>' + l + '</option>').join("") + '</select>';
+      const titleHtml = canEdit
+        ? '<span class="w-title code-title-edit" contenteditable="true" spellcheck="false" onblur="codeTitleSave(\'' + t.id + '\',this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}">' + esc(p.title || "Código") + '</span>'
+        : '<span class="w-title">' + esc(p.title || "Código") + '</span>';
+      const head = '<div class="w-head">' + titleHtml + langSel + '<span class="grow"></span><button class="code-copy" title="Copiar código" onclick="copyCode(this)">⧉</button></div>';
+      if (canEdit) {
+        c.innerHTML = head + '<div class="code-body-edit"><textarea class="code-textarea" spellcheck="false" oninput="codeContentSave(\'' + t.id + '\',this)">' + esc(p.code || "") + '</textarea></div>';
+      } else {
+        c.innerHTML = head + '<div class="code-body"><pre><code>' + esc(p.code || "") + '</code></pre></div>';
+      }
     },
-    form(p) {
-      return field("Título", "title", p.title) + field("Linguagem (ex.: JS, Python)", "lang", p.lang) +
-        '<label>Código</label><textarea data-k="code" spellcheck="false" style="min-height:170px;font-family:var(--font-mono);font-size:12.5px;white-space:pre;line-height:1.5">' + esc(p.code) + '</textarea>';
-    }
+    form(p) { return field("Título", "title", p.title); }
   },
   paragrafo: {
     emoji: "📄", name: "Parágrafo", desc: "Texto editável ao clicar, com estilo ajustável.",
@@ -307,48 +331,43 @@ const WIDGETS = {
     },
     form(p) { return field("Título (opcional)", "title", p.title); }
   },
-  referencias: {
-    emoji: "🔗", name: "Referências", desc: "Colunas de links importantes, editáveis.",
-    w: 6, h: 4, defaults: { title: "Referências", raw: "## Documentação\nGuia | https://exemplo.com\nAPI | https://exemplo.com/api\n\n## Design\nFigma | https://figma.com" },
-    render(t, c) {
-      const p = t.props;
-      const cols = parseRefColumns(p.raw);
-      c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Referências") + '</span></div>' +
-        '<div class="w-body"><div class="ref-cols">' +
-        (cols.length ? cols.map(col =>
-          '<div class="ref-col">' + (col.title ? '<div class="ref-col-title">' + esc(col.title) + '</div>' : '') +
-          col.links.map(l => '<a href="' + escAttr(l.url || "#") + '" target="_blank" rel="noopener">' + esc(l.label || l.url) + '</a>').join("") +
-          '</div>').join("")
-          : '<p class="muted-note">Sem links ainda.</p>') +
-        '</div></div>';
-    },
-    form(p) {
-      return field("Título", "title", p.title) +
-        '<label>Colunas e links</label>' +
-        '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Inicie uma coluna com <b>## Nome</b>. Depois, um link por linha: <b>Rótulo | URL</b>.</p>' +
-        '<textarea data-k="raw" spellcheck="false" style="min-height:170px;font-family:var(--font-mono);font-size:12.5px;line-height:1.5">' + esc(p.raw) + '</textarea>';
-    }
-  },
   tabela: {
     emoji: "📊", name: "Tabela", desc: "Tabela de dados editável — linhas e colunas.",
-    w: 6, h: 3, defaults: { title: "Tabela", raw: "Item | Valor | Status\nFase 1 | R$ 5.000 | ✓ Concluída\nFase 2 | R$ 8.000 | Em andamento" },
+    w: 6, h: 3, defaults: { title: "Tabela", headers: ["Item", "Valor", "Status"], rows: [["Fase 1", "R$ 5.000", "✓ Concluída"], ["Fase 2", "R$ 8.000", "Em andamento"]] },
     render(t, c) {
       const p = t.props;
-      const rows = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(r => r.some(x => x));
-      let table = '<p class="muted-note">Sem dados.</p>';
-      if (rows.length) {
-        const head = rows[0], body = rows.slice(1);
-        table = '<table class="data-table"><thead><tr>' + head.map(h => '<th>' + esc(h) + '</th>').join("") + '</tr></thead><tbody>' +
-          body.map(r => '<tr data-item="' + escAttr(itemKey(r[0] || "")) + '" data-itemlabel="' + escAttr(r[0] || "") + '">' + head.map((_, i) => '<td>' + esc(r[i] || "") + '</td>').join("") + '</tr>').join("") + '</tbody></table>';
+      if (!p.headers && p.raw !== undefined) {
+        const rr = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(r => r.some(x => x));
+        p.headers = rr.length ? rr[0] : ["Item", "Valor", "Status"];
+        p.rows = rr.length > 1 ? rr.slice(1) : [];
+        delete p.raw; if (canEdit) save();
       }
-      c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Tabela") + '</span></div><div class="w-body">' + table + '</div>';
+      const headers = p.headers || ["Item"];
+      const rows = p.rows || [];
+      if (canEdit) {
+        const thead = '<thead><tr><th class="tab-ctrl-col"></th>' +
+          headers.map((h, ci) => '<th><div class="tab-th-wrap"><span class="tab-cell-edit" contenteditable="true" spellcheck="false" onblur="tabelaHeaderSave(\'' + t.id + '\',' + ci + ',this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}">' + esc(h) + '</span>' +
+            (headers.length > 1 ? '<button class="lnk del tab-del-col" onclick="tabelaDelCol(\'' + t.id + '\',' + ci + ')" title="Remover col">✕</button>' : '') + '</div></th>').join("") +
+          '<th class="tab-add-col"><button class="lnk" onclick="tabelaAddCol(\'' + t.id + '\')">＋</button></th></tr></thead>';
+        const tbody = '<tbody>' + rows.map((r, ri) =>
+          '<tr><td class="tab-ctrl-col">' +
+          (ri > 0 ? '<button class="lnk tab-mv" onclick="tabelaMoveRow(\'' + t.id + '\',' + ri + ',-1)">↑</button>' : '<span class="tab-mv-ph"></span>') +
+          (ri < rows.length - 1 ? '<button class="lnk tab-mv" onclick="tabelaMoveRow(\'' + t.id + '\',' + ri + ',1)">↓</button>' : '<span class="tab-mv-ph"></span>') +
+          '<button class="lnk del tab-del-row" onclick="tabelaDelRow(\'' + t.id + '\',' + ri + ')" title="Remover">✕</button></td>' +
+          headers.map((_, ci) => '<td><span class="tab-cell-edit" contenteditable="true" spellcheck="false" onblur="tabelaCellSave(\'' + t.id + '\',' + ri + ',' + ci + ',this)" onkeydown="if(event.key===\'Tab\'){event.preventDefault();tabelaNextCell(event.target,' + ri + ',' + ci + ');}if(event.key===\'Enter\'){event.preventDefault();this.blur()}">' + esc((r[ci] !== undefined ? r[ci] : "")) + '</span></td>').join("") +
+          '</tr>').join("") + '</tbody>';
+        c.innerHTML = '<div class="w-head"><span class="w-title risk-title-editable" contenteditable="true" spellcheck="false" onblur="tabelaTitleSave(\'' + t.id + '\',this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}">' + esc(p.title || "Tabela") + '</span>' +
+          '<button class="btn sm" onclick="tabelaAddRow(\'' + t.id + '\')">＋ Linha</button></div>' +
+          '<div class="w-body"><div class="uso-table-wrap"><table class="data-table tab-edit">' + thead + tbody + '</table></div></div>';
+      } else {
+        const table = rows.length
+          ? '<table class="data-table"><thead><tr>' + headers.map(h => '<th>' + esc(h) + '</th>').join("") + '</tr></thead><tbody>' +
+            rows.map(r => '<tr data-item="' + escAttr(itemKey(r[0] || "")) + '" data-itemlabel="' + escAttr(r[0] || "") + '">' + headers.map((_, i) => '<td>' + esc(r[i] || "") + '</td>').join("") + '</tr>').join("") + '</tbody></table>'
+          : '<p class="muted-note">Sem dados.</p>';
+        c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Tabela") + '</span></div><div class="w-body">' + table + '</div>';
+      }
     },
-    form(p) {
-      return field("Título", "title", p.title) +
-        '<label>Dados</label>' +
-        '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Uma linha por registro, colunas separadas por <b>|</b>. A 1ª linha é o cabeçalho.</p>' +
-        '<textarea data-k="raw" spellcheck="false" style="min-height:150px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6">' + esc(p.raw) + '</textarea>';
-    }
+    form(p) { return field("Título", "title", p.title); }
   },
   marcos: {
     emoji: "🗓", name: "Linha do tempo", desc: "Marcos do projeto com status e datas.",
@@ -453,7 +472,7 @@ const WIDGETS = {
     }
   },
   countdown: {
-    emoji: "⏳", name: "Contador regressivo", desc: "Tempo restante até uma data.",
+    emoji: "⏳", name: "Contador regressivo", hidden: true, desc: "Tempo restante até uma data.",
     w: 3, h: 2, defaults: { title: "Lançamento", alvo: "" },
     render(t, c) {
       const p = t.props;
@@ -498,23 +517,75 @@ const WIDGETS = {
   },
   paleta: {
     emoji: "🎨", name: "Paleta de marca", desc: "Amostras de cores com código.",
-    w: 4, h: 2, defaults: { title: "Cores", raw: "Primária | #e8a33d\nFundo | #0f0f14\nTexto | #e9eaf0\nDestaque | #5b8def" },
+    w: 4, h: 2, defaults: { title: "Cores", items: [{nome: "Primária", cor: "#e8a33d"}, {nome: "Fundo", cor: "#0f0f14"}, {nome: "Texto", cor: "#e9eaf0"}, {nome: "Destaque", cor: "#5b8def"}] },
     render(t, c) {
       const p = t.props;
-      const items = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]);
-      const head = p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '';
+      if (!p.items && p.raw !== undefined) {
+        p.items = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]).map(a => ({nome: a[0], cor: a[1] || ""}));
+        delete p.raw; if (canEdit) save();
+      }
+      const items = p.items || [];
+      const head = '<div class="w-head"><span class="w-title">' + esc(p.title || "Cores") + '</span>' + (canEdit ? '<button class="btn sm" onclick="palAddRow(\'' + t.id + '\')">＋ Cor</button>' : '') + '</div>';
       c.innerHTML = head + '<div class="w-body"><div class="swatches">' +
-        items.map(a => {
-          const hex = (a[1] || "").replace(/[^#\w(),.%\s]/g, "");
-          return '<div class="swatch"><div class="swatch-chip" style="background:' + escAttr(hex) + '"></div>' +
-            '<div class="swatch-info"><div class="swatch-name">' + esc(a[0]) + '</div><div class="swatch-hex">' + esc(a[1] || "") + '</div></div></div>';
+        items.map((a, i) => {
+          const hexSafe = (a.cor || "").replace(/[^#\w(),.%\s]/g, "");
+          const pickerVal = /^#[0-9a-fA-F]{3,8}$/.test(a.cor || "") ? a.cor : "#000000";
+          return '<div class="swatch"><div class="swatch-chip" id="swatch-chip-' + t.id + '-' + i + '" style="background:' + escAttr(hexSafe) + '"></div>' +
+            '<div class="swatch-info">' +
+            (canEdit
+              ? '<input class="pal-inp pal-name" value="' + escAttr(a.nome || "") + '" placeholder="Nome" oninput="palUpdate(\'' + t.id + '\',' + i + ',\'nome\',this.value)">' +
+                '<div class="pal-cor-row"><input class="pal-inp pal-hex" value="' + escAttr(a.cor || "") + '" placeholder="#hex" oninput="palUpdate(\'' + t.id + '\',' + i + ',\'cor\',this.value)">' +
+                '<input type="color" class="pal-picker" value="' + escAttr(pickerVal) + '" oninput="palUpdate(\'' + t.id + '\',' + i + ',\'cor\',this.value)" title="Escolher cor"></div>'
+              : '<div class="swatch-name">' + esc(a.nome || "") + '</div><div class="swatch-hex">' + esc(a.cor || "") + '</div>') +
+            '</div>' +
+            (canEdit ? '<button class="lnk del swatch-del" onclick="palDelRow(\'' + t.id + '\',' + i + ')" title="Remover">✕</button>' : '') +
+            '</div>';
         }).join("") + '</div></div>';
     },
-    form(p) {
-      return field("Título", "title", p.title) + '<label>Cores</label>' +
-        '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Uma por linha: <b>Nome | #hex</b> (ou rgb()).</p>' +
-        '<textarea data-k="raw" spellcheck="false" style="min-height:120px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6">' + esc(p.raw) + '</textarea>';
-    }
+    form(p) { return field("Título", "title", p.title); }
+  },
+  referencias: {
+    emoji: "📚", name: "Referências", desc: "Biblioteca de links com título, URL e motivo.",
+    w: 5, h: 4, defaults: { title: "Referências", categories: [{nome: "Geral", items: [{titulo: "Exemplo", url: "https://exemplo.com", motivo: "Referência inicial"}]}] },
+    render(t, c) {
+      const p = t.props;
+      if (!p.categories && p.raw !== undefined) {
+        p.categories = parseRefColumns(p.raw).map(col => ({
+          nome: col.title || "Geral",
+          items: (col.links || []).map(l => ({titulo: l.label || l.url || "", url: l.url || "", motivo: ""}))
+        }));
+        if (!p.categories.length) p.categories = [{nome: "Geral", items: []}];
+        delete p.raw; if (canEdit) save();
+      }
+      const cats = p.categories || [];
+      const titleEl = canEdit
+        ? '<span class="w-title risk-title-editable" contenteditable="true" spellcheck="false" onblur="refTitleSave(\'' + t.id + '\',this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}">' + esc(p.title || "Referências") + '</span>'
+        : '<span class="w-title">' + esc(p.title || "Referências") + '</span>';
+      const head = '<div class="w-head">' + titleEl + (canEdit ? '<button class="btn sm" onclick="refAddCat(\'' + t.id + '\')">＋ Categoria</button>' : '') + '</div>';
+      const body = cats.map((cat, ci) => {
+        const items = cat.items || [];
+        const itemsHtml = items.map((item, ii) =>
+          canEdit
+            ? '<div class="ref-item ref-item-edit">' +
+              '<input class="ref-inp" value="' + escAttr(item.titulo || "") + '" placeholder="Título" oninput="refItemSave(\'' + t.id + '\',' + ci + ',' + ii + ',\'titulo\',this.value)">' +
+              '<input class="ref-inp ref-url-inp" value="' + escAttr(item.url || "") + '" placeholder="https://..." oninput="refItemSave(\'' + t.id + '\',' + ci + ',' + ii + ',\'url\',this.value)">' +
+              '<input class="ref-inp" value="' + escAttr(item.motivo || "") + '" placeholder="Motivo / descrição" oninput="refItemSave(\'' + t.id + '\',' + ci + ',' + ii + ',\'motivo\',this.value)">' +
+              '<button class="lnk del" onclick="refDelItem(\'' + t.id + '\',' + ci + ',' + ii + ')" title="Remover">✕</button></div>'
+            : '<div class="ref-item"><a href="' + escAttr(item.url || "#") + '" target="_blank" rel="noopener" class="ref-link">🔗 ' + esc(item.titulo || item.url || "") + '</a>' +
+              (item.motivo ? '<div class="ref-motivo">' + esc(item.motivo) + '</div>' : '') + '</div>'
+        ).join("");
+        return '<div class="ref-cat">' +
+          '<div class="ref-cat-head">' +
+          (canEdit
+            ? '<span class="ref-cat-name" contenteditable="true" spellcheck="false" onblur="refCatSave(\'' + t.id + '\',' + ci + ',this)">' + esc(cat.nome || "") + '</span>' +
+              '<button class="lnk" onclick="refAddItem(\'' + t.id + '\',' + ci + ')" title="Adicionar referência">＋</button>' +
+              '<button class="lnk del" onclick="refDelCat(\'' + t.id + '\',' + ci + ')" title="Excluir categoria">✕</button>'
+            : '<span class="ref-cat-name">' + esc(cat.nome || "") + '</span>') +
+          '</div><div class="ref-items">' + (itemsHtml || '<p class="muted-note" style="margin:4px 0;font-size:12px">Nenhuma referência.</p>') + '</div></div>';
+      }).join("");
+      c.innerHTML = head + '<div class="w-body"><div class="ref-body">' + (body || '<p class="muted-note">Nenhuma categoria.</p>') + '</div></div>';
+    },
+    form(p) { return field("Título", "title", p.title); }
   },
   banner: {
     emoji: "📣", name: "Banner / Destaque", desc: "Aviso grande e colorido.",
@@ -531,7 +602,7 @@ const WIDGETS = {
     }
   },
   secao: {
-    emoji: "🗂", name: "Cabeçalho de seção", desc: "Título divisor para organizar o painel.",
+    emoji: "🗂", name: "Cabeçalho de seção", noComment: true, desc: "Título divisor para organizar o painel.",
     w: 12, h: 1, defaults: { titulo: "Nova seção", subtitulo: "" },
     render(t, c) {
       const p = t.props;
@@ -613,41 +684,97 @@ const WIDGETS = {
     form(p) { return field("Título", "title", p.title); }
   },
   kanban: {
-    emoji: "🗂", name: "Kanban / Quadro", desc: "Colunas de tarefas (A fazer / Fazendo / Feito).",
-    w: 8, h: 4, defaults: { title: "Quadro", raw: "## A fazer\nBriefing do cliente\nCopywriting\n## Fazendo\nDesenvolvimento\n## Feito\nLogo\nIdentidade visual" },
+    emoji: "🗂", name: "Kanban / Quadro", desc: "Colunas e cartões estilo Trello — arraste, edite, detalhe.",
+    w: 8, h: 5, defaults: { title: "Quadro", columns: [
+      {id: "c1", nome: "A fazer", cards: [{id: "k1", titulo: "Briefing do cliente", desc: "", etiqueta: "", prazo: "", checklist: []}]},
+      {id: "c2", nome: "Fazendo", cards: [{id: "k2", titulo: "Desenvolvimento", desc: "", etiqueta: "azul", prazo: "", checklist: []}]},
+      {id: "c3", nome: "Feito", cards: [{id: "k3", titulo: "Logo", desc: "", etiqueta: "verde", prazo: "", checklist: []}]}
+    ] },
     render(t, c) {
       const p = t.props;
-      const cols = parseKanban(p.raw);
-      c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Quadro") + '</span></div>' +
-        '<div class="w-body"><div class="kanban">' + cols.map((col, i) =>
-          '<div class="kb-col"><div class="kb-col-head"><span>' + esc(col.title) + '</span><span class="kb-count">' + col.cards.length + '</span></div>' +
-          col.cards.map(card => '<div class="kb-card kb-c' + (i % 4) + '" data-item="' + escAttr(itemKey(card)) + '" data-itemlabel="' + escAttr(card) + '">' + esc(card) + '</div>').join("") + '</div>'
-        ).join("") + '</div></div>';
+      if (!p.columns && p.raw !== undefined) {
+        p.columns = parseKanban(p.raw).map((col, ci) => ({
+          id: "c" + (ci + 1) + uid().slice(-3), nome: col.title || "Coluna",
+          cards: (col.cards || []).map(card => ({id: uid(), titulo: card, desc: "", etiqueta: "", prazo: "", checklist: []}))
+        }));
+        delete p.raw; if (canEdit) save();
+      }
+      const cols = p.columns || [];
+      const ETIQ = { vermelho: "#e5534b", laranja: "#e8913d", amarelo: "#d9b13b", verde: "#4caf72", azul: "#5b8def", roxo: "#a472e0" };
+      const head = '<div class="w-head"><span class="w-title' + (canEdit ? ' risk-title-editable" contenteditable="true" spellcheck="false" onblur="kanbanTitleSave(\'' + t.id + '\',this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}"' : '"') + '>' + esc(p.title || "Quadro") + '</span>' +
+        (canEdit ? '<button class="btn sm" onclick="kanbanAddCol(\'' + t.id + '\')">＋ Coluna</button>' : '') + '</div>';
+      const board = cols.map(col => {
+        const cards = col.cards || [];
+        const cardsHtml = cards.map(card => {
+          const done = (card.checklist || []).filter(x => x.done).length;
+          const totalChk = (card.checklist || []).length;
+          const badges = [];
+          if (card.prazo) badges.push('<span class="kb-badge kb-prazo">🕑 ' + esc(card.prazo) + '</span>');
+          if (totalChk) badges.push('<span class="kb-badge' + (done === totalChk ? ' done' : '') + '">☑ ' + done + '/' + totalChk + '</span>');
+          if (card.desc) badges.push('<span class="kb-badge">≡</span>');
+          return '<div class="kb-card"' + (canEdit ? ' draggable="true" ondragstart="kanbanCardDragStart(event,\'' + t.id + '\',\'' + col.id + '\',\'' + card.id + '\')"' : '') +
+            ' onclick="kanbanOpenCard(\'' + t.id + '\',\'' + col.id + '\',\'' + card.id + '\')"' +
+            ' data-item="' + escAttr(itemKey(card.titulo || "")) + '" data-itemlabel="' + escAttr(card.titulo || "") + '">' +
+            (card.etiqueta && ETIQ[card.etiqueta] ? '<span class="kb-etiq" style="background:' + ETIQ[card.etiqueta] + '"></span>' : '') +
+            '<span class="kb-card-title">' + esc(card.titulo || "Sem título") + '</span>' +
+            (badges.length ? '<div class="kb-badges">' + badges.join("") + '</div>' : '') +
+            '</div>';
+        }).join("");
+        const colHead = canEdit
+          ? '<div class="kb-col-head"><span class="kb-col-name" contenteditable="true" spellcheck="false" onblur="kanbanColRename(\'' + t.id + '\',\'' + col.id + '\',this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}">' + esc(col.nome) + '</span>' +
+            '<span class="kb-count">' + cards.length + '</span><button class="lnk del kb-col-del" onclick="kanbanDelCol(\'' + t.id + '\',\'' + col.id + '\')" title="Excluir coluna">✕</button></div>'
+          : '<div class="kb-col-head"><span class="kb-col-name">' + esc(col.nome) + '</span><span class="kb-count">' + cards.length + '</span></div>';
+        return '<div class="kb-col"' + (canEdit ? ' ondragover="kanbanColDragOver(event)" ondragleave="kanbanColDragLeave(event)" ondrop="kanbanCardDrop(event,\'' + t.id + '\',\'' + col.id + '\')"' : '') + '>' +
+          colHead + '<div class="kb-cards">' + cardsHtml + '</div>' +
+          (canEdit ? '<button class="kb-add-card" onclick="kanbanAddCard(\'' + t.id + '\',\'' + col.id + '\')">＋ Adicionar card</button>' : '') +
+          '</div>';
+      }).join("");
+      c.innerHTML = head + '<div class="w-body"><div class="kanban">' + board + '</div></div>';
     },
-    form(p) {
-      return field("Título", "title", p.title) + '<label>Colunas e cartões</label>' +
-        '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Inicie uma coluna com <b>## Nome</b>. Cada linha seguinte é um cartão.</p>' +
-        '<textarea data-k="raw" spellcheck="false" style="min-height:160px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6">' + esc(p.raw) + '</textarea>';
-    }
+    form(p) { return field("Título", "title", p.title); }
   },
   orcamento: {
-    emoji: "💰", name: "Orçamento", desc: "Orçado, gasto e restante com barra.",
-    w: 4, h: 2, defaults: { title: "Orçamento", moeda: "R$", total: "20000", gasto: "13000" },
+    emoji: "💰", name: "Orçamento", desc: "Total e rateio por categoria (imposto, comissão, logística…).",
+    w: 4, h: 3, defaults: { title: "Orçamento", moeda: "R$", total: "20000", items: [{cat: "Imposto", valor: "3000"}, {cat: "Comissão", valor: "2000"}, {cat: "Logística", valor: "1500"}] },
     render(t, c) {
       const p = t.props;
-      const total = parseFloat(p.total) || 0, gasto = parseFloat(p.gasto) || 0;
-      const resta = total - gasto, over = gasto > total;
-      const pct = total ? Math.min(100, Math.round(gasto / total * 100)) : 0;
+      if (!p.items) {
+        p.items = [];
+        if (p.gasto !== undefined && parseFloat(p.gasto)) p.items.push({cat: "Geral", valor: String(parseFloat(p.gasto) || 0)});
+        delete p.gasto; if (canEdit) save();
+      }
       const moeda = p.moeda || "R$";
+      const total = parseFloat(p.total) || 0;
+      const items = p.items || [];
+      const alocado = items.reduce((s, it) => s + (parseFloat(it.valor) || 0), 0);
+      const resta = total - alocado, over = alocado > total;
+      const pct = total ? Math.min(100, Math.round(alocado / total * 100)) : 0;
       const fmt = n => moeda + " " + Math.round(n).toLocaleString("pt-BR");
-      c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Orçamento") + '</span><span class="grow"></span><span class="orc-total">' + esc(fmt(total)) + '</span></div>' +
-        '<div class="w-body"><div class="prog-bar"><i style="width:' + pct + '%' + (over ? ';background:var(--danger)' : '') + '"></i></div>' +
-        '<div class="orc-row"><span class="orc-gasto">Gasto ' + esc(fmt(gasto)) + ' · ' + pct + '%</span>' +
-        '<span class="orc-resta' + (over ? ' neg' : '') + '">' + (over ? "Excedeu " + esc(fmt(-resta)) : "Resta " + esc(fmt(resta))) + '</span></div></div>';
+      const totalEl = canEdit
+        ? moeda + ' <input class="orc-total-inp" value="' + escAttr(p.total || "") + '" inputmode="numeric" placeholder="0" oninput="orcSave(\'' + t.id + '\',\'total\',this.value)">'
+        : '<span class="orc-total">' + esc(fmt(total)) + '</span>';
+      const head = '<div class="w-head"><span class="w-title' + (canEdit ? ' risk-title-editable" contenteditable="true" spellcheck="false" onblur="orcTitleSave(\'' + t.id + '\',this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}"' : '"') + '>' + esc(p.title || "Orçamento") + '</span><span class="grow"></span>' + totalEl + '</div>';
+      const bar = '<div class="prog-bar"><i style="width:' + pct + '%' + (over ? ';background:var(--danger)' : '') + '"></i></div>' +
+        '<div class="orc-row"><span class="orc-gasto">Alocado ' + esc(fmt(alocado)) + ' · ' + pct + '%</span>' +
+        '<span class="orc-resta' + (over ? ' neg' : '') + '">' + (over ? "Excedeu " + esc(fmt(-resta)) : "Livre " + esc(fmt(resta))) + '</span></div>';
+      const rows = items.map((it, i) => {
+        const v = parseFloat(it.valor) || 0;
+        const ipct = total ? Math.round(v / total * 100) : 0;
+        if (canEdit) {
+          return '<div class="orc-item-edit">' +
+            '<input class="orc-cat-inp" value="' + escAttr(it.cat || "") + '" placeholder="Categoria" oninput="orcItemSave(\'' + t.id + '\',' + i + ',\'cat\',this.value)">' +
+            '<input class="orc-val-inp" value="' + escAttr(it.valor || "") + '" inputmode="numeric" placeholder="0" oninput="orcItemSave(\'' + t.id + '\',' + i + ',\'valor\',this.value)">' +
+            '<button class="lnk del" onclick="orcItemDel(\'' + t.id + '\',' + i + ')" title="Remover">✕</button></div>';
+        }
+        return '<div class="orc-item"><span class="orc-cat">' + esc(it.cat || "—") + '</span>' +
+          '<span class="orc-item-bar"><i style="width:' + Math.min(100, ipct) + '%"></i></span>' +
+          '<span class="orc-item-val">' + esc(fmt(v)) + '</span></div>';
+      }).join("");
+      const addBtn = canEdit ? '<button class="btn sm" onclick="orcItemAdd(\'' + t.id + '\')" style="margin-top:8px">＋ Categoria</button>' : '';
+      c.innerHTML = head + '<div class="w-body">' + bar + '<div class="orc-items">' + (rows || '<p class="muted-note" style="font-size:12px">Sem categorias.</p>') + '</div>' + addBtn + '</div>';
     },
     form(p) {
-      return field("Título", "title", p.title) + field("Moeda", "moeda", p.moeda || "R$") +
-        field("Orçado (total)", "total", p.total) + field("Gasto", "gasto", p.gasto);
+      return field("Título", "title", p.title) + field("Moeda", "moeda", p.moeda || "R$") + field("Orçado (total)", "total", p.total);
     }
   },
   equipe: {
@@ -689,11 +816,13 @@ const WIDGETS = {
         ? '<p class="muted-note">Nenhum risco. Use ＋ para adicionar.</p>'
         : items.map((it, i) => {
           const sev = it.sev || "medio";
+          const isDone = !!it.done;
           if (canEdit) {
-            return '<div class="risk-row ' + sev + ' risk-row-edit" draggable="true"' +
+            return '<div class="risk-row ' + sev + ' risk-row-edit' + (isDone ? ' done' : '') + '" draggable="true"' +
               ' ondragstart="riscoDragStart(event,\'' + t.id + '\',' + i + ')"' +
               ' ondragover="riscoDragOver(event)" ondrop="riscoDrop(event,\'' + t.id + '\',' + i + ')">' +
               '<span class="risk-grip" title="Arrastar para reordenar">⠿</span>' +
+              '<input type="checkbox" class="risk-chk"' + (isDone ? ' checked' : '') + ' onchange="toggleRiscoDone(\'' + t.id + '\',' + i + ')" title="Marcar como concluído">' +
               '<span class="risk-sev risk-sev-btn" onclick="riscoNextSev(\'' + t.id + '\',' + i + ')" title="Clique para alterar nível">' + (SEV[sev] || "Médio") + '</span>' +
               '<textarea class="risk-edit-inp" rows="1" oninput="this.style.height=\'auto\';this.style.height=this.scrollHeight+\'px\';onRiscoText(\'' + t.id + '\',' + i + ',this)">' + esc(it.text || "") + '</textarea>' +
               '<div class="risk-order-btns">' +
@@ -703,7 +832,8 @@ const WIDGETS = {
               '<button class="lnk del risk-del" onclick="delRisco(\'' + t.id + '\',' + i + ')" title="Remover">✕</button>' +
               '</div>';
           }
-          return '<div class="risk-row ' + sev + '" data-item="' + escAttr(itemKey(it.text || "")) + '" data-itemlabel="' + escAttr(it.text || "") + '">' +
+          return '<div class="risk-row ' + sev + (isDone ? ' done' : '') + '" data-item="' + escAttr(itemKey(it.text || "")) + '" data-itemlabel="' + escAttr(it.text || "") + '">' +
+            '<input type="checkbox" class="risk-chk"' + (isDone ? ' checked' : '') + ' disabled>' +
             '<span class="risk-sev">' + (SEV[sev] || "Médio") + '</span>' +
             '<span class="risk-txt">' + esc(it.text || "") + '</span>' +
             '</div>';
@@ -733,25 +863,100 @@ const WIDGETS = {
     form(p) { return field("Título", "title", p.title); }
   },
   proximos_passos: {
-    emoji: "➡️", name: "Próximos passos", desc: "Action items — o que vem agora.",
-    w: 4, h: 3, defaults: { title: "Próximos passos", raw: "Aprovar layout final | Cliente · sex\nIntegrar gateway de pagamento | Bruno\nEnviar contrato assinado | Ana · seg" },
+    emoji: "➡️", name: "Próximos passos", desc: "Action items com responsável, prazo e detalhes.",
+    w: 4, h: 3, defaults: { title: "Próximos passos", items: [{texto: "Aprovar layout final", responsavel: "Cliente", prazo: "sex", detalhes: "", done: false}] },
     render(t, c) {
       const p = t.props;
-      const done = new Set(p.done || []);
-      const items = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]);
-      c.innerHTML = (p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '') +
-        '<div class="w-body"><div class="steps">' + items.map(a => {
-          const k = itemKey(a[0]), isDone = done.has(k);
-          return '<div class="step-row' + (isDone ? " done" : "") + '" data-item="' + escAttr(k) + '" data-itemlabel="' + escAttr(a[0]) + '">' +
-            '<input type="checkbox" class="step-chk"' + (isDone ? " checked" : "") + (canEdit ? '' : ' disabled') + ' onchange="togglePasso(\'' + t.id + '\',\'' + escAttr(k) + '\')">' +
-            '<div class="step-body"><div class="step-txt">' + esc(a[0]) + '</div>' + (a[1] ? '<div class="step-meta">' + esc(a[1]) + '</div>' : '') + '</div></div>';
-        }).join("") + '</div></div>';
+      // Migração do formato antigo (raw + done[])
+      if (!p.items && p.raw !== undefined) {
+        const done = new Set(p.done || []);
+        p.items = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]).map(a => ({
+          texto: a[0], responsavel: a[1] || "", prazo: "", detalhes: "", done: done.has(itemKey(a[0]))
+        }));
+        delete p.raw; delete p.done; if (canEdit) save();
+      }
+      const items = p.items || [];
+      const head = '<div class="w-head"><span class="w-title' + (canEdit ? ' risk-title-editable" contenteditable="true" spellcheck="false" onblur="passoTitleSave(\'' + t.id + '\',this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}"' : '"') + '>' + esc(p.title || "Próximos passos") + '</span>' +
+        (canEdit ? '<button class="btn sm" onclick="passoAdd(\'' + t.id + '\')">＋ Passo</button>' : '') + '</div>';
+      const body = items.length === 0
+        ? '<p class="muted-note">Nenhum passo. Use ＋ para adicionar.</p>'
+        : items.map((it, i) => {
+          if (canEdit) {
+            return '<div class="step-row step-edit' + (it.done ? ' done' : '') + '">' +
+              '<input type="checkbox" class="step-chk"' + (it.done ? ' checked' : '') + ' onchange="passoToggle(\'' + t.id + '\',' + i + ')">' +
+              '<div class="step-fields">' +
+              '<input class="step-inp step-main" value="' + escAttr(it.texto || "") + '" placeholder="O que precisa ser feito?" oninput="passoSave(\'' + t.id + '\',' + i + ',\'texto\',this.value)">' +
+              '<div class="step-meta-row">' +
+              '<input class="step-inp step-sub" value="' + escAttr(it.responsavel || "") + '" placeholder="Responsável" oninput="passoSave(\'' + t.id + '\',' + i + ',\'responsavel\',this.value)">' +
+              '<input class="step-inp step-sub" value="' + escAttr(it.prazo || "") + '" placeholder="Pra quando" oninput="passoSave(\'' + t.id + '\',' + i + ',\'prazo\',this.value)">' +
+              '</div>' +
+              '<textarea class="step-inp step-det" rows="1" placeholder="Detalhes (opcional)" oninput="this.style.height=\'auto\';this.style.height=this.scrollHeight+\'px\';passoSave(\'' + t.id + '\',' + i + ',\'detalhes\',this.value)">' + esc(it.detalhes || "") + '</textarea>' +
+              '</div>' +
+              '<button class="lnk del" onclick="passoDel(\'' + t.id + '\',' + i + ')" title="Remover">✕</button>' +
+              '</div>';
+          }
+          const meta = [it.responsavel, it.prazo].filter(Boolean).join(" · ");
+          return '<div class="step-row' + (it.done ? " done" : "") + '" data-item="' + escAttr(itemKey(it.texto || "")) + '" data-itemlabel="' + escAttr(it.texto || "") + '">' +
+            '<input type="checkbox" class="step-chk"' + (it.done ? " checked" : "") + ' disabled>' +
+            '<div class="step-body"><div class="step-txt">' + esc(it.texto || "") + '</div>' +
+            (meta ? '<div class="step-meta">' + esc(meta) + '</div>' : '') +
+            (it.detalhes ? '<div class="step-det-txt">' + esc(it.detalhes) + '</div>' : '') + '</div></div>';
+        }).join("");
+      c.innerHTML = head + '<div class="w-body"><div class="steps">' + body + '</div></div>';
+      if (canEdit) requestAnimationFrame(() => {
+        c.querySelectorAll('.step-det').forEach(ta => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; });
+      });
     },
-    form(p) {
-      return field("Título", "title", p.title) + '<label>Ações</label>' +
-        '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Uma por linha: <b>ação | responsável/prazo</b> (a parte após | é opcional).</p>' +
-        '<textarea data-k="raw" spellcheck="false" style="min-height:120px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6">' + esc(p.raw) + '</textarea>';
-    }
+    form(p) { return field("Título", "title", p.title); }
+  },
+  entregas: {
+    emoji: "📦", name: "Entregas do projeto", desc: "Entregas do contrato com checkbox, previsto e realizado. Alimenta o medidor do topo.",
+    w: 5, h: 4, defaults: { title: "Entregas do projeto", items: [
+      {id: "e1", nome: "Identidade visual", desc: "Logo, paleta e manual de marca", done: true, previsto: "10/06", realizado: "08/06"},
+      {id: "e2", nome: "Site institucional", desc: "5 páginas responsivas", done: false, previsto: "30/06", realizado: ""}
+    ] },
+    render(t, c) {
+      const p = t.props;
+      const items = p.items || [];
+      const doneN = items.filter(x => x.done).length;
+      const pct = items.length ? Math.round(doneN / items.length * 100) : 0;
+      const titleEl = canEdit
+        ? '<span class="w-title risk-title-editable" contenteditable="true" spellcheck="false" onblur="entregaTitleSave(\'' + t.id + '\',this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}">' + esc(p.title || "Entregas do projeto") + '</span>'
+        : '<span class="w-title">' + esc(p.title || "Entregas do projeto") + '</span>';
+      const head = '<div class="w-head">' + titleEl + '<span class="grow"></span><span class="entrega-pct">' + doneN + '/' + items.length + ' · ' + pct + '%</span>' +
+        (canEdit ? '<button class="btn sm" onclick="entregaAdd(\'' + t.id + '\')">＋ Entrega</button>' : '') + '</div>';
+      const body = items.length === 0
+        ? '<p class="muted-note">Nenhuma entrega cadastrada. Use ＋ para adicionar.</p>'
+        : items.map((it, i) => {
+          if (canEdit) {
+            return '<div class="entrega-row entrega-edit' + (it.done ? ' done' : '') + '">' +
+              '<input type="checkbox" class="entrega-chk"' + (it.done ? ' checked' : '') + ' onchange="entregaToggle(\'' + t.id + '\',' + i + ')" title="Marcar como entregue">' +
+              '<div class="entrega-fields">' +
+              '<input class="entrega-inp entrega-nome" value="' + escAttr(it.nome || "") + '" placeholder="Nome da entrega" oninput="entregaSave(\'' + t.id + '\',' + i + ',\'nome\',this.value)">' +
+              '<textarea class="entrega-inp entrega-desc" rows="1" placeholder="Descrição / escopo" oninput="this.style.height=\'auto\';this.style.height=this.scrollHeight+\'px\';entregaSave(\'' + t.id + '\',' + i + ',\'desc\',this.value)">' + esc(it.desc || "") + '</textarea>' +
+              '<div class="entrega-datas">' +
+              '<label class="entrega-data">Previsto <input class="entrega-inp" value="' + escAttr(it.previsto || "") + '" placeholder="dd/mm" oninput="entregaSave(\'' + t.id + '\',' + i + ',\'previsto\',this.value)"></label>' +
+              '<label class="entrega-data">Realizado <input class="entrega-inp" value="' + escAttr(it.realizado || "") + '" placeholder="dd/mm" oninput="entregaSave(\'' + t.id + '\',' + i + ',\'realizado\',this.value)"></label>' +
+              '</div></div>' +
+              '<button class="lnk del" onclick="entregaDel(\'' + t.id + '\',' + i + ')" title="Remover">✕</button>' +
+              '</div>';
+          }
+          const datas = [];
+          if (it.previsto) datas.push('Previsto ' + esc(it.previsto));
+          if (it.realizado) datas.push('Realizado ' + esc(it.realizado));
+          return '<div class="entrega-row' + (it.done ? " done" : "") + '" data-item="' + escAttr(itemKey(it.nome || "")) + '" data-itemlabel="' + escAttr(it.nome || "") + '">' +
+            '<input type="checkbox" class="entrega-chk"' + (it.done ? " checked" : "") + ' disabled>' +
+            '<div class="entrega-body"><div class="entrega-nome-txt">' + esc(it.nome || "") + '</div>' +
+            (it.desc ? '<div class="entrega-desc-txt">' + esc(it.desc) + '</div>' : '') +
+            (datas.length ? '<div class="entrega-datas-txt">' + datas.join(" · ") + '</div>' : '') +
+            '</div></div>';
+        }).join("");
+      c.innerHTML = head + '<div class="w-body"><div class="entregas">' + body + '</div></div>';
+      if (canEdit) requestAnimationFrame(() => {
+        c.querySelectorAll('.entrega-desc').forEach(ta => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; });
+      });
+    },
+    form(p) { return field("Título", "title", p.title); }
   },
   mural: {
     emoji: "📌", name: "Mural de ideias", desc: "Post-its colaborativos — você e o cliente adicionam ao vivo.",
@@ -1010,6 +1215,507 @@ function saveRiscoTitle(tid, el) {
   const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
   t.props.title = el.textContent.trim() || "Riscos & bloqueios";
   save();
+}
+function toggleRiscoDone(tid, i) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const it = (t.props.items || [])[i]; if (!it) return;
+  it.done = !it.done; save(); route();
+}
+
+/* ===== Próximos passos widget ===== */
+function passoTitleSave(tid, el) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.title = el.textContent.trim() || "Próximos passos"; save();
+}
+function passoAdd(tid) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  if (!t.props.items) t.props.items = [];
+  t.props.items.push({texto: "", responsavel: "", prazo: "", detalhes: "", done: false}); save(); recomputeEvolucaoSeAuto(); route();
+}
+function passoSave(tid, i, key, val) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const it = (t.props.items || [])[i]; if (!it) return;
+  it[key] = val; save();
+}
+function passoToggle(tid, i) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const it = (t.props.items || [])[i]; if (!it) return;
+  it.done = !it.done; save(); recomputeEvolucaoSeAuto(); route();
+}
+function passoDel(tid, i) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.items = (t.props.items || []).filter((_, idx) => idx !== i); save(); recomputeEvolucaoSeAuto(); route();
+}
+
+/* ===== Orçamento widget ===== */
+function orcTitleSave(tid, el) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.title = el.textContent.trim() || "Orçamento"; save();
+}
+function orcRefreshBar(tid) {
+  const t = space().tiles.find(x => x.id === tid); if (!t) return;
+  const tile = document.querySelector('.tile[data-id="' + tid + '"]'); if (!tile) return;
+  const moeda = t.props.moeda || "R$";
+  const total = parseFloat(t.props.total) || 0;
+  const alocado = (t.props.items || []).reduce((s, it) => s + (parseFloat(it.valor) || 0), 0);
+  const resta = total - alocado, over = alocado > total;
+  const pct = total ? Math.min(100, Math.round(alocado / total * 100)) : 0;
+  const fmt = n => moeda + " " + Math.round(n).toLocaleString("pt-BR");
+  const bar = tile.querySelector(".prog-bar i");
+  if (bar) { bar.style.width = pct + "%"; bar.style.background = over ? "var(--danger)" : ""; }
+  const g = tile.querySelector(".orc-gasto"); if (g) g.textContent = "Alocado " + fmt(alocado) + " · " + pct + "%";
+  const r = tile.querySelector(".orc-resta");
+  if (r) { r.textContent = over ? "Excedeu " + fmt(-resta) : "Livre " + fmt(resta); r.classList.toggle("neg", over); }
+}
+function orcSave(tid, key, val) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props[key] = val; save(); orcRefreshBar(tid);
+}
+function orcItemAdd(tid) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  if (!t.props.items) t.props.items = [];
+  t.props.items.push({cat: "", valor: ""}); save(); route();
+}
+function orcItemSave(tid, i, key, val) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const it = (t.props.items || [])[i]; if (!it) return;
+  it[key] = val; save();
+  if (key === "valor") orcRefreshBar(tid);
+}
+function orcItemDel(tid, i) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.items = (t.props.items || []).filter((_, idx) => idx !== i); save(); route();
+}
+
+/* ===== Kanban widget ===== */
+let _kbDrag = null;
+function _kbCol(t, colId) { return (t.props.columns || []).find(c => c.id === colId); }
+function _kbCard(t, colId, cardId) { const col = _kbCol(t, colId); return col ? (col.cards || []).find(c => c.id === cardId) : null; }
+function kanbanTitleSave(tid, el) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.title = el.textContent.trim() || "Quadro"; save();
+}
+function kanbanAddCol(tid) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  if (!t.props.columns) t.props.columns = [];
+  t.props.columns.push({id: uid(), nome: "Nova coluna", cards: []}); save(); recomputeEvolucaoSeAuto(); route();
+}
+function kanbanColRename(tid, colId, el) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const col = _kbCol(t, colId); if (!col) return;
+  col.nome = el.textContent.trim() || "Coluna"; save(); recomputeEvolucaoSeAuto();
+}
+function kanbanDelCol(tid, colId) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const col = _kbCol(t, colId); if (!col) return;
+  if ((col.cards || []).length && !confirm('Excluir a coluna "' + col.nome + '" e seus ' + col.cards.length + ' card(s)?')) return;
+  t.props.columns = (t.props.columns || []).filter(c => c.id !== colId); save(); recomputeEvolucaoSeAuto(); route();
+}
+function kanbanAddCard(tid, colId) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const col = _kbCol(t, colId); if (!col) return;
+  if (!col.cards) col.cards = [];
+  const card = {id: uid(), titulo: "", desc: "", etiqueta: "", prazo: "", checklist: []};
+  col.cards.push(card); save(); recomputeEvolucaoSeAuto(); route();
+  kanbanOpenCard(tid, colId, card.id);
+}
+function kanbanCardDragStart(e, tid, colId, cardId) {
+  _kbDrag = { tid, colId, cardId };
+  e.dataTransfer.effectAllowed = "move";
+  try { e.dataTransfer.setData("text/plain", cardId); } catch (_) { }
+}
+function kanbanColDragOver(e) { e.preventDefault(); e.currentTarget.classList.add("kb-col-over"); }
+function kanbanColDragLeave(e) { e.currentTarget.classList.remove("kb-col-over"); }
+function kanbanCardDrop(e, tid, destColId) {
+  e.preventDefault(); e.currentTarget.classList.remove("kb-col-over");
+  if (!_kbDrag || _kbDrag.tid !== tid) return;
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const srcCol = _kbCol(t, _kbDrag.colId), destCol = _kbCol(t, destColId);
+  if (!srcCol || !destCol) return;
+  const idx = (srcCol.cards || []).findIndex(c => c.id === _kbDrag.cardId);
+  if (idx < 0) return;
+  const [card] = srcCol.cards.splice(idx, 1);
+  if (!destCol.cards) destCol.cards = [];
+  destCol.cards.push(card);
+  _kbDrag = null; save(); recomputeEvolucaoSeAuto(); route();
+}
+function kanbanOpenCard(tid, colId, cardId) {
+  openModal(kanbanCardModalHtml(tid, colId, cardId), m => kanbanWireCardModal(m, tid, colId, cardId));
+}
+function kanbanCardModalHtml(tid, colId, cardId) {
+  const t = space().tiles.find(x => x.id === tid); if (!t) return "<p>Card não encontrado.</p>";
+  const card = _kbCard(t, colId, cardId); if (!card) return "<p>Card não encontrado.</p>";
+  const ETIQS = [["", "Nenhuma"], ["vermelho", "Vermelho"], ["laranja", "Laranja"], ["amarelo", "Amarelo"], ["verde", "Verde"], ["azul", "Azul"], ["roxo", "Roxo"]];
+  const ro = !canEdit;
+  const chk = card.checklist || [];
+  const doneN = chk.filter(x => x.done).length;
+  const chkPct = chk.length ? Math.round(doneN / chk.length * 100) : 0;
+  const chkHtml = chk.map((x, i) =>
+    '<div class="kbm-chk-row">' +
+    '<input type="checkbox" ' + (x.done ? "checked" : "") + (ro ? " disabled" : "") + ' onchange="kanbanChkToggle(\'' + tid + '\',\'' + colId + '\',\'' + cardId + '\',' + i + ')">' +
+    (ro ? '<span class="' + (x.done ? "kbm-chk-done" : "") + '">' + esc(x.txt || "") + '</span>'
+        : '<input class="kbm-chk-inp" value="' + escAttr(x.txt || "") + '" oninput="kanbanChkText(\'' + tid + '\',\'' + colId + '\',\'' + cardId + '\',' + i + ',this.value)">' +
+          '<button class="lnk del" onclick="kanbanChkDel(\'' + tid + '\',\'' + colId + '\',\'' + cardId + '\',' + i + ')">✕</button>') +
+    '</div>'
+  ).join("");
+  return '<div class="kbm">' +
+    '<div class="kbm-head"><h3>' + (ro ? esc(card.titulo || "Card") : '<input class="kbm-title" value="' + escAttr(card.titulo || "") + '" placeholder="Título do card" oninput="kanbanCardSave(\'' + tid + '\',\'' + colId + '\',\'' + cardId + '\',\'titulo\',this.value)">') + '</h3>' +
+    '<button class="modal-x" onclick="closeModal()">✕</button></div>' +
+    '<div class="kbm-grid">' +
+    '<label>Etiqueta</label>' +
+    (ro ? '<div>' + esc((card.etiqueta || "—")) + '</div>'
+        : '<div class="kbm-etiqs">' + ETIQS.map(([v, lbl]) => '<button class="kbm-etiq-btn ' + (v || "none") + (card.etiqueta === v ? " on" : "") + '" title="' + lbl + '" onclick="kanbanCardSave(\'' + tid + '\',\'' + colId + '\',\'' + cardId + '\',\'etiqueta\',\'' + v + '\');kanbanReopenCard(\'' + tid + '\',\'' + colId + '\',\'' + cardId + '\')"></button>').join("") + '</div>') +
+    '<label>Prazo</label>' +
+    (ro ? '<div>' + esc(card.prazo || "—") + '</div>'
+        : '<input class="kbm-inp" value="' + escAttr(card.prazo || "") + '" placeholder="Ex.: 30/06 ou Sexta" oninput="kanbanCardSave(\'' + tid + '\',\'' + colId + '\',\'' + cardId + '\',\'prazo\',this.value)">') +
+    '<label>Descrição</label>' +
+    (ro ? '<div class="kbm-desc-ro">' + esc(card.desc || "—") + '</div>'
+        : '<textarea class="kbm-inp kbm-desc" placeholder="Detalhes, contexto, links…" oninput="kanbanCardSave(\'' + tid + '\',\'' + colId + '\',\'' + cardId + '\',\'desc\',this.value)">' + esc(card.desc || "") + '</textarea>') +
+    '<label>Checklist ' + (chk.length ? '· ' + chkPct + '%' : '') + '</label>' +
+    '<div class="kbm-chk">' +
+    (chk.length ? '<div class="kbm-chk-bar"><i style="width:' + chkPct + '%"></i></div>' : '') +
+    chkHtml +
+    (ro ? '' : '<button class="btn sm" onclick="kanbanChkAdd(\'' + tid + '\',\'' + colId + '\',\'' + cardId + '\')">＋ Item</button>') +
+    '</div>' +
+    '</div>' +
+    (ro ? '' : '<div class="kbm-foot"><button class="btn sm del-btn" onclick="kanbanCardDel(\'' + tid + '\',\'' + colId + '\',\'' + cardId + '\')">🗑 Excluir card</button></div>') +
+    '</div>';
+}
+function kanbanWireCardModal(m, tid, colId, cardId) {
+  const ta = m.querySelector(".kbm-desc");
+  if (ta) { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 220) + "px"; }
+}
+function kanbanReopenCard(tid, colId, cardId) {
+  // re-render modal preservando estado (usado por trocas que mudam layout, ex.: etiqueta)
+  const m = $("#modal"); if (!m) return;
+  m.innerHTML = kanbanCardModalHtml(tid, colId, cardId);
+  kanbanWireCardModal(m, tid, colId, cardId);
+}
+function kanbanCardSave(tid, colId, cardId, key, val) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const card = _kbCard(t, colId, cardId); if (!card) return;
+  card[key] = val; save();
+  if (key === "titulo" || key === "prazo") route();
+}
+function kanbanCardDel(tid, colId, cardId) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const col = _kbCol(t, colId); if (!col) return;
+  col.cards = (col.cards || []).filter(c => c.id !== cardId); save(); recomputeEvolucaoSeAuto(); closeModal(); route();
+}
+function kanbanChkAdd(tid, colId, cardId) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const card = _kbCard(t, colId, cardId); if (!card) return;
+  if (!card.checklist) card.checklist = [];
+  card.checklist.push({txt: "", done: false}); save(); kanbanReopenCard(tid, colId, cardId); route();
+}
+function kanbanChkToggle(tid, colId, cardId, i) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const card = _kbCard(t, colId, cardId); if (!card || !card.checklist[i]) return;
+  card.checklist[i].done = !card.checklist[i].done; save(); kanbanReopenCard(tid, colId, cardId); route();
+}
+function kanbanChkText(tid, colId, cardId, i, val) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const card = _kbCard(t, colId, cardId); if (!card || !card.checklist[i]) return;
+  card.checklist[i].txt = val; save();
+}
+function kanbanChkDel(tid, colId, cardId, i) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const card = _kbCard(t, colId, cardId); if (!card) return;
+  card.checklist = (card.checklist || []).filter((_, idx) => idx !== i); save(); kanbanReopenCard(tid, colId, cardId); route();
+}
+
+/* ===== Entregas do projeto widget ===== */
+function entregaTitleSave(tid, el) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.title = el.textContent.trim() || "Entregas do projeto"; save();
+}
+function entregaAdd(tid) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  if (!t.props.items) t.props.items = [];
+  t.props.items.push({id: uid(), nome: "", desc: "", done: false, previsto: "", realizado: ""}); save(); route();
+}
+function entregaSave(tid, i, key, val) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const it = (t.props.items || [])[i]; if (!it) return;
+  it[key] = val; save();
+  if (key === "nome") updateEntregasMeter();
+}
+function entregaToggle(tid, i) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const it = (t.props.items || [])[i]; if (!it) return;
+  it.done = !it.done; save(); route();
+}
+function entregaDel(tid, i) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.items = (t.props.items || []).filter((_, idx) => idx !== i); save(); route();
+}
+
+/* ===== Medidor de Entregas no topo ===== */
+function collectEntregas() {
+  // Agrega todas as entregas dos widgets "entregas" do painel atualmente visível
+  const out = [];
+  visibleSpaces().forEach(sp => (sp.tiles || []).forEach(t => {
+    if (t.type === "entregas") (t.props.items || []).forEach(it => out.push(it));
+  }));
+  return out;
+}
+function updateEntregasMeter() {
+  const el = $("#entregasMeter"); if (!el) return;
+  const all = collectEntregas();
+  const inPainel = (typeof view !== "undefined" ? view : "") === "painel";
+  if (!inPainel || all.length === 0) { el.style.display = "none"; el.innerHTML = ""; return; }
+  const doneN = all.filter(x => x.done).length;
+  const pct = Math.round(doneN / all.length * 100);
+  const R = 13, C = 2 * Math.PI * R, off = C * (1 - pct / 100);
+  el.style.display = "";
+  el.title = "Entregas concluídas: " + doneN + " de " + all.length + " (" + pct + "%) — clique para ver todas";
+  el.innerHTML = '<svg class="evo-ring" viewBox="0 0 32 32" width="30" height="30">' +
+    '<circle cx="16" cy="16" r="' + R + '" class="evo-bg"></circle>' +
+    '<circle cx="16" cy="16" r="' + R + '" class="evo-fg" stroke-dasharray="' + C.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '"></circle></svg>' +
+    '<div class="evo-meta"><span class="evo-lbl">Entregas</span><span class="evo-val">' + pct + '%</span></div>';
+  el.onclick = abrirEntregasResumo;
+}
+function abrirEntregasResumo() {
+  const groups = [];
+  visibleSpaces().forEach(sp => (sp.tiles || []).forEach(t => {
+    if (t.type === "entregas") {
+      const items = t.props.items || [];
+      if (items.length) groups.push({ titulo: t.props.title || "Entregas", items });
+    }
+  }));
+  const all = groups.flatMap(g => g.items);
+  const doneN = all.filter(x => x.done).length;
+  const pct = all.length ? Math.round(doneN / all.length * 100) : 0;
+  const body = groups.map(g =>
+    '<div class="ent-resumo-grp"><h4>' + esc(g.titulo) + '</h4>' +
+    g.items.map(it =>
+      '<div class="ent-resumo-row' + (it.done ? " done" : "") + '">' +
+      '<span class="ent-resumo-chk">' + (it.done ? "✅" : "⬜") + '</span>' +
+      '<span class="ent-resumo-nome">' + esc(it.nome || "—") + '</span>' +
+      '<span class="ent-resumo-datas">' +
+      (it.previsto ? 'Previsto ' + esc(it.previsto) : '') +
+      (it.realizado && it.realizado !== "✓" ? (it.previsto ? ' · ' : '') + 'Realizado ' + esc(it.realizado) : '') +
+      '</span></div>'
+    ).join("") + '</div>'
+  ).join("") || '<p class="muted-note">Nenhuma entrega cadastrada.</p>';
+  openModal('<div class="kbm-head"><h3>Entregas do projeto · ' + pct + '%</h3><button class="modal-x" onclick="closeModal()">✕</button></div>' +
+    '<div class="prog-bar" style="margin:0 0 14px"><i style="width:' + pct + '%"></i></div>' +
+    '<div class="ent-resumo">' + body + '</div>');
+}
+
+/* ===== Links widget ===== */
+function linkAdd(tid) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  if (!t.props.items) t.props.items = [];
+  t.props.items.push({label: "Novo link", url: "", desc: ""}); save(); route();
+}
+function linkUpdate(tid, idx, key, val) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const items = t.props.items || []; if (!items[idx]) return;
+  items[idx][key] = val; save();
+}
+function linkDel(tid, idx) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.items = (t.props.items || []).filter((_, i) => i !== idx); save(); route();
+}
+
+/* ===== Code widget ===== */
+function copyCode(btn) {
+  const next = btn.closest(".w-head").nextElementSibling;
+  const text = next ? (next.querySelector("code") ? next.querySelector("code").textContent : next.querySelector("textarea") ? next.querySelector("textarea").value : "") : "";
+  navigator.clipboard.writeText(text).then(() => toast("Copiado!")).catch(() => toast("Erro ao copiar."));
+}
+function codeTitleSave(tid, el) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.title = el.textContent.trim() || "Código"; save();
+}
+function codeLangChange(tid, val) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.lang = val; save();
+}
+function codeContentSave(tid, el) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.code = el.value; save();
+}
+
+/* ===== Paleta widget ===== */
+function palAddRow(tid) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  if (!t.props.items) t.props.items = [];
+  t.props.items.push({nome: "Nova cor", cor: "#000000"}); save(); route();
+}
+function palUpdate(tid, idx, key, val) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const items = t.props.items || []; if (!items[idx]) return;
+  items[idx][key] = val;
+  if (key === "cor") {
+    const chip = document.getElementById("swatch-chip-" + tid + "-" + idx);
+    if (chip) chip.style.background = val;
+    const wrap = chip && chip.closest(".swatch");
+    const hexInp = wrap && wrap.querySelector(".pal-hex");
+    if (hexInp && hexInp !== document.activeElement) hexInp.value = val;
+    const picker = wrap && wrap.querySelector(".pal-picker");
+    if (picker && picker !== document.activeElement && /^#[0-9a-fA-F]{6}$/.test(val)) picker.value = val;
+  }
+  save();
+}
+function palDelRow(tid, idx) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.items = (t.props.items || []).filter((_, i) => i !== idx); save(); route();
+}
+
+/* ===== Tabela widget ===== */
+function tabelaTitleSave(tid, el) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.title = el.textContent.trim() || "Tabela"; save();
+}
+function tabelaHeaderSave(tid, ci, el) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const headers = t.props.headers || []; headers[ci] = el.textContent.trim(); save();
+}
+function tabelaCellSave(tid, ri, ci, el) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const rows = t.props.rows || []; if (!rows[ri]) return;
+  while (rows[ri].length <= ci) rows[ri].push("");
+  rows[ri][ci] = el.textContent; save();
+}
+function tabelaAddRow(tid) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const cols = (t.props.headers || []).length || 1;
+  if (!t.props.rows) t.props.rows = [];
+  t.props.rows.push(Array(cols).fill("")); save(); route();
+}
+function tabelaDelRow(tid, ri) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.rows = (t.props.rows || []).filter((_, i) => i !== ri); save(); route();
+}
+function tabelaMoveRow(tid, ri, dir) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const rows = t.props.rows || []; const ni = ri + dir;
+  if (ni < 0 || ni >= rows.length) return;
+  [rows[ri], rows[ni]] = [rows[ni], rows[ri]]; save(); route();
+}
+function tabelaAddCol(tid) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.headers = [...(t.props.headers || []), "Nova coluna"];
+  t.props.rows = (t.props.rows || []).map(r => [...r, ""]); save(); route();
+}
+function tabelaDelCol(tid, ci) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.headers = (t.props.headers || []).filter((_, i) => i !== ci);
+  t.props.rows = (t.props.rows || []).map(r => r.filter((_, i) => i !== ci)); save(); route();
+}
+function tabelaNextCell(el, ri, ci) {
+  const table = el.closest("table");
+  if (!table) return;
+  const cells = Array.from(table.querySelectorAll(".tab-cell-edit"));
+  const idx = cells.indexOf(el);
+  if (idx >= 0 && idx < cells.length - 1) { cells[idx + 1].focus(); }
+}
+
+/* ===== Referências widget ===== */
+function refTitleSave(tid, el) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.title = el.textContent.trim() || "Referências"; save();
+}
+function refAddCat(tid) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  if (!t.props.categories) t.props.categories = [];
+  t.props.categories.push({nome: "Nova categoria", items: []}); save(); route();
+}
+function refDelCat(tid, ci) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.categories = (t.props.categories || []).filter((_, i) => i !== ci); save(); route();
+}
+function refCatSave(tid, ci, el) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const cats = t.props.categories || []; if (!cats[ci]) return;
+  cats[ci].nome = el.textContent.trim(); save();
+}
+function refAddItem(tid, ci) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const cats = t.props.categories || []; if (!cats[ci]) return;
+  if (!cats[ci].items) cats[ci].items = [];
+  cats[ci].items.push({titulo: "", url: "", motivo: ""}); save(); route();
+}
+function refDelItem(tid, ci, ii) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const cats = t.props.categories || []; if (!cats[ci]) return;
+  cats[ci].items = (cats[ci].items || []).filter((_, i) => i !== ii); save(); route();
+}
+function refItemSave(tid, ci, ii, key, val) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const cats = t.props.categories || []; if (!cats[ci] || !cats[ci].items[ii]) return;
+  cats[ci].items[ii][key] = val; save();
+}
+
+/* ===== Canvas pan + seleção múltipla ===== */
+let _selectedTiles = new Set();
+function setupCanvasPan() {
+  const cw = document.querySelector(".canvas-wrap");
+  if (!cw || cw._panReady) return;
+  cw._panReady = true;
+  cw.addEventListener("pointerdown", e => {
+    if (e.button !== 0) return;
+    if (!e.target.closest(".tile")) {
+      _selectedTiles.clear();
+      document.querySelectorAll("#canvas .tile.selected").forEach(el => el.classList.remove("selected"));
+    }
+    if (e.target.closest(".tile,.tbar,.tgrip,.thandle")) return;
+    if (editMode) {
+      startSelectionRect(e);
+      return;
+    }
+    e.preventDefault();
+    const startX = e.clientX + window.scrollX;
+    const startY = e.clientY + window.scrollY;
+    cw.style.cursor = "grabbing";
+    document.body.style.userSelect = "none";
+    const mv = ev => window.scrollTo(startX - ev.clientX, startY - ev.clientY);
+    const up = () => {
+      document.removeEventListener("pointermove", mv);
+      document.removeEventListener("pointerup", up);
+      cw.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("pointermove", mv);
+    document.addEventListener("pointerup", up);
+  });
+  if (!editMode) cw.style.cursor = "grab";
+}
+function startSelectionRect(e) {
+  e.preventDefault();
+  const cvs = document.getElementById("canvas");
+  if (!cvs) return;
+  const cvsRect = cvs.getBoundingClientRect();
+  const x0 = e.clientX - cvsRect.left;
+  const y0 = e.clientY - cvsRect.top + window.scrollY;
+  const sel = document.createElement("div"); sel.className = "canvas-sel-rect";
+  sel.style.cssText = "left:" + x0 + "px;top:" + (e.clientY - cvsRect.top) + "px;width:0;height:0";
+  cvs.style.position = "relative"; cvs.appendChild(sel);
+  const mv = ev => {
+    const x1 = ev.clientX - cvsRect.left;
+    const y1 = ev.clientY - cvsRect.top;
+    sel.style.left = Math.min(x0, x1) + "px";
+    sel.style.top = Math.min(e.clientY - cvsRect.top, y1) + "px";
+    sel.style.width = Math.abs(x1 - x0) + "px";
+    sel.style.height = Math.abs(y1 - (e.clientY - cvsRect.top)) + "px";
+  };
+  const up = () => {
+    document.removeEventListener("pointermove", mv);
+    document.removeEventListener("pointerup", up);
+    const selRect = sel.getBoundingClientRect();
+    sel.remove();
+    _selectedTiles.clear();
+    document.querySelectorAll("#canvas .tile").forEach(tile => {
+      const tr = tile.getBoundingClientRect();
+      const overlaps = tr.left < selRect.right && tr.right > selRect.left && tr.top < selRect.bottom && tr.bottom > selRect.top;
+      tile.classList.toggle("selected", overlaps);
+      if (overlaps) _selectedTiles.add(tile.dataset.id);
+    });
+  };
+  document.addEventListener("pointermove", mv);
+  document.addEventListener("pointerup", up);
 }
 let _riscoDragFrom = null;
 function riscoDragStart(event, tid, idx) { _riscoDragFrom = { tid, idx }; event.dataTransfer.effectAllowed = "move"; }
@@ -2340,25 +3046,28 @@ function renderPainel(canvas, hint) {
     try { W.render(t, content); } catch (e) { content.textContent = "Erro no widget."; }
     card.appendChild(content);
     if (editMode) {
-      const grip = document.createElement("div"); grip.className = "tgrip"; grip.title = "Arrastar"; grip.textContent = "⠿"; card.appendChild(grip);
       const bar = document.createElement("div"); bar.className = "tbar";
-      bar.innerHTML = '<button title="Configurar">⚙</button><button title="Excluir">✕</button>';
-      bar.children[0].onclick = e => { e.stopPropagation(); widgetSettings(t); };
-      bar.children[1].onclick = e => { e.stopPropagation(); removeTile(t.id); };
+      bar.innerHTML = '<span class="tgrip" title="Arrastar para mover">⠿</span><button title="Configurar">⚙</button><button title="Excluir">✕</button>';
+      bar.children[1].onclick = e => { e.stopPropagation(); widgetSettings(t); };
+      bar.children[2].onclick = e => { e.stopPropagation(); removeTile(t.id); };
       card.appendChild(bar);
       const h = document.createElement("div"); h.className = "thandle"; card.appendChild(h);
       enableDrag(tile, card, t); enableResize(tile, h, t);
     } else {
-      const cbtn = document.createElement("button");
-      cbtn.className = "cmt-btn"; cbtn.dataset.wid = t.id; cbtn.title = "Comentários";
-      cbtn.innerHTML = '💬<span class="cmt-badge" style="display:none"></span>';
-      cbtn.onclick = e => { e.stopPropagation(); abrirComentariosPainel(t.id); };
-      card.appendChild(cbtn);
+      if (!W.noComment) {
+        const cbtn = document.createElement("button");
+        cbtn.className = "cmt-btn"; cbtn.dataset.wid = t.id; cbtn.title = "Comentários";
+        cbtn.innerHTML = '💬<span class="cmt-badge" style="display:none"></span>';
+        cbtn.onclick = e => { e.stopPropagation(); abrirComentariosPainel(t.id); };
+        card.appendChild(cbtn);
+      }
     }
     if (canEdit) tile.oncontextmenu = e => { e.preventDefault(); abrirMenuWidget(e, t); };
     tile.appendChild(card); canvas.appendChild(tile);
   });
   if (!editMode) { decorateItemComments(); refreshComentarioMarcadores(tiles.map(t => t.id)); }
+  setupCanvasPan();
+  updateEntregasMeter();
 }
 
 /* ===== 10) Edição de widgets (admin/gestor) ===== */
@@ -2405,7 +3114,7 @@ function reflowPushMap(tiles, fixed, posMap) {
 }
 function enableDrag(tile, card, t) {
   card.addEventListener("pointerdown", e => {
-    if (e.target.closest(".tbar,.thandle,.para-edit") || !editMode) return;
+    if (!e.target.closest(".tgrip") || !editMode) return;
     e.preventDefault();
     const cs = cellSize(); const sx = e.clientX, sy = e.clientY;
     const tiles = space().tiles;
@@ -2518,13 +3227,21 @@ async function computeAutoEvolucao() {
   // Fontes nos widgets do layout
   (state.spaces || []).forEach(s => (s.tiles || []).forEach(t => {
     if (t.type === "kanban") {
-      parseKanban(t.props.raw).forEach(col => { const dcol = /feito|conclu|done|pronto/i.test(col.title); col.cards.forEach(() => { total++; if (dcol) done++; }); });
+      if (t.props.columns) {
+        t.props.columns.forEach(col => { const dcol = /feito|conclu|done|pronto/i.test(col.nome || ""); (col.cards || []).forEach(() => { total++; if (dcol) done++; }); });
+      } else {
+        parseKanban(t.props.raw).forEach(col => { const dcol = /feito|conclu|done|pronto/i.test(col.title); col.cards.forEach(() => { total++; if (dcol) done++; }); });
+      }
     } else if (t.type === "marcos") {
       (t.props.raw || "").split("\n").map(l => l.split("|").map(x => x.trim())).filter(a => a.some(x => x)).forEach(a => { total++; if ((a[0] || "").toLowerCase() === "feito") done++; });
     } else if (t.type === "proximos_passos") {
-      const items = (t.props.raw || "").split("\n").map(l => l.split("|").map(x => x.trim())).filter(a => a[0]);
-      const ds = new Set(t.props.done || []);
-      items.forEach(a => { total++; if (ds.has(itemKey(a[0]))) done++; });
+      if (t.props.items) {
+        (t.props.items || []).forEach(it => { total++; if (it.done) done++; });
+      } else {
+        const items = (t.props.raw || "").split("\n").map(l => l.split("|").map(x => x.trim())).filter(a => a[0]);
+        const ds = new Set(t.props.done || []);
+        items.forEach(a => { total++; if (ds.has(itemKey(a[0]))) done++; });
+      }
     } else if (t.type === "progresso") {
       // Metas: cada uma entra como progresso parcial (%/100)
       (t.props.raw || "").split("\n").map(l => l.split("|").map(x => x.trim())).filter(a => a[0]).forEach(a => {
@@ -2583,7 +3300,7 @@ function widgetSettings(t) {
 }
 function openPicker() {
   openModal('<h3>Adicionar widget</h3><div class="pick-grid">' +
-    Object.keys(WIDGETS).map(k => { const W = WIDGETS[k]; return '<div class="pick-card" data-t="' + k + '"><div class="pick-emoji">' + W.emoji + '</div><div class="pick-name">' + esc(W.name) + '</div><div class="pick-desc">' + esc(W.desc) + '</div></div>'; }).join("") +
+    Object.keys(WIDGETS).filter(k => !WIDGETS[k].hidden).map(k => { const W = WIDGETS[k]; return '<div class="pick-card" data-t="' + k + '"><div class="pick-emoji">' + W.emoji + '</div><div class="pick-name">' + esc(W.name) + '</div><div class="pick-desc">' + esc(W.desc) + '</div></div>'; }).join("") +
     '</div>', m => { m.querySelectorAll(".pick-card").forEach(el => el.onclick = () => { addWidget(el.dataset.t); closeModal(); }); });
 }
 
@@ -2694,7 +3411,11 @@ function applyBrand() {
     pe.style.display = "";
     pe.innerHTML = '<div class="evo' + (canEdit ? " evo-edit" : "") + '"' + (canEdit ? ' onclick="editarProjeto()" title="Editar evolução"' : ' title="Evolução do projeto"') + '>' +
       '<div class="evo-bar"><i style="width:' + pr + '%"></i></div><span class="evo-pct">' + pr + '%</span></div>';
-  } else { pe.style.display = "none"; pe.innerHTML = ""; }
+    updateEntregasMeter();
+  } else {
+    pe.style.display = "none"; pe.innerHTML = "";
+    const em = $("#entregasMeter"); if (em) { em.style.display = "none"; em.innerHTML = ""; }
+  }
 }
 function paintTools() {
   const inPainel = view === "painel" && (projTab === "painel" || projTab === "admin");
@@ -2707,13 +3428,12 @@ function paintTools() {
   if (pv) {
     pv.style.display = (canEditReal && view === "painel" && window.innerWidth > 900) ? "" : "none";
     pv.classList.toggle("on", previewCliente);
-    pv.textContent = previewCliente ? "✕ Sair da prévia" : "👁 Ver como cliente";
+    pv.textContent = previewCliente ? "✕" : "👁";
+    pv.title = previewCliente ? "Sair da prévia do cliente" : "Ver como o cliente vê";
   }
   $("#editBtn").style.display = (inPainel && canEdit) ? "" : "none";
   const histOn = inPainel && canEdit;
-  $("#undoBtn").style.display = histOn ? "" : "none";
-  $("#redoBtn").style.display = histOn ? "" : "none";
-  $("#histBtn").style.display = histOn ? "" : "none";
+  $("#histGroup").style.display = histOn ? "" : "none";
   $("#deviceBtn").style.display = (isAdmin && inPainel && window.innerWidth > 900) ? "" : "none";
   applyDevice();
   if (histOn) updateHistButtons();
