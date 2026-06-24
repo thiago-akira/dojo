@@ -1603,12 +1603,12 @@ function renderProjeto(canvas, hint) {
   }
 
   const tabs = [];
-  if (canEdit) tabs.push(["admin", "🔒 Admin"], ["gestao", "🗂 Gestão interna"]);
+  if (canEdit) tabs.push(["admin", "🔒 Admin"]);
   tabs.push(["painel", "📋 Painel"]);
-  if (!canEdit) tabs.push(["materiais", "📎 Materiais"]);
+  tabs.push([canEdit ? "gestao" : "materiais", "📎 Materiais"]);
   tabs.push(["aprovacoes", "✅ Aprovações"], ["questionarios", "📝 Questionários"],
     ["reunioes", "📅 Reuniões"], ["mensagens", "💬 Mensagens"]);
-  if (canEdit || perm("pode_adicionar_pessoas")) tabs.push(["participantes", "👥 Participantes"]);
+  tabs.push(["participantes", "👥 Participantes"]);
   const sn = $("#subnav"); sn.style.display = "flex";
   sn.innerHTML = tabs.map(([k, l]) =>
     '<button class="sntab' + (projTab === k ? " on" : "") + '" onclick="setProjTab(\'' + k + '\')">' + l + '</button>').join("");
@@ -1619,7 +1619,7 @@ function renderProjeto(canvas, hint) {
   if (projTab === "questionarios") return renderQuestionarios(canvas, hint);
   if (projTab === "reunioes") return renderReunioes(canvas, hint);
   if (projTab === "mensagens") return renderMensagens(canvas, hint);
-  if (projTab === "participantes" && canEdit) return renderParticipantes(canvas, hint);
+  if (projTab === "participantes") return renderParticipantes(canvas, hint);
   if (projTab === "admin" && !canEdit) { projTab = "painel"; } // cliente nunca acessa Admin
   return renderPainel(canvas, hint);
 }
@@ -2740,9 +2740,17 @@ function lerPerms(m) {
 async function renderParticipantes(canvas, hint) {
   const pid = curProjeto.id;
   hint.style.display = "block";
+  const podeGerenciar = canEdit || perm("pode_adicionar_pessoas");
   const { data: ms } = await sb.from("membros").select("*, pessoas(nome,email)").eq("projeto_id", pid).order("created_at");
   const rows = (ms || []).map(m => {
     const p = m.pessoas || {};
+    if (!podeGerenciar) {
+      // visão do cliente: só quem está na equipe (nome + papel), sem ações nem config
+      const ini = (p.nome || p.email || "?").split(/\s+/).map(w => w[0] || "").slice(0, 2).join("").toUpperCase();
+      return '<div class="grow-row"><div class="gr-main"><span class="gr-name">' +
+        '<span class="team-av" style="display:inline-grid;width:26px;height:26px;font-size:11px;vertical-align:middle;margin-right:8px">' + esc(ini) + '</span>' +
+        esc(p.nome || p.email || "—") + ' <span class="papel ' + m.papel + '">' + (m.papel === "gestor" ? "equipe" : "cliente") + '</span></span></div></div>';
+    }
     const perms = [
       m.pode_adicionar_pessoas && "adiciona pessoas", m.pode_enviar_mensagens && "mensagens",
       m.pode_marcar_reunioes && "reuniões", m.pode_ver_documentos && "documentos"
@@ -2753,9 +2761,9 @@ async function renderParticipantes(canvas, hint) {
       '<button class="lnk del" onclick="removerMembro(\'' + m.id + '\')">remover</button></div></div>' +
       '<div class="ano-prev">' + esc(p.email || "") + '</div>' +
       (perms ? '<div class="perms">' + perms + '</div>' : "") + '</div>';
-  }).join("") || '<p class="muted-note">Nenhum participante ainda. Adicione alguém para liberar o portal do cliente.</p>';
-  hint.innerHTML = '<div class="page"><div class="page-head"><h2>👥 Participantes</h2>' +
-    '<button class="btn primary" onclick="adicionarParticipante()">＋ Adicionar</button></div>' + rows + '</div>';
+  }).join("") || '<p class="muted-note">' + (podeGerenciar ? "Nenhum participante ainda. Adicione alguém para liberar o portal do cliente." : "Ninguém na equipe ainda.") + '</p>';
+  hint.innerHTML = '<div class="page"><div class="page-head"><h2>👥 ' + (podeGerenciar ? "Participantes" : "Equipe") + '</h2>' +
+    (podeGerenciar ? '<button class="btn primary" onclick="adicionarParticipante()">＋ Adicionar</button>' : '') + '</div>' + rows + '</div>';
 }
 
 function adicionarParticipante() {
