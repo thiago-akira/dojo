@@ -4192,18 +4192,36 @@ function wireTopbar() {
 applyPrefs();
 wireTopbar();
 
+/* Debug overlay temporário — mostra eventos de auth na tela */
+(function() {
+  const el = document.createElement("div");
+  el.id = "_authDbg";
+  el.style.cssText = "position:fixed;bottom:8px;right:8px;z-index:99999;background:#000c;color:#0f0;font:11px/1.4 monospace;padding:8px 10px;border-radius:8px;max-width:320px;pointer-events:none";
+  el.textContent = "auth: aguardando…";
+  document.body.appendChild(el);
+  window._authLog = function(msg) {
+    const ts = new Date().toISOString().slice(11,23);
+    el.textContent = el.textContent.replace("auth: aguardando…","") + "\n" + ts + " " + msg;
+    console.log("[AUTH]", msg);
+  };
+})();
+
 let _authBooted = false;
 const _bootSafety = setTimeout(async () => {
   if (_authBooted) return;
+  window._authLog && window._authLog("safety-net: chamando getSession()");
   try {
     const { data } = await sb.auth.getSession();
+    window._authLog && window._authLog("safety-net result: session=" + (data.session ? "ok" : "null"));
     if (!_authBooted) { _authBooted = true; onSession(data.session || null); }
-  } catch (_) {
+  } catch (e) {
+    window._authLog && window._authLog("safety-net erro: " + e.message);
     if (!_authBooted) { _authBooted = true; onSession(null); }
   }
 }, 8000);
 
 sb.auth.onAuthStateChange((event, session) => {
+  window._authLog && window._authLog(event + " session=" + (session ? "ok" : "null"));
   if (event === "INITIAL_SESSION") {
     if (session) {
       // Token ainda válido — boot imediato
