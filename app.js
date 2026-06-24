@@ -2117,13 +2117,40 @@ async function removeTile(id) {
 }
 
 function cellSize() { const c = $("#canvas"); const gap = 14; const w = (c.clientWidth - gap * (COLS - 1)) / COLS; return { w, h: 96, gap }; }
+function _xOverlap(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x; }
+/* Empurra os outros widgets para baixo para não sobrepor o widget fixo (arrastado) */
+function reflowPush(tiles, fixed) {
+  const others = tiles.filter(t => t !== fixed).sort((a, b) => a.y - b.y || a.x - b.x);
+  const placed = [fixed];
+  for (const t of others) {
+    let y = t.y, moved = true, guard = 0;
+    while (moved && guard++ < 120) {
+      moved = false;
+      for (const q of placed) {
+        if (_xOverlap(t, q) && y < q.y + q.h && y + t.h > q.y) { y = q.y + q.h; moved = true; }
+      }
+    }
+    t.y = y; placed.push(t);
+  }
+}
 function enableDrag(tile, card, t) {
   card.addEventListener("pointerdown", e => {
     if (e.target.closest(".tbar,.thandle,.para-edit") || !editMode) return;
-    e.preventDefault(); const cs = cellSize(); const sx = e.clientX, sy = e.clientY, ox = t.x, oy = t.y;
+    e.preventDefault();
+    const cs = cellSize(); const sx = e.clientX, sy = e.clientY, ox = t.x, oy = t.y;
+    const tiles = space().tiles;
+    const orig = {}; tiles.forEach(x => orig[x.id] = { x: x.x, y: x.y });
+    const els = {}; document.querySelectorAll("#canvas .tile").forEach(el => els[el.dataset.id] = el);
     tile.classList.add("dragging"); card.setPointerCapture(e.pointerId);
-    const mv = ev => { t.x = clamp(ox + Math.round((ev.clientX - sx) / (cs.w + cs.gap)), 0, COLS - t.w); t.y = Math.max(0, oy + Math.round((ev.clientY - sy) / (cs.h + cs.gap))); tile.style.setProperty("--gc", (t.x + 1) + " / span " + t.w); tile.style.setProperty("--gr", (t.y + 1) + " / span " + t.h); };
-    const up = () => { card.removeEventListener("pointermove", mv); card.removeEventListener("pointerup", up); tile.classList.remove("dragging"); save(); pushHist("Moveu widget"); };
+    const applyAll = () => tiles.forEach(x => { const el = els[x.id]; if (el) { el.style.setProperty("--gc", (x.x + 1) + " / span " + x.w); el.style.setProperty("--gr", (x.y + 1) + " / span " + x.h); } });
+    const mv = ev => {
+      t.x = clamp(ox + Math.round((ev.clientX - sx) / (cs.w + cs.gap)), 0, COLS - t.w);
+      t.y = Math.max(0, oy + Math.round((ev.clientY - sy) / (cs.h + cs.gap)));
+      tiles.forEach(x => { if (x !== t) { x.x = orig[x.id].x; x.y = orig[x.id].y; } });
+      reflowPush(tiles, t);
+      applyAll();
+    };
+    const up = () => { card.removeEventListener("pointermove", mv); card.removeEventListener("pointerup", up); tile.classList.remove("dragging"); save(); pushHist("Moveu widget"); route(); };
     card.addEventListener("pointermove", mv); card.addEventListener("pointerup", up);
   });
 }
