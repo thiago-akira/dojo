@@ -239,6 +239,9 @@ body.edit .para-edit{background:var(--surface-solid)}
 .uso-st.nunca{color:var(--muted);border:1px solid var(--line-strong)}
 .uso-contrib{font-weight:800;font-size:14px}
 .uso-breakdown{font-size:11px;color:var(--muted);white-space:nowrap}
+.uso-proj-row{cursor:pointer;transition:background .12s}
+.uso-proj-row:hover{background:rgba(255,255,255,.045)}
+.uso-proj-row.alerta td:first-child{box-shadow:inset 3px 0 0 var(--danger)}
 
 /* ===== Widget: Linha do tempo / Marcos ===== */
 .timeline{display:flex;flex-direction:column}

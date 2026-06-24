@@ -1549,46 +1549,45 @@ function _fmtDur(seg) {
   return (m / 60).toFixed(1) + " h";
 }
 async function renderUso(hint, navHtml) {
-  hint.innerHTML = '<div class="page">' + navHtml + '<div class="page-head"><h2>📊 Uso</h2></div><p class="muted-note">Carregando métricas…</p></div>';
-  const { data, error } = await sb.rpc("metricas_uso");
+  hint.innerHTML = '<div class="page">' + navHtml + '<div class="page-head"><h2>📊 Uso por projeto</h2></div><p class="muted-note">Carregando métricas…</p></div>';
+  const { data, error } = await sb.rpc("metricas_uso_resumo");
   const page = hint.querySelector(".page");
-  if (error) { page.innerHTML = navHtml + '<div class="page-head"><h2>📊 Uso</h2></div><p class="muted-note">Erro: ' + esc(error.message) + '</p>'; return; }
+  const head = navHtml + '<div class="page-head"><h2>📊 Uso por projeto</h2><button class="btn sm" onclick="route()">↻ Atualizar</button></div>';
+  if (error) { page.innerHTML = head + '<p class="muted-note">Erro: ' + esc(error.message) + '</p>'; return; }
   const rows = data || [];
 
   // resumo no topo
-  const ativos = rows.filter(r => _statusUso(r.ultimo_acesso).k === "ativo").length;
-  const sumidos = rows.filter(r => { const k = _statusUso(r.ultimo_acesso).k; return k === "sumido" || k === "nunca"; }).length;
-  const acessos7d = rows.reduce((s, r) => s + Number(r.n_7d || 0), 0);
+  const totPart = rows.reduce((s, r) => s + Number(r.n_participantes || 0), 0);
+  const semAtivos = rows.filter(r => Number(r.n_participantes) > 0 && Number(r.n_ativos) === 0).length;
   const stats = '<div class="dash-stats">' +
-    '<div class="dstat"><span class="dstat-n">' + rows.length + '</span><span class="dstat-l">pessoas</span></div>' +
-    '<div class="dstat"><span class="dstat-n">' + ativos + '</span><span class="dstat-l">ativas (7d)</span></div>' +
-    '<div class="dstat' + (sumidos ? " dstat-alert" : "") + '"><span class="dstat-n">' + sumidos + '</span><span class="dstat-l">sumidas</span></div>' +
-    '<div class="dstat"><span class="dstat-n">' + acessos7d + '</span><span class="dstat-l">acessos (7d)</span></div>' +
+    '<div class="dstat"><span class="dstat-n">' + rows.length + '</span><span class="dstat-l">projetos</span></div>' +
+    '<div class="dstat"><span class="dstat-n">' + totPart + '</span><span class="dstat-l">participantes</span></div>' +
+    '<div class="dstat' + (semAtivos ? " dstat-alert" : "") + '"><span class="dstat-n">' + semAtivos + '</span><span class="dstat-l">sem ativos</span></div>' +
     '</div>';
 
   let body;
   if (!rows.length) {
-    body = '<p class="muted-note">Nenhum cliente ou membro ainda. Os dados de acesso aparecem aqui conforme as pessoas usam o portal.</p>';
+    body = '<p class="muted-note">Nenhum projeto ainda. Crie projetos e adicione participantes para acompanhar o uso de cada um.</p>';
   } else {
     const trs = rows.map(r => {
-      const st = _statusUso(r.ultimo_acesso);
-      const contrib = Number(r.n_mensagens || 0) + Number(r.n_forms || 0) + Number(r.n_comentarios || 0) + Number(r.n_aprovacoes || 0);
-      const breakdown = '💬 ' + (r.n_mensagens || 0) + ' · 📋 ' + (r.n_forms || 0) + ' · 🗨 ' + (r.n_comentarios || 0) + ' · ✅ ' + (r.n_aprovacoes || 0);
-      return '<tr>' +
-        '<td><div class="uso-nome">' + esc(r.nome || r.email || "—") + '</div><div class="uso-email">' + esc(r.email || "") + '</div></td>' +
-        '<td><span class="uso-st ' + st.k + '">' + st.t + '</span></td>' +
-        '<td>' + (r.ultimo_acesso ? fmtRel(r.ultimo_acesso) : "—") + '</td>' +
-        '<td>' + (r.n_7d || 0) + '<span class="uso-sub">/sem</span></td>' +
-        '<td>' + _fmtDur(Number(r.dur_media_seg)) + '</td>' +
-        '<td><div class="uso-contrib" title="' + escAttr(breakdown) + '">' + contrib + '</div><div class="uso-breakdown">' + breakdown + '</div></td>' +
+      const np = Number(r.n_participantes || 0), na = Number(r.n_ativos || 0), ns = Number(r.n_sumidos || 0);
+      const alerta = np > 0 && na === 0;
+      return '<tr class="uso-proj-row' + (alerta ? " alerta" : "") + '" onclick="abrirProjeto(\'' + r.projeto_id + '\')" title="Abrir projeto">' +
+        '<td><div class="uso-nome">' + esc(r.projeto_nome || "—") + '</div><div class="uso-email">' + esc(r.cliente_nome || "") + '</div></td>' +
+        '<td>' + np + '<span class="uso-sub"> part.</span></td>' +
+        '<td>' + (np ? '<span class="uso-st ' + (na ? "ativo" : "sumido") + '">' + na + " ativo" + (na === 1 ? "" : "s") + '</span>' : "—") + '</td>' +
+        '<td>' + (ns ? '<span class="uso-st sumido">' + ns + " sumido" + (ns === 1 ? "" : "s") + '</span>' : "—") + '</td>' +
+        '<td>' + (r.ultimo_acesso ? fmtRel(r.ultimo_acesso) : '<span class="muted-note">nunca</span>') + '</td>' +
+        '<td><div class="uso-contrib">' + Number(r.n_contrib || 0) + '</div></td>' +
         '</tr>';
     }).join("");
     body = '<div class="uso-table-wrap"><table class="data-table uso-table"><thead><tr>' +
-      '<th>Pessoa</th><th>Status</th><th>Último acesso</th><th>Freq.</th><th>Sessão méd.</th><th>Contribuições</th>' +
+      '<th>Projeto</th><th>Particip.</th><th>Ativos (7d)</th><th>Sumidos</th><th>Últ. acesso</th><th>Contrib.</th>' +
       '</tr></thead><tbody>' + trs + '</tbody></table></div>';
   }
 
-  page.innerHTML = navHtml + '<div class="page-head"><h2>📊 Uso</h2><button class="btn sm" onclick="route()">↻ Atualizar</button></div>' + stats + body;
+  page.innerHTML = head + stats + body +
+    '<p class="muted-note" style="margin-top:10px;font-size:11.5px;text-transform:none;letter-spacing:0">Clique num projeto para abrir. O detalhe por participante fica na aba <b>Participantes</b> do projeto.</p>';
 }
 
 function novoCliente() {
