@@ -411,6 +411,151 @@ const WIDGETS = {
       loadAprovacoesPendentes(c);
     },
     form(p) { return field("Título", "title", p.title); }
+  },
+  checklist_projeto: {
+    emoji: "✅", name: "Checklist do projeto", desc: "Progresso dos checklists do projeto — automático.",
+    w: 4, h: 3, defaults: { title: "Checklists" },
+    render(t, c) {
+      const p = t.props;
+      c.innerHTML = (p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '') + '<div class="w-body"><p class="muted-note">Carregando…</p></div>';
+      loadChecklistProjeto(c);
+    },
+    form(p) { return field("Título", "title", p.title); }
+  },
+  resumo_projeto: {
+    emoji: "📊", name: "Resumo do projeto", desc: "Progresso, status e participantes — automático.",
+    w: 4, h: 2, defaults: { title: "Resumo do projeto" },
+    render(t, c) {
+      const p = t.props;
+      c.innerHTML = (p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '') + '<div class="w-body"><p class="muted-note">Carregando…</p></div>';
+      loadResumoProjeto(c);
+    },
+    form(p) { return field("Título", "title", p.title); }
+  },
+  documentos_projeto: {
+    emoji: "📁", name: "Documentos do projeto", desc: "Lista viva dos documentos — automático.",
+    w: 4, h: 3, defaults: { title: "Documentos" },
+    render(t, c) {
+      const p = t.props;
+      c.innerHTML = (p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '') + '<div class="w-body"><p class="muted-note">Carregando…</p></div>';
+      loadDocumentosProjeto(c);
+    },
+    form(p) { return field("Título", "title", p.title); }
+  },
+  atividade_recente: {
+    emoji: "🔔", name: "Atividade recente", desc: "Últimas mensagens e uploads — automático.",
+    w: 4, h: 3, defaults: { title: "Atividade recente" },
+    render(t, c) {
+      const p = t.props;
+      c.innerHTML = (p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '') + '<div class="w-body"><p class="muted-note">Carregando…</p></div>';
+      loadAtividadeRecente(c);
+    },
+    form(p) { return field("Título", "title", p.title); }
+  },
+  questionarios_pendentes: {
+    emoji: "📝", name: "Questionários pendentes", desc: "O que falta responder — automático.",
+    w: 4, h: 3, defaults: { title: "Questionários" },
+    render(t, c) {
+      const p = t.props;
+      c.innerHTML = (p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '') + '<div class="w-body"><p class="muted-note">Carregando…</p></div>';
+      loadQuestionariosPendentes(c);
+    },
+    form(p) { return field("Título", "title", p.title); }
+  },
+  kanban: {
+    emoji: "🗂", name: "Kanban / Quadro", desc: "Colunas de tarefas (A fazer / Fazendo / Feito).",
+    w: 8, h: 4, defaults: { title: "Quadro", raw: "## A fazer\nBriefing do cliente\nCopywriting\n## Fazendo\nDesenvolvimento\n## Feito\nLogo\nIdentidade visual" },
+    render(t, c) {
+      const p = t.props;
+      const cols = parseKanban(p.raw);
+      c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Quadro") + '</span></div>' +
+        '<div class="w-body"><div class="kanban">' + cols.map((col, i) =>
+          '<div class="kb-col"><div class="kb-col-head"><span>' + esc(col.title) + '</span><span class="kb-count">' + col.cards.length + '</span></div>' +
+          col.cards.map(card => '<div class="kb-card kb-c' + (i % 4) + '">' + esc(card) + '</div>').join("") + '</div>'
+        ).join("") + '</div></div>';
+    },
+    form(p) {
+      return field("Título", "title", p.title) + '<label>Colunas e cartões</label>' +
+        '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Inicie uma coluna com <b>## Nome</b>. Cada linha seguinte é um cartão.</p>' +
+        '<textarea data-k="raw" spellcheck="false" style="min-height:160px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6">' + esc(p.raw) + '</textarea>';
+    }
+  },
+  orcamento: {
+    emoji: "💰", name: "Orçamento", desc: "Orçado, gasto e restante com barra.",
+    w: 4, h: 2, defaults: { title: "Orçamento", moeda: "R$", total: "20000", gasto: "13000" },
+    render(t, c) {
+      const p = t.props;
+      const total = parseFloat(p.total) || 0, gasto = parseFloat(p.gasto) || 0;
+      const resta = total - gasto, over = gasto > total;
+      const pct = total ? Math.min(100, Math.round(gasto / total * 100)) : 0;
+      const moeda = p.moeda || "R$";
+      const fmt = n => moeda + " " + Math.round(n).toLocaleString("pt-BR");
+      c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Orçamento") + '</span><span class="grow"></span><span class="orc-total">' + esc(fmt(total)) + '</span></div>' +
+        '<div class="w-body"><div class="prog-bar"><i style="width:' + pct + '%' + (over ? ';background:var(--danger)' : '') + '"></i></div>' +
+        '<div class="orc-row"><span class="orc-gasto">Gasto ' + esc(fmt(gasto)) + ' · ' + pct + '%</span>' +
+        '<span class="orc-resta' + (over ? ' neg' : '') + '">' + (over ? "Excedeu " + esc(fmt(-resta)) : "Resta " + esc(fmt(resta))) + '</span></div></div>';
+    },
+    form(p) {
+      return field("Título", "title", p.title) + field("Moeda", "moeda", p.moeda || "R$") +
+        field("Orçado (total)", "total", p.total) + field("Gasto", "gasto", p.gasto);
+    }
+  },
+  equipe: {
+    emoji: "👥", name: "Equipe & responsáveis", desc: "Quem cuida de quê no projeto.",
+    w: 4, h: 3, defaults: { title: "Equipe", raw: "Ana Souza | Design\nBruno Lima | Desenvolvimento\nCarla Dias | Gestão" },
+    render(t, c) {
+      const p = t.props;
+      const items = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]);
+      c.innerHTML = (p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '') +
+        '<div class="w-body"><div class="team">' + items.map(a => {
+          const nome = a[0], papel = a[1] || "";
+          const ini = nome.split(/\s+/).map(w => w[0] || "").slice(0, 2).join("").toUpperCase();
+          return '<div class="team-row"><div class="team-av">' + esc(ini) + '</div><div class="team-info"><div class="team-name">' + esc(nome) + '</div>' + (papel ? '<div class="team-role">' + esc(papel) + '</div>' : '') + '</div></div>';
+        }).join("") + '</div></div>';
+    },
+    form(p) {
+      return field("Título", "title", p.title) + '<label>Pessoas</label>' +
+        '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Uma por linha: <b>Nome | Responsabilidade</b>.</p>' +
+        '<textarea data-k="raw" spellcheck="false" style="min-height:120px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6">' + esc(p.raw) + '</textarea>';
+    }
+  },
+  riscos: {
+    emoji: "⚠️", name: "Riscos & bloqueios", desc: "Impedimentos com nível de severidade.",
+    w: 4, h: 3, defaults: { title: "Riscos & bloqueios", raw: "alto | API de pagamento atrasada\nmedio | Falta aprovação do texto\nbaixo | Revisar banco de imagens" },
+    render(t, c) {
+      const p = t.props;
+      const items = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]);
+      const SEV = { alto: "Alto", medio: "Médio", baixo: "Baixo" };
+      c.innerHTML = (p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '') +
+        '<div class="w-body"><div class="risks">' + items.map(a => {
+          let sev, txt;
+          if (a[1] !== undefined && SEV[(a[0] || "").toLowerCase()]) { sev = a[0].toLowerCase(); txt = a[1]; }
+          else { sev = "medio"; txt = a[0]; }
+          return '<div class="risk-row ' + sev + '"><span class="risk-sev">' + SEV[sev] + '</span><span class="risk-txt">' + esc(txt) + '</span></div>';
+        }).join("") + '</div></div>';
+    },
+    form(p) {
+      return field("Título", "title", p.title) + '<label>Riscos</label>' +
+        '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Um por linha: <b>severidade | descrição</b>. Severidade: <b>alto</b>, <b>medio</b> ou <b>baixo</b>.</p>' +
+        '<textarea data-k="raw" spellcheck="false" style="min-height:120px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6">' + esc(p.raw) + '</textarea>';
+    }
+  },
+  proximos_passos: {
+    emoji: "➡️", name: "Próximos passos", desc: "Action items — o que vem agora.",
+    w: 4, h: 3, defaults: { title: "Próximos passos", raw: "Aprovar layout final | Cliente · sex\nIntegrar gateway de pagamento | Bruno\nEnviar contrato assinado | Ana · seg" },
+    render(t, c) {
+      const p = t.props;
+      const items = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]);
+      c.innerHTML = (p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '') +
+        '<div class="w-body"><div class="steps">' + items.map(a =>
+          '<div class="step-row"><span class="step-ico">→</span><div class="step-body"><div class="step-txt">' + esc(a[0]) + '</div>' + (a[1] ? '<div class="step-meta">' + esc(a[1]) + '</div>' : '') + '</div></div>'
+        ).join("") + '</div></div>';
+    },
+    form(p) {
+      return field("Título", "title", p.title) + '<label>Ações</label>' +
+        '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Uma por linha: <b>ação | responsável/prazo</b> (a parte após | é opcional).</p>' +
+        '<textarea data-k="raw" spellcheck="false" style="min-height:120px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6">' + esc(p.raw) + '</textarea>';
+    }
   }
 };
 function field(label, k, v) { return '<label>' + esc(label) + '</label><input data-k="' + k + '" value="' + escAttr(v) + '">'; }
@@ -458,6 +603,27 @@ function parseRefColumns(raw) {
   return cols;
 }
 
+function parseKanban(raw) {
+  const cols = []; let cur = null;
+  (raw || "").split("\n").forEach(line => {
+    const s = line.trim(); if (!s) return;
+    if (s.startsWith("##")) { cur = { title: s.replace(/^##\s*/, ""), cards: [] }; cols.push(cur); }
+    else { if (!cur) { cur = { title: "", cards: [] }; cols.push(cur); } cur.cards.push(s); }
+  });
+  return cols;
+}
+function fmtRel(iso) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return "agora";
+  if (min < 60) return "há " + min + " min";
+  const h = Math.floor(min / 60);
+  if (h < 24) return "há " + h + "h";
+  const d = Math.floor(h / 24);
+  if (d < 30) return "há " + d + " dia" + (d === 1 ? "" : "s");
+  return fmtDt(iso);
+}
+
 /* — Loaders dos widgets dinâmicos (puxam dados reais do projeto) — */
 async function loadProximaReuniao(c) {
   if (!curProjeto) return;
@@ -489,6 +655,86 @@ async function loadAprovacoesPendentes(c) {
     '<span class="ap-pend-lbl">pendente' + (list.length === 1 ? "" : "s") + '</span></div>' +
     '<div class="ap-pend-list">' + list.slice(0, 5).map(a => '<div class="ap-pend-item">⏳ ' + esc(a.titulo) + '</div>').join("") +
     (list.length > 5 ? '<div class="muted-note" style="font-size:12px">+' + (list.length - 5) + ' mais…</div>' : '') + '</div>';
+}
+
+async function loadChecklistProjeto(c) {
+  if (!curProjeto) return;
+  const { data } = await sb.from("checklists").select("titulo, checklist_itens(concluido)").eq("projeto_id", curProjeto.id).order("ordem");
+  const body = c.querySelector(".w-body"); if (!body) return;
+  const lists = data || [];
+  if (!lists.length) { body.innerHTML = '<p class="muted-note">Nenhum checklist no projeto.</p>'; return; }
+  let totDone = 0, tot = 0;
+  const rows = lists.map(cl => {
+    const items = cl.checklist_itens || [];
+    const done = items.filter(i => i.concluido).length;
+    totDone += done; tot += items.length;
+    const pct = items.length ? Math.round(done / items.length * 100) : 0;
+    return '<div class="cl-row"><div class="cl-top"><span>' + esc(cl.titulo) + '</span><span>' + done + '/' + items.length + '</span></div>' +
+      '<div class="prog-bar"><i style="width:' + pct + '%"></i></div></div>';
+  }).join("");
+  const overall = tot ? Math.round(totDone / tot * 100) : 0;
+  body.innerHTML = '<div class="cl-overall"><span class="cl-overall-pct">' + overall + '%</span><span class="cl-overall-lbl">concluído (' + totDone + '/' + tot + ')</span></div>' + rows;
+}
+
+async function loadResumoProjeto(c) {
+  if (!curProjeto) return;
+  const { count } = await sb.from("membros").select("*", { count: "exact", head: true }).eq("projeto_id", curProjeto.id);
+  const body = c.querySelector(".w-body"); if (!body) return;
+  const pr = curProjeto.progresso || 0, st = curProjeto.status || "ativo", n = count || 0;
+  body.innerHTML = '<div class="resumo">' +
+    '<div class="resumo-row"><span class="resumo-lbl">Progresso</span><span class="resumo-val">' + pr + '%</span></div>' +
+    '<div class="prog-bar"><i style="width:' + pr + '%"></i></div>' +
+    '<div class="resumo-chips"><span class="cli-status ' + (st === "ativo" ? "ativo" : "pausado") + '">' + esc(st) + '</span>' +
+    '<span class="resumo-members">👥 ' + n + ' participante' + (n === 1 ? "" : "s") + '</span></div></div>';
+}
+
+async function loadDocumentosProjeto(c) {
+  if (!curProjeto) return;
+  const { data } = await sb.from("documentos").select("nome, storage_path, url").eq("projeto_id", curProjeto.id).order("created_at", { ascending: false }).limit(8);
+  const body = c.querySelector(".w-body"); if (!body) return;
+  const list = data || [];
+  if (!list.length) { body.innerHTML = '<p class="muted-note">Nenhum documento.</p>'; return; }
+  body.innerHTML = '<div class="doc-list">' + list.map(d =>
+    '<div class="doc-row"><span class="doc-name">📄 ' + esc(d.nome) + '</span>' +
+    (d.storage_path ? '<button class="lnk" onclick="baixarDoc(\'' + escAttr(d.storage_path) + '\')">baixar</button>'
+      : (d.url ? '<a class="lnk" href="' + escAttr(d.url) + '" target="_blank" rel="noopener">abrir</a>' : '')) + '</div>'
+  ).join("") + '</div>';
+}
+
+async function loadAtividadeRecente(c) {
+  if (!curProjeto) return;
+  const [msgs, docs] = await Promise.all([
+    sb.from("mensagens").select("corpo, created_at, anexo_nome, autor:pessoas!autor_id(nome,email)").eq("projeto_id", curProjeto.id).order("created_at", { ascending: false }).limit(5),
+    sb.from("documentos").select("nome, created_at").eq("projeto_id", curProjeto.id).order("created_at", { ascending: false }).limit(5)
+  ]);
+  const body = c.querySelector(".w-body"); if (!body) return;
+  const ev = [];
+  (msgs.data || []).forEach(m => ev.push({ when: m.created_at, ico: "💬", txt: ((m.autor && (m.autor.nome || m.autor.email)) || "Alguém") + ": " + (m.corpo ? m.corpo.slice(0, 42) : (m.anexo_nome ? "📎 " + m.anexo_nome : "")) }));
+  (docs.data || []).forEach(d => ev.push({ when: d.created_at, ico: "📄", txt: "Documento: " + d.nome }));
+  ev.sort((a, b) => (b.when || "").localeCompare(a.when || ""));
+  if (!ev.length) { body.innerHTML = '<p class="muted-note">Sem atividade ainda.</p>'; return; }
+  body.innerHTML = '<div class="acts">' + ev.slice(0, 6).map(e =>
+    '<div class="act-row"><span class="act-ico">' + e.ico + '</span><div class="act-body"><div class="act-txt">' + esc(e.txt) + '</div><div class="act-when">' + fmtRel(e.when) + '</div></div></div>'
+  ).join("") + '</div>';
+}
+
+async function loadQuestionariosPendentes(c) {
+  if (!curProjeto) return;
+  const { data: qs } = await sb.from("questionarios").select("id, titulo").eq("projeto_id", curProjeto.id).eq("status", "aberto").order("created_at", { ascending: false });
+  const body = c.querySelector(".w-body"); if (!body) return;
+  const list = qs || [];
+  if (!list.length) { body.innerHTML = '<div class="ap-pend-empty">✓ Nada pendente</div>'; return; }
+  if (isAdmin) {
+    body.innerHTML = '<div class="ap-pend"><span class="ap-pend-count">' + list.length + '</span><span class="ap-pend-lbl">aberto' + (list.length === 1 ? "" : "s") + '</span></div>' +
+      '<div class="ap-pend-list">' + list.slice(0, 5).map(q => '<div class="ap-pend-item">📝 ' + esc(q.titulo) + '</div>').join("") + '</div>';
+    return;
+  }
+  const { data: rs } = await sb.from("respostas").select("questionario_id").eq("respondido_por", me.id).in("questionario_id", list.map(q => q.id));
+  const answered = new Set((rs || []).map(r => r.questionario_id));
+  const pend = list.filter(q => !answered.has(q.id));
+  if (!pend.length) { body.innerHTML = '<div class="ap-pend-empty">✓ Tudo respondido</div>'; return; }
+  body.innerHTML = '<div class="ap-pend"><span class="ap-pend-count">' + pend.length + '</span><span class="ap-pend-lbl">a responder</span></div>' +
+    '<div class="ap-pend-list">' + pend.slice(0, 5).map(q => '<div class="ap-pend-item" style="cursor:pointer" onclick="responderQuestionario(\'' + q.id + '\')">📝 ' + esc(q.titulo) + '</div>').join("") + '</div>';
 }
 
 /* ===== 5) Roteamento de telas ===== */
