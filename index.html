@@ -11,17 +11,19 @@
 <!-- Supabase JS (UMD) — expõe o global `supabase` -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<link rel="stylesheet" href="style.css?v=18">
+<link rel="stylesheet" href="style.css?v=21">
 </head>
 <body>
 
 <div class="topbar">
   <div class="brand">
     <div class="mark" id="brandMark">◯</div>
-    <div class="title" id="brandTitle">Dojo</div>
-    <span class="role-badge" id="roleBadge"></span>
+    <div class="title" id="brandTitle">Dojo <span class="brand-thin">Akira</span></div>
   </div>
+  <div class="client-brand" id="clientBrand" style="display:none"></div>
+  <span class="role-badge" id="roleBadge"></span>
   <div class="crumb" id="crumb"></div>
+  <div class="proj-evo" id="projEvo" style="display:none"></div>
   <div class="spacer"></div>
   <div class="tools" id="tools">
     <button class="iconbtn" id="adminBtn" title="Console do administrador" style="display:none">👥 Clientes</button>
@@ -46,7 +48,7 @@
 <div class="scrim" id="scrim" style="display:none"></div>
 <div class="panel-modal" id="modal" style="display:none"></div>
 
-<script src="config.js?v=18"></script>
-<script src="app.js?v=18"></script>
+<script src="config.js?v=21"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>

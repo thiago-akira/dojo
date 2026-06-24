@@ -1743,6 +1743,65 @@ function save() {
   }, 600);
 }
 
+/* Dropdown para trocar de projeto (admin: do cliente atual; cliente: seus projetos) — itens 6 */
+async function abrirSwitchProjeto(ev) {
+  if (ev) ev.stopPropagation();
+  const existing = document.getElementById("projSwitch");
+  if (existing) { existing.remove(); document.removeEventListener("click", _closeSwitchOutside, true); return; }
+  let projetos = [];
+  if (isAdmin && !previewCliente && curCliente) {
+    const { data } = await sb.from("projetos").select("id,nome,status").eq("cliente_id", curCliente.id).order("created_at");
+    projetos = data || [];
+  } else {
+    const { data } = await sb.from("membros").select("projetos(id,nome,status,cliente_id)").eq("pessoa_id", me.id);
+    projetos = (data || []).map(m => m.projetos).filter(Boolean);
+  }
+  const ativos = projetos.filter(p => p.status === "ativo");
+  const outros = projetos.filter(p => p.status !== "ativo");
+  const item = p => '<div class="ps-item' + (curProjeto && p.id === curProjeto.id ? " on" : "") + '" onclick="abrirProjeto(\'' + p.id + '\')"><span class="ps-dot ' + (p.status === "ativo" ? "ativo" : "pausado") + '"></span><span class="ps-nome">' + esc(p.nome) + '</span><span class="ps-st">' + esc(p.status) + '</span></div>';
+  let html = "";
+  if (ativos.length) html += '<div class="ps-head">Ativos</div>' + ativos.map(item).join("");
+  if (outros.length) html += '<div class="ps-head">Concluídos / pausados</div>' + outros.map(item).join("");
+  if (!projetos.length) html = '<p class="muted-note" style="padding:12px">Nenhum outro projeto.</p>';
+  const panel = document.createElement("div");
+  panel.id = "projSwitch"; panel.className = "proj-switch";
+  panel.innerHTML = html;
+  document.body.appendChild(panel);
+  const cr = $("#crumb").getBoundingClientRect();
+  panel.style.top = (cr.bottom + 8) + "px";
+  panel.style.left = Math.min(cr.left, window.innerWidth - 280) + "px";
+  setTimeout(() => document.addEventListener("click", _closeSwitchOutside, true), 0);
+}
+function _closeSwitchOutside(e) {
+  const panel = document.getElementById("projSwitch");
+  if (panel && !panel.contains(e.target) && !e.target.closest(".cr-switch")) {
+    panel.remove(); document.removeEventListener("click", _closeSwitchOutside, true);
+  }
+}
+
+/* Editar projeto (nome, status, evolução) — canEdit */
+function editarProjeto() {
+  if (!curProjeto || !canEdit) return;
+  const p = curProjeto;
+  openModal('<h3>Editar projeto</h3>' +
+    field("Nome", "nome", p.nome || "") +
+    '<label>Descrição</label><textarea data-k="descricao">' + esc(p.descricao || "") + '</textarea>' +
+    '<label>Status</label><select data-k="status"><option value="ativo"' + (p.status === "ativo" ? " selected" : "") + '>Ativo</option><option value="pausado"' + (p.status === "pausado" ? " selected" : "") + '>Pausado</option><option value="concluido"' + (p.status === "concluido" ? " selected" : "") + '>Concluído</option></select>' +
+    '<label>Evolução: <b id="evoLbl">' + (p.progresso || 0) + '%</b></label><input type="range" min="0" max="100" step="5" data-k="progresso" value="' + (p.progresso || 0) + '" style="width:100%" oninput="document.getElementById(\'evoLbl\').textContent=this.value+\'%\'">' +
+    actions("Salvar"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const get = k => (m.querySelector('[data-k="' + k + '"]') || {}).value;
+        const upd = { nome: get("nome").trim() || p.nome, descricao: get("descricao").trim() || null, status: get("status"), progresso: parseInt(get("progresso")) || 0 };
+        const { error } = await sb.from("projetos").update(upd).eq("id", p.id);
+        if (error) { toast("Erro: " + error.message); return; }
+        curProjeto = Object.assign({}, curProjeto, upd);
+        closeModal(); route();
+      };
+    });
+}
+
 /* ===== 9) Projeto: sub-nav (Painel · Gestão · Mensagens) ===== */
 function renderProjeto(canvas, hint) {
   const c = curCliente;
@@ -1751,15 +1810,17 @@ function renderProjeto(canvas, hint) {
     if (fromInterno) {
       $("#crumb").innerHTML =
         '<a class="cr-link" onclick="irMeusProjetos()">Meus Projetos</a><span class="cr-sep">›</span>' +
-        '<span class="cr-cur">' + esc(curProjeto.nome) + '</span>';
+        '<span class="cr-cur cr-switch" onclick="abrirSwitchProjeto(event)">' + esc(curProjeto.nome) + ' ▾</span>';
     } else {
       $("#crumb").innerHTML =
         '<a class="cr-link" onclick="irConsole()">Clientes</a><span class="cr-sep">›</span>' +
         '<a class="cr-link" onclick="abrirCliente(\'' + c.id + '\')">' + esc(c.empresa || c.nome) + '</a><span class="cr-sep">›</span>' +
-        '<span class="cr-cur">' + esc(curProjeto.nome) + '</span>';
+        '<span class="cr-cur cr-switch" onclick="abrirSwitchProjeto(event)">' + esc(curProjeto.nome) + ' ▾</span>';
     }
   } else {
-    $("#crumb").innerHTML = '<span class="cr-cur">' + esc(curProjeto.nome) + '</span>';
+    // cliente: nome do cliente > projeto (com troca de projetos) — item 6
+    $("#crumb").innerHTML = (c ? '<span class="cr-link" style="cursor:default">' + esc(c.empresa || c.nome) + '</span><span class="cr-sep">›</span>' : '') +
+      '<span class="cr-cur cr-switch" onclick="abrirSwitchProjeto(event)">' + esc(curProjeto.nome) + ' ▾</span>';
   }
 
   const tabs = [];
@@ -2012,13 +2073,32 @@ function toast(message, kind) {
 
 /* ===== 12) Marca / topo / navegação ===== */
 function applyBrand() {
-  const inPainel = view === "painel";
-  $("#brandTitle").textContent = (inPainel && brand.titulo) ? brand.titulo : "Dojo";
-  if (inPainel && brand.logoUrl) $("#brandMark").innerHTML = '<img src="' + escAttr(brand.logoUrl) + '" style="width:100%;height:100%;object-fit:cover;border-radius:7px">';
-  else $("#brandMark").textContent = "◯";
-  document.documentElement.style.setProperty("--accent", (inPainel && brand.cor) ? brand.cor : "#e8a33d");
+  // Marca do Dojo fixa (a cor agora vem do tema do usuário, não do cliente)
+  $("#brandMark").textContent = "◯";
+  $("#brandTitle").innerHTML = 'Dojo <span class="brand-thin">Akira</span>';
   $("#roleBadge").textContent = me ? (previewCliente ? "PRÉVIA CLIENTE" : (isAdmin ? "ADMIN" : "CLIENTE")) : "";
   $("#roleBadge").classList.toggle("preview", previewCliente);
+
+  // Identidade do cliente (logo ou nome) — item 5/7
+  const cb = $("#clientBrand"), c = curCliente;
+  if (c && (view === "cliente" || view === "painel") && !(c.is_interno)) {
+    const logo = c.marca && c.marca.logoUrl;
+    cb.style.display = "";
+    cb.innerHTML = logo
+      ? '<img src="' + escAttr(logo) + '" alt="' + escAttr(c.empresa || c.nome) + '">'
+      : '<span class="cb-name">' + esc(c.empresa || c.nome) + '</span>';
+  } else if (c && c.is_interno && (view === "painel")) {
+    cb.style.display = ""; cb.innerHTML = '<span class="cb-name">' + esc(c.empresa || "Meus Projetos") + '</span>';
+  } else { cb.style.display = "none"; cb.innerHTML = ""; }
+
+  // Evolução do projeto (% + barra) — item 7
+  const pe = $("#projEvo");
+  if (view === "painel" && curProjeto) {
+    const pr = Math.max(0, Math.min(100, curProjeto.progresso || 0));
+    pe.style.display = "";
+    pe.innerHTML = '<div class="evo' + (canEdit ? " evo-edit" : "") + '"' + (canEdit ? ' onclick="editarProjeto()" title="Editar evolução"' : ' title="Evolução do projeto"') + '>' +
+      '<div class="evo-bar"><i style="width:' + pr + '%"></i></div><span class="evo-pct">' + pr + '%</span></div>';
+  } else { pe.style.display = "none"; pe.innerHTML = ""; }
 }
 function paintTools() {
   const inPainel = view === "painel" && (projTab === "painel" || projTab === "admin");
@@ -3108,6 +3188,8 @@ function editarCliente() {
     '<option value="ativo"' + (c.status === "ativo" ? " selected" : "") + '>Ativo</option>' +
     '<option value="pausado"' + (c.status !== "ativo" ? " selected" : "") + '>Pausado</option></select>' +
     '<label>Cor da marca</label><input type="color" data-k="cor" value="' + escAttr((c.marca && c.marca.cor) || "#e8a33d") + '" style="height:40px;padding:4px">' +
+    field("Logo do cliente (URL — opcional)", "logoUrl", (c.marca && c.marca.logoUrl) || "") +
+    '<p class="muted-note" style="font-size:11.5px;margin-top:4px;text-transform:none;letter-spacing:0;font-weight:600">Se informar uma logo, ela aparece no topo no lugar do nome.</p>' +
     actions("Salvar"),
     m => {
       m.querySelector("[data-x]").onclick = closeModal;
@@ -3115,7 +3197,7 @@ function editarCliente() {
         const get = k => m.querySelector('[data-k="' + k + '"]').value.trim();
         const empresa = get("empresa");
         if (!empresa) { toast("Informe a empresa."); return; }
-        const marca = Object.assign({}, c.marca || {}, { cor: get("cor"), titulo: empresa });
+        const marca = Object.assign({}, c.marca || {}, { cor: get("cor"), titulo: empresa, logoUrl: get("logoUrl") || "" });
         const upd = { empresa, nome: get("nome") || empresa, status: get("status"), marca };
         const { error } = await sb.from("clientes").update(upd).eq("id", c.id);
         if (error) { toast("Erro: " + error.message); return; }

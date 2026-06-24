@@ -37,13 +37,47 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);-webkit-f
 
 /* ===== Topbar ===== */
 .topbar{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:0;z-index:30}
-.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.brand{display:flex;align-items:center;gap:10px;flex:none}
 .mark{width:30px;height:30px;border-radius:9px;background:var(--surface-solid);border:1px solid var(--line);display:grid;place-items:center;color:var(--accent);font-size:16px}
 .title{font-weight:800;font-size:17px;letter-spacing:-.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand-thin{font-weight:300;opacity:.8;letter-spacing:0}
 .role-badge{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--accent);border:1px solid var(--line);border-radius:6px;padding:2px 7px}
+
+/* identidade do cliente no topo (item 5/7) */
+.client-brand{display:flex;align-items:center;min-width:0;padding-left:4px;border-left:1px solid var(--line);margin-left:2px}
+.client-brand img{height:24px;max-width:130px;object-fit:contain;border-radius:5px;display:block}
+.client-brand .cb-name{font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px}
+
+/* evolução do projeto no topo (item 7) */
+.proj-evo{display:flex;align-items:center}
+.evo{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:8px}
+.evo.evo-edit{cursor:pointer}
+.evo.evo-edit:hover{background:var(--surface-solid)}
+.evo-bar{width:80px;height:7px;border-radius:6px;background:var(--line-strong);overflow:hidden}
+.evo-bar i{display:block;height:100%;background:var(--accent);border-radius:6px;transition:width .4s}
+.evo-pct{font-size:12px;font-weight:800;color:var(--muted)}
+
+/* trocar de projeto (item 6) */
+.cr-switch{cursor:pointer}
+.cr-switch:hover{color:var(--accent)}
+.proj-switch{position:fixed;z-index:50;width:260px;max-height:60vh;overflow:auto;background:var(--surface);border:1px solid var(--line-strong);border-radius:12px;box-shadow:var(--shadow);padding:6px}
+.ps-head{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--faint);padding:8px 10px 4px}
+.ps-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer}
+.ps-item:hover{background:var(--surface-solid)}
+.ps-item.on{background:var(--surface-solid)}
+.ps-dot{width:8px;height:8px;border-radius:50%;flex:none}
+.ps-dot.ativo{background:var(--ok)} .ps-dot.pausado{background:var(--danger)}
+.ps-nome{flex:1;font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ps-st{font-size:10.5px;color:var(--faint);font-weight:700;text-transform:uppercase}
+
+/* topbar responsiva: esconde secundários em telas estreitas */
+@media (max-width:1080px){ .proj-evo{display:none !important} }
+@media (max-width:920px){ .role-badge{display:none !important} }
+@media (max-width:760px){ .client-brand{display:none !important} .brand .title{font-size:15px} }
 .spacer{flex:1}
 .tools{display:flex;align-items:center;gap:8px}
-.iconbtn{background:var(--surface-solid);border:1px solid var(--line);color:var(--text);border-radius:9px;padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+.iconbtn{background:var(--surface-solid);border:1px solid var(--line);color:var(--text);border-radius:9px;padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap}
+.tools{flex-wrap:nowrap}
 .iconbtn:hover{border-color:var(--accent)}
 .iconbtn.primary{background:var(--accent);color:#1a1300;border-color:transparent}
 .iconbtn.on{border-color:var(--accent);color:var(--accent)}
