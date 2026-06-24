@@ -907,29 +907,92 @@ async function loadFormularioWidget(widgetId) {
     return;
   }
   if (titleEl) titleEl.textContent = form.titulo || "Formulário";
-  const [{ data: pergs }, { data: minha }, { count }, vars] = await Promise.all([
-    sb.from("form_perguntas").select("id").eq("formulario_id", form.id),
-    sb.from("form_respostas").select("id").eq("formulario_id", form.id).eq("pessoa_id", me.id).maybeSingle(),
+  const [{ data: pergs }, { data: respExist }, { data: campos }, { count }, vars] = await Promise.all([
+    sb.from("form_perguntas").select("*").eq("formulario_id", form.id).order("ordem"),
+    sb.from("form_respostas").select("*").eq("formulario_id", form.id).eq("pessoa_id", me.id).maybeSingle(),
+    sb.from("form_campos").select("*").eq("projeto_id", curProjeto.id),
     sb.from("form_respostas").select("*", { count: "exact", head: true }).eq("formulario_id", form.id),
     getVarsFor(me.id)
   ]);
-  const nPerg = (pergs || []).length;
-  const desc = substVars(form.descricao || "", vars);
-  let html = desc ? '<div class="form-desc">' + esc(desc) + '</div>' : '';
-  html += '<div class="form-meta">' + nPerg + ' pergunta' + (nPerg === 1 ? "" : "s") + '</div>';
+  const perguntas = pergs || [];
+  let html = "";
   if (canEdit) {
     html += '<div class="form-actions">' +
       '<button class="btn sm primary" onclick="verRespostasFormulario(\'' + form.id + '\',\'' + widgetId + '\')">📊 Respostas (' + (count || 0) + ')</button>' +
-      '<button class="btn sm" onclick="editarFormulario(\'' + widgetId + '\')">✏ Editar perguntas</button>' +
-      '<button class="btn sm" onclick="responderFormulario(\'' + widgetId + '\')">👁 Prévia</button></div>';
-  } else if (nPerg) {
-    html += minha
-      ? '<div class="form-actions"><span class="qbadge respondido">✓ respondido</span><button class="btn sm" onclick="responderFormulario(\'' + widgetId + '\')">editar resposta</button></div>'
-      : '<div class="form-actions"><button class="btn primary" onclick="responderFormulario(\'' + widgetId + '\')">Responder</button></div>';
-  } else {
-    html += '<p class="muted-note">Sem perguntas ainda.</p>';
+      '<button class="btn sm" onclick="editarFormulario(\'' + widgetId + '\')">✏ Editar perguntas</button></div>';
   }
+  const desc = substVars(form.descricao || "", vars);
+  if (desc) html += '<div class="form-desc">' + esc(desc) + '</div>';
+  if (!perguntas.length) {
+    html += '<p class="muted-note">' + (canEdit ? "Sem perguntas — clique em Editar perguntas." : "Sem perguntas ainda.") + '</p>';
+    box.innerHTML = html; return;
+  }
+  // Perguntas direto no widget (inline)
+  html += buildFormInline(perguntas, campos || [], vars, respExist, form, widgetId);
   box.innerHTML = html;
+}
+
+/* HTML do input de uma pergunta (nomes de radio escopados por widget) */
+function formInputHtml(p, v, scope) {
+  if (p.tipo === "texto") return '<input data-pid="' + p.id + '" value="' + escAttr(v || "") + '" style="width:100%">';
+  if (p.tipo === "paragrafo") return '<textarea data-pid="' + p.id + '" style="width:100%;min-height:64px">' + esc(v || "") + '</textarea>';
+  if (p.tipo === "escala" || p.tipo === "nota") {
+    const max = p.tipo === "escala" ? 5 : 10, start = p.tipo === "escala" ? 1 : 0;
+    let s = ""; for (let n = start; n <= max; n++) s += '<label class="esc-opt"><input type="radio" name="' + scope + "-" + p.id + '" data-pid="' + p.id + '" value="' + n + '"' + (String(v) === String(n) ? " checked" : "") + '> ' + n + '</label>';
+    return '<div class="escala-row">' + s + '</div>';
+  }
+  const opts = p.opcoes || [], multi = p.tipo === "multipla";
+  const sel = Array.isArray(v) ? v : (v ? [v] : []);
+  return '<div class="opts-list">' + opts.map(o => '<label class="opt-row"><input type="' + (multi ? "checkbox" : "radio") + '" name="' + scope + "-" + p.id + '" data-pid="' + p.id + '" value="' + escAttr(o) + '"' + (sel.includes(o) ? " checked" : "") + '> ' + esc(o) + '</label>').join("") + '</div>';
+}
+
+/* Formulário inline completo dentro do widget */
+function buildFormInline(perguntas, campos, vars, respExist, form, widgetId) {
+  const saved = (respExist && respExist.respostas) || {};
+  const usadas = new Set();
+  extractVars(form.descricao).forEach(k => usadas.add(k));
+  perguntas.forEach(p => extractVars(p.texto).forEach(k => usadas.add(k)));
+  const camposUsados = campos.filter(c => usadas.has(c.chave));
+  const scope = "fi" + widgetId;
+  let h = '<div class="form-inline" id="fi-' + widgetId + '">';
+  if (camposUsados.length) {
+    h += '<div class="f-sobre"><div class="f-sobre-tit">Sobre você</div>' + camposUsados.map(c =>
+      '<div class="perg-resp"><div class="perg-label">' + esc(c.label) + '</div><input data-campo="' + escAttr(c.chave) + '" value="' + escAttr(vars[c.chave] || "") + '" style="width:100%"></div>').join("") + '</div>';
+  }
+  h += perguntas.map((p, i) => {
+    const txt = substVars(p.texto, vars);
+    return '<div class="perg-resp"><div class="perg-label">' + (i + 1) + '. ' + esc(txt) + (p.obrigatoria ? ' <span style="color:var(--danger)">*</span>' : '') + '</div>' + fMediaHtml(p) + formInputHtml(p, saved[p.id], scope) + '</div>';
+  }).join("");
+  h += '<div class="fi-foot"><button class="btn primary" onclick="enviarFormularioInline(\'' + widgetId + '\',\'' + form.id + '\')">' + (respExist ? "Atualizar respostas" : "Enviar respostas") + '</button>' +
+    (respExist ? '<span class="qbadge respondido">✓ já respondido</span>' : '') + '<span class="fi-msg"></span></div></div>';
+  return h;
+}
+
+async function enviarFormularioInline(widgetId, formId) {
+  const root = document.getElementById("fi-" + widgetId); if (!root) return;
+  const msg = root.querySelector(".fi-msg");
+  const setMsg = (t, cls) => { if (msg) { msg.textContent = t; msg.className = "fi-msg" + (cls ? " " + cls : ""); } };
+  const campoEls = root.querySelectorAll("[data-campo]");
+  if (campoEls.length) {
+    const ups = Array.from(campoEls).map(el => ({ projeto_id: curProjeto.id, pessoa_id: me.id, chave: el.dataset.campo, valor: el.value.trim() }));
+    await sb.from("pessoa_campos").upsert(ups, { onConflict: "projeto_id,pessoa_id,chave" });
+  }
+  const { data: pergs } = await sb.from("form_perguntas").select("*").eq("formulario_id", formId).order("ordem");
+  const obj = {};
+  for (const p of (pergs || [])) {
+    if (p.tipo === "texto" || p.tipo === "paragrafo") { const el = root.querySelector('[data-pid="' + p.id + '"]'); obj[p.id] = el ? el.value.trim() : ""; }
+    else if (p.tipo === "escala" || p.tipo === "nota" || p.tipo === "unica") { const el = root.querySelector('[data-pid="' + p.id + '"]:checked'); obj[p.id] = el ? el.value : ""; }
+    else { obj[p.id] = Array.from(root.querySelectorAll('[data-pid="' + p.id + '"]:checked')).map(e => e.value); }
+    if (p.obrigatoria) { const r = obj[p.id]; if (!r || (Array.isArray(r) && !r.length)) { setMsg('Responda: "' + p.texto + '"', "err"); return; } }
+  }
+  setMsg("Salvando…");
+  const { data: respExist } = await sb.from("form_respostas").select("id").eq("formulario_id", formId).eq("pessoa_id", me.id).maybeSingle();
+  let err;
+  if (respExist) ({ error: err } = await sb.from("form_respostas").update({ respostas: obj, updated_at: new Date().toISOString() }).eq("id", respExist.id));
+  else ({ error: err } = await sb.from("form_respostas").insert({ formulario_id: formId, projeto_id: curProjeto.id, pessoa_id: me.id, respostas: obj }));
+  if (err) { setMsg("Erro: " + err.message, "err"); return; }
+  setMsg("✓ Enviado!", "ok");
+  setTimeout(() => loadFormularioWidget(widgetId), 900);
 }
 
 async function ensureFormulario(widgetId) {
@@ -1540,10 +1603,9 @@ function renderProjeto(canvas, hint) {
   }
 
   const tabs = [];
-  if (canEdit) tabs.push(["admin", "🔒 Admin"]);
+  if (canEdit) tabs.push(["admin", "🔒 Admin"], ["gestao", "🗂 Gestão interna"]);
   tabs.push(["painel", "📋 Painel"]);
-  if (canEdit) tabs.push(["gestao", "🗂 Gestão interna"]);
-  else tabs.push(["materiais", "📎 Materiais"]);
+  if (!canEdit) tabs.push(["materiais", "📎 Materiais"]);
   tabs.push(["aprovacoes", "✅ Aprovações"], ["questionarios", "📝 Questionários"],
     ["reunioes", "📅 Reuniões"], ["mensagens", "💬 Mensagens"]);
   if (canEdit || perm("pode_adicionar_pessoas")) tabs.push(["participantes", "👥 Participantes"]);
@@ -1873,7 +1935,11 @@ function onComentarioPainelRealtime(payload) {
 }
 function onFormRealtime() {
   if (view !== "painel" || (projTab !== "painel" && projTab !== "admin")) return;
-  document.querySelectorAll('[id^="formw-"]').forEach(el => loadFormularioWidget(el.id.replace("formw-", "")));
+  const ae = document.activeElement;
+  document.querySelectorAll('[id^="formw-"]').forEach(el => {
+    if (ae && el.contains(ae)) return; // não recarrega enquanto a pessoa preenche
+    loadFormularioWidget(el.id.replace("formw-", ""));
+  });
 }
 
 /* ===== 13) Autenticação ===== */
