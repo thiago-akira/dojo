@@ -47,6 +47,11 @@ function space() {
 function visibleSpaces() {
   return (state.spaces || []).filter(s => isAdmin || s.visibility !== "interno");
 }
+/* Contexto do painel atual: "interno" (aba Admin, só você) ou "shared" (aba Painel, cliente vê) */
+function panelCtx() { return projTab === "admin" ? "interno" : "shared"; }
+function spacesFor(ctx) {
+  return (state.spaces || []).filter(s => ctx === "interno" ? s.visibility === "interno" : s.visibility !== "interno");
+}
 
 /* ===== 4) Registro de widgets ===== */
 const WIDGETS = {
@@ -720,15 +725,15 @@ function addMuralNota(widgetId) {
       m.querySelector("[data-x]").onclick = closeModal;
       m.querySelector("[data-ok]").onclick = async () => {
         const texto = m.querySelector('[data-k="texto"]').value.trim();
-        if (!texto) { alert("Escreva algo."); return; }
+        if (!texto) { toast("Escreva algo."); return; }
         const { error } = await sb.from("mural_notas").insert({ projeto_id: curProjeto.id, widget_id: widgetId, autor_id: me.id, texto, cor });
-        if (error) { alert("Erro: " + error.message); return; }
+        if (error) { toast("Erro: " + error.message); return; }
         closeModal(); loadMural(widgetId);
       };
     });
 }
 async function delMuralNota(id, widgetId) {
-  if (!confirm("Excluir esta ideia?")) return;
+  if (!(await confirmDialog("Excluir esta ideia?"))) return;
   await sb.from("mural_notas").delete().eq("id", id);
   loadMural(widgetId);
 }
@@ -756,7 +761,7 @@ async function votarEnquete(widgetId, opcao) {
   const { error } = await sb.from("enquete_votos").upsert(
     { projeto_id: curProjeto.id, widget_id: widgetId, pessoa_id: me.id, opcao },
     { onConflict: "widget_id,pessoa_id" });
-  if (error) { alert("Erro: " + error.message); return; }
+  if (error) { toast("Erro: " + error.message); return; }
   loadEnquete(widgetId);
 }
 
@@ -802,11 +807,11 @@ async function loadComentariosPainel(widgetId) {
 async function enviarComentarioPainel(widgetId) {
   const inp = document.getElementById("cmtInput"); const corpo = (inp.value || "").trim(); if (!corpo) return;
   const { error } = await sb.from("comentarios_painel").insert({ projeto_id: curProjeto.id, widget_id: widgetId, autor_id: me.id, corpo });
-  if (error) { alert("Erro: " + error.message); return; }
+  if (error) { toast("Erro: " + error.message); return; }
   inp.value = ""; loadComentariosPainel(widgetId);
 }
 async function delComentarioPainel(id, widgetId) {
-  if (!confirm("Excluir este comentário?")) return;
+  if (!(await confirmDialog("Excluir este comentário?"))) return;
   await sb.from("comentarios_painel").delete().eq("id", id);
   loadComentariosPainel(widgetId);
 }
@@ -1010,12 +1015,12 @@ function novoCliente() {
       m.querySelector("[data-ok]").onclick = async () => {
         const get = k => m.querySelector('[data-k="' + k + '"]').value.trim();
         const empresa = get("empresa"), nome = get("nome") || empresa, cor = get("cor");
-        if (!empresa) { alert("Informe a empresa."); return; }
+        if (!empresa) { toast("Informe a empresa."); return; }
         const { error } = await sb.from("clientes").insert({
           nome, empresa, criado_por: me.id,
           marca: { titulo: empresa, cor, logoUrl: "" }
         });
-        if (error) { alert("Erro: " + error.message); return; }
+        if (error) { toast("Erro: " + error.message); return; }
         closeModal(); route();
       };
     });
@@ -1024,7 +1029,7 @@ function novoCliente() {
 /* ===== 7) Detalhe do cliente: lista de projetos ===== */
 async function abrirCliente(id) {
   const { data, error } = await sb.from("clientes").select("*").eq("id", id).single();
-  if (error) { alert("Erro ao abrir cliente."); return; }
+  if (error) { toast("Erro ao abrir cliente."); return; }
   curCliente = data; view = "cliente"; route();
 }
 
@@ -1050,7 +1055,7 @@ async function renderClienteDetail(canvas, hint) {
 }
 
 function novoMeuProjeto(internoClienteId) {
-  if (!internoClienteId) { alert("Erro: cliente interno não encontrado."); return; }
+  if (!internoClienteId) { toast("Erro: cliente interno não encontrado."); return; }
   openModal('<h3>Novo projeto</h3>' + field("Nome", "nome", "") +
     '<label>Descrição</label><textarea data-k="descricao"></textarea>' +
     '<div class="modal-actions"><span class="grow"></span><button class="btn" data-x>Cancelar</button><button class="btn primary" data-ok>Criar</button></div>',
@@ -1059,9 +1064,9 @@ function novoMeuProjeto(internoClienteId) {
       m.querySelector("[data-ok]").onclick = async () => {
         const nome = m.querySelector('[data-k="nome"]').value.trim();
         const descricao = m.querySelector('[data-k="descricao"]').value.trim();
-        if (!nome) { alert("Informe o nome."); return; }
+        if (!nome) { toast("Informe o nome."); return; }
         const { error } = await sb.from("projetos").insert({ cliente_id: internoClienteId, nome, descricao });
-        if (error) { alert("Erro: " + error.message); return; }
+        if (error) { toast("Erro: " + error.message); return; }
         closeModal(); route();
       };
     });
@@ -1069,7 +1074,7 @@ function novoMeuProjeto(internoClienteId) {
 
 function editarClienteInterno() {
   sb.from("clientes").select("*").eq("is_interno", true).single().then(({ data }) => {
-    if (!data) { alert("Cliente interno não encontrado."); return; }
+    if (!data) { toast("Cliente interno não encontrado."); return; }
     curCliente = data;
     openModal('<h3>Renomear empresa</h3>' +
       field("Nome da empresa", "empresa", data.empresa || "") +
@@ -1079,11 +1084,11 @@ function editarClienteInterno() {
         m.querySelector("[data-x]").onclick = closeModal;
         m.querySelector("[data-ok]").onclick = async () => {
           const empresa = m.querySelector('[data-k="empresa"]').value.trim();
-          if (!empresa) { alert("Informe o nome."); return; }
+          if (!empresa) { toast("Informe o nome."); return; }
           const cor = m.querySelector('[data-k="cor"]').value;
           const marca = Object.assign({}, data.marca || {}, { cor, titulo: empresa });
           const { error } = await sb.from("clientes").update({ empresa, nome: empresa, marca }).eq("id", data.id);
-          if (error) { alert("Erro: " + error.message); return; }
+          if (error) { toast("Erro: " + error.message); return; }
           closeModal(); route();
         };
       });
@@ -1099,9 +1104,9 @@ function novoProjeto() {
       m.querySelector("[data-ok]").onclick = async () => {
         const nome = m.querySelector('[data-k="nome"]').value.trim();
         const descricao = m.querySelector('[data-k="descricao"]').value.trim();
-        if (!nome) { alert("Informe o nome."); return; }
+        if (!nome) { toast("Informe o nome."); return; }
         const { error } = await sb.from("projetos").insert({ cliente_id: curCliente.id, nome, descricao });
-        if (error) { alert("Erro: " + error.message); return; }
+        if (error) { toast("Erro: " + error.message); return; }
         closeModal(); route();
       };
     });
@@ -1110,7 +1115,7 @@ function novoProjeto() {
 /* ===== 8) Abrir um projeto → carregar painel ===== */
 async function abrirProjeto(id) {
   const { data, error } = await sb.from("projetos").select("*, clientes(*)").eq("id", id).single();
-  if (error) { alert("Erro ao abrir projeto."); return; }
+  if (error) { toast("Erro ao abrir projeto."); return; }
   curProjeto = data;
   curCliente = data.clientes || curCliente;
   brand = Object.assign({ titulo: "Dojo", cor: "#e8a33d", logoUrl: "" }, (curCliente && curCliente.marca) || {});
@@ -1161,6 +1166,7 @@ function renderProjeto(canvas, hint) {
   }
 
   const tabs = [["painel", "📋 Painel"]];
+  if (canEdit) tabs.push(["admin", "🔒 Admin"]);
   if (canEdit) tabs.push(["gestao", "🗂 Gestão interna"]);
   else tabs.push(["materiais", "📎 Materiais"]);
   tabs.push(["aprovacoes", "✅ Aprovações"], ["questionarios", "📝 Questionários"],
@@ -1177,30 +1183,47 @@ function renderProjeto(canvas, hint) {
   if (projTab === "reunioes") return renderReunioes(canvas, hint);
   if (projTab === "mensagens") return renderMensagens(canvas, hint);
   if (projTab === "participantes" && canEdit) return renderParticipantes(canvas, hint);
+  if (projTab === "admin" && !canEdit) { projTab = "painel"; } // cliente nunca acessa Admin
   return renderPainel(canvas, hint);
 }
-function setProjTab(t) { projTab = t; route(); }
+function setProjTab(t) {
+  projTab = t;
+  if (t === "painel" || t === "admin") {
+    const list = spacesFor(t === "admin" ? "interno" : "shared");
+    curSpaceId = list.length ? list[0].id : null;
+  }
+  route();
+}
 
 /* ===== 9b) Render do painel (grid de widgets) ===== */
 function renderPainel(canvas, hint) {
-  const vis = visibleSpaces();
-  const cur = space();
-  const spTabs = $("#spaceTabs");
+  const ctx = panelCtx();
+  let list = spacesFor(ctx);
+  /* Garante ao menos uma aba no contexto atual */
+  if (!list.length && canEdit) {
+    const ns = ctx === "interno"
+      ? { id: uid(), name: "Admin", visibility: "interno", tiles: [] }
+      : { id: uid(), name: "Painel", visibility: "compartilhado", tiles: [] };
+    state.spaces.push(ns); save(); list = [ns];
+  }
+  let cur = list.find(s => s.id === curSpaceId) || list[0] || null;
+  curSpaceId = cur ? cur.id : null;
 
-  /* Mostra abas se há mais de uma visível OU se admin pode gerenciar */
-  if (vis.length > 1 || canEdit) {
+  const spTabs = $("#spaceTabs");
+  /* Mostra a barra de abas se há mais de uma no contexto OU se admin pode gerenciar */
+  if (list.length > 1 || canEdit) {
     spTabs.style.display = "block";
     const tabsHtml = '<div class="space-tabs">' +
-      vis.map(s =>
-        '<button class="space-tab' + (s.id === cur.id ? " on" : "") + '" onclick="setSpace(\'' + s.id + '\')">' +
-        (s.visibility === "interno" ? "🔒 " : "") + esc(s.name) + '</button>'
+      list.map(s =>
+        '<button class="space-tab' + (cur && s.id === cur.id ? " on" : "") + '" onclick="setSpace(\'' + s.id + '\')">' + esc(s.name) + '</button>'
       ).join("") +
-      (canEdit ? '<button class="space-tab sp-add" title="Nova aba" onclick="addSpace()">＋</button>' : '') +
+      (canEdit ? '<button class="space-tab sp-add" title="Adicionar aba" onclick="addSpace()">＋ Aba</button>' : '') +
       '</div>';
     const ctrlHtml = canEdit && cur
-      ? '<div class="space-ctrl"><span class="space-ctrl-label">' + esc(cur.name) + '</span>' +
+      ? '<div class="space-ctrl"><span class="space-ctrl-label">' +
+        (ctx === "interno" ? "🔒 só você · " : "👁 cliente vê · ") + esc(cur.name) + '</span>' +
         '<button class="lnk" onclick="editarSpace(\'' + cur.id + '\')">✏ renomear</button>' +
-        (state.spaces.length > 1 ? '<button class="lnk del" onclick="deletarSpace(\'' + cur.id + '\')">excluir aba</button>' : '') +
+        (list.length > 1 ? '<button class="lnk del" onclick="deletarSpace(\'' + cur.id + '\')">excluir aba</button>' : '') +
         '</div>'
       : '';
     spTabs.innerHTML = tabsHtml + ctrlHtml;
@@ -1249,7 +1272,7 @@ function addWidget(type) {
   space().tiles.push(t); save(); route();
 }
 function bottomRow() { return space().tiles.reduce((m, t) => Math.max(m, t.y + t.h), 0); }
-function removeTile(id) { if (!confirm("Excluir este widget?")) return; space().tiles = space().tiles.filter(t => t.id !== id); save(); route(); }
+async function removeTile(id) { if (!(await confirmDialog("Excluir este widget?"))) return; space().tiles = space().tiles.filter(t => t.id !== id); save(); route(); }
 
 function cellSize() { const c = $("#canvas"); const gap = 14; const w = (c.clientWidth - gap * (COLS - 1)) / COLS; return { w, h: 96, gap }; }
 function enableDrag(tile, card, t) {
@@ -1301,15 +1324,17 @@ function _spaceVisSelect(cur) {
 }
 
 function addSpace() {
-  openModal('<h3>Nova aba de painel</h3>' + field("Nome", "nome", "") + _spaceVisSelect("interno") + actions("Criar"),
+  const ctx = panelCtx();
+  openModal('<h3>Nova aba</h3>' + field("Nome", "nome", "") +
+    '<p class="muted-note" style="font-size:12px;margin-top:8px">' +
+    (ctx === "interno" ? "🔒 Aba privada — só você vê." : "👁 Aba compartilhada — o cliente vê.") + '</p>' + actions("Criar"),
     m => {
       m.querySelector("[data-x]").onclick = closeModal;
       m.querySelector("[data-ok]").onclick = () => {
         const nome = m.querySelector('[data-k="nome"]').value.trim();
-        if (!nome) { alert("Informe o nome."); return; }
-        const ns = { id: uid(), name: nome, visibility: m.querySelector('[data-k="vis"]').value, tiles: [] };
-        state.spaces.push(ns);
-        curSpaceId = ns.id;
+        if (!nome) { toast("Informe o nome."); return; }
+        const ns = { id: uid(), name: nome, visibility: ctx === "interno" ? "interno" : "compartilhado", tiles: [] };
+        state.spaces.push(ns); curSpaceId = ns.id;
         save(); closeModal(); route();
       };
     });
@@ -1317,29 +1342,63 @@ function addSpace() {
 
 function editarSpace(id) {
   const s = (state.spaces || []).find(x => x.id === id); if (!s) return;
-  openModal('<h3>Editar aba</h3>' + field("Nome", "nome", s.name) + _spaceVisSelect(s.visibility || "compartilhado") + actions("Salvar"),
+  openModal('<h3>Renomear aba</h3>' + field("Nome", "nome", s.name) + actions("Salvar"),
     m => {
       m.querySelector("[data-x]").onclick = closeModal;
       m.querySelector("[data-ok]").onclick = () => {
         const nome = m.querySelector('[data-k="nome"]').value.trim();
-        if (!nome) { alert("Informe o nome."); return; }
-        s.name = nome; s.visibility = m.querySelector('[data-k="vis"]').value;
-        save(); closeModal(); route();
+        if (!nome) { toast("Informe o nome."); return; }
+        s.name = nome; save(); closeModal(); route();
       };
     });
 }
 
-function deletarSpace(id) {
-  if (!confirm("Excluir esta aba e todos os widgets nela?")) return;
-  state.spaces = state.spaces.filter(s => s.id !== id);
-  const vis = visibleSpaces();
-  curSpaceId = vis.length ? vis[0].id : (state.spaces[0] && state.spaces[0].id) || null;
+async function deletarSpace(id) {
+  if (!(await confirmDialog("Excluir esta aba e todos os widgets nela?"))) return;
+  const s = (state.spaces || []).find(x => x.id === id);
+  const ctx = s && s.visibility === "interno" ? "interno" : "shared";
+  state.spaces = state.spaces.filter(x => x.id !== id);
+  const list = spacesFor(ctx);
+  curSpaceId = list.length ? list[0].id : null;
   save(); route();
 }
 
 /* ===== 11) Modal helpers ===== */
 function openModal(html, after) { const m = $("#modal"), s = $("#scrim"); m.innerHTML = html; m.style.display = "block"; s.style.display = "block"; s.onclick = closeModal; if (after) after(m); }
 function closeModal() { $("#modal").style.display = "none"; $("#scrim").style.display = "none"; $("#modal").innerHTML = ""; }
+
+/* Diálogo de confirmação tematizado (substitui confirm()). Camada própria — empilha sobre modais. */
+function confirmDialog(message, opts) {
+  opts = opts || {};
+  return new Promise(resolve => {
+    const scrim = document.createElement("div"); scrim.className = "dlg-scrim";
+    const box = document.createElement("div"); box.className = "dlg-box";
+    box.innerHTML = '<div class="dlg-title">' + esc(opts.title || "Confirmar") + '</div>' +
+      '<div class="dlg-msg">' + esc(message) + '</div>' +
+      '<div class="dlg-actions"><button class="btn" data-x>' + esc(opts.cancel || "Cancelar") + '</button>' +
+      '<button class="btn ' + (opts.danger === false ? "primary" : "danger") + '" data-ok>' + esc(opts.ok || "Confirmar") + '</button></div>';
+    document.body.appendChild(scrim); document.body.appendChild(box);
+    const done = v => { scrim.remove(); box.remove(); document.removeEventListener("keydown", onKey); resolve(v); };
+    const onKey = e => { if (e.key === "Escape") done(false); if (e.key === "Enter") done(true); };
+    document.addEventListener("keydown", onKey);
+    scrim.onclick = () => done(false);
+    box.querySelector("[data-x]").onclick = () => done(false);
+    box.querySelector("[data-ok]").onclick = () => done(true);
+    box.querySelector("[data-ok]").focus();
+  });
+}
+/* Aviso/erro tematizado não-bloqueante (substitui toast()). */
+function toast(message, kind) {
+  if (!kind && /^erro/i.test(String(message))) kind = "err";
+  let host = document.getElementById("toastHost");
+  if (!host) { host = document.createElement("div"); host.id = "toastHost"; document.body.appendChild(host); }
+  const el = document.createElement("div");
+  el.className = "toast" + (kind ? " " + kind : "");
+  el.textContent = message;
+  host.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("show"));
+  setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.remove(), 300); }, 3400);
+}
 
 /* ===== 12) Marca / topo / navegação ===== */
 function applyBrand() {
@@ -1351,7 +1410,7 @@ function applyBrand() {
   $("#roleBadge").textContent = me ? (isAdmin ? "ADMIN" : "CLIENTE") : "";
 }
 function paintTools() {
-  const inPainel = view === "painel" && projTab === "painel";
+  const inPainel = view === "painel" && (projTab === "painel" || projTab === "admin");
   $("#adminBtn").style.display = isAdmin ? "" : "none";
   $("#adminBtn").classList.toggle("on", view === "console" && consoleTab === "clientes");
   $("#meusBtn").style.display = isAdmin ? "" : "none";
@@ -1572,30 +1631,30 @@ function novoDocumento() {
         const url = m.querySelector('[data-k="url"]').value.trim();
         const vis = m.querySelector('[data-k="vis"]').value;
         const file = m.querySelector("#docfile").files[0];
-        if (!nome && !file && !url) { alert("Informe um nome e um arquivo ou link."); return; }
+        if (!nome && !file && !url) { toast("Informe um nome e um arquivo ou link."); return; }
         let storage_path = null, tipo = null, tamanho = null;
         if (file) {
           storage_path = curProjeto.id + "/" + uid() + "-" + file.name.replace(/[^\w.\-]/g, "_");
           const up = await sb.storage.from("documentos").upload(storage_path, file);
-          if (up.error) { alert("Erro no upload: " + up.error.message); return; }
+          if (up.error) { toast("Erro no upload: " + up.error.message); return; }
           tipo = file.type; tamanho = file.size;
         } else if (url) { tipo = "link"; }
         const { error } = await sb.from("documentos").insert({
           projeto_id: curProjeto.id, nome: nome || (file && file.name) || url,
           storage_path, url: url || null, tipo, tamanho, visibilidade: vis, criado_por: me.id
         });
-        if (error) { alert("Erro: " + error.message); return; }
+        if (error) { toast("Erro: " + error.message); return; }
         closeModal(); route();
       };
     });
 }
 async function baixarDoc(path) {
   const { data, error } = await sb.storage.from("documentos").createSignedUrl(path, 3600);
-  if (error) { alert("Erro: " + error.message); return; }
+  if (error) { toast("Erro: " + error.message); return; }
   window.open(data.signedUrl, "_blank");
 }
 async function delDoc(id, path) {
-  if (!confirm("Excluir este documento?")) return;
+  if (!(await confirmDialog("Excluir este documento?"))) return;
   if (path) await sb.storage.from("documentos").remove([path]);
   await sb.from("documentos").delete().eq("id", id); route();
 }
@@ -1626,12 +1685,12 @@ function abrirAnotacao(id, a) {
         let error;
         if (id) ({ error } = await sb.from("anotacoes").update(rec).eq("id", id));
         else { rec.criado_por = me.id; ({ error } = await sb.from("anotacoes").insert(rec)); }
-        if (error) { alert("Erro: " + error.message); return; }
+        if (error) { toast("Erro: " + error.message); return; }
         closeModal(); route();
       };
     });
 }
-async function delAnotacao(id) { if (!confirm("Excluir esta anotação?")) return; await sb.from("anotacoes").delete().eq("id", id); route(); }
+async function delAnotacao(id) { if (!(await confirmDialog("Excluir esta anotação?"))) return; await sb.from("anotacoes").delete().eq("id", id); route(); }
 
 /* — Checklists — */
 function novoChecklist() {
@@ -1640,18 +1699,18 @@ function novoChecklist() {
       m.querySelector("[data-x]").onclick = closeModal;
       m.querySelector("[data-ok]").onclick = async () => {
         const titulo = m.querySelector('[data-k="titulo"]').value.trim();
-        if (!titulo) { alert("Informe o título."); return; }
+        if (!titulo) { toast("Informe o título."); return; }
         const { error } = await sb.from("checklists").insert({ projeto_id: curProjeto.id, titulo, visibilidade: m.querySelector('[data-k="vis"]').value, criado_por: me.id });
-        if (error) { alert("Erro: " + error.message); return; }
+        if (error) { toast("Erro: " + error.message); return; }
         closeModal(); route();
       };
     });
 }
-async function delChecklist(id) { if (!confirm("Excluir o checklist e seus itens?")) return; await sb.from("checklists").delete().eq("id", id); route(); }
+async function delChecklist(id) { if (!(await confirmDialog("Excluir o checklist e seus itens?"))) return; await sb.from("checklists").delete().eq("id", id); route(); }
 async function addItem(clId) {
   const el = document.getElementById("ni-" + clId); const texto = (el.value || "").trim(); if (!texto) return;
   const { error } = await sb.from("checklist_itens").insert({ checklist_id: clId, texto });
-  if (error) { alert("Erro: " + error.message); return; }
+  if (error) { toast("Erro: " + error.message); return; }
   route();
 }
 async function toggleItem(id, cur) {
@@ -1722,7 +1781,7 @@ async function enviarMsg() {
   if (file) {
     const path = curProjeto.id + "/" + uid() + "-" + file.name.replace(/[^\w.\-]/g, "_");
     const { error: upErr } = await sb.storage.from("chat").upload(path, file);
-    if (upErr) { alert("Erro no upload: " + upErr.message); return; }
+    if (upErr) { toast("Erro no upload: " + upErr.message); return; }
     anexo_storage_path = path; anexo_nome = file.name;
   }
   const to = document.getElementById("msgTo").value || null;
@@ -1730,13 +1789,13 @@ async function enviarMsg() {
     projeto_id: curProjeto.id, autor_id: me.id, destinatario_id: to,
     corpo: corpo || "", anexo_storage_path, anexo_nome
   });
-  if (error) { alert("Erro: " + error.message); return; }
+  if (error) { toast("Erro: " + error.message); return; }
   route();
 }
 
 async function baixarChatAnexo(path) {
   const { data, error } = await sb.storage.from("chat").createSignedUrl(path, 3600);
-  if (error) { alert("Erro: " + error.message); return; }
+  if (error) { toast("Erro: " + error.message); return; }
   window.open(data.signedUrl, "_blank");
 }
 
@@ -1779,9 +1838,9 @@ function novaAprovacao() {
       m.querySelector("[data-x]").onclick = closeModal;
       m.querySelector("[data-ok]").onclick = async () => {
         const titulo = m.querySelector('[data-k="titulo"]').value.trim();
-        if (!titulo) { alert("Informe o título."); return; }
+        if (!titulo) { toast("Informe o título."); return; }
         const { error } = await sb.from("aprovacoes").insert({ projeto_id: curProjeto.id, titulo, descricao: m.querySelector('[data-k="descricao"]').value.trim(), criado_por: me.id });
-        if (error) { alert("Erro: " + error.message); return; }
+        if (error) { toast("Erro: " + error.message); return; }
         closeModal(); route();
       };
     });
@@ -1793,16 +1852,16 @@ function decidir(apId, status) {
       m.querySelector("[data-x]").onclick = closeModal;
       m.querySelector("[data-ok]").onclick = async () => {
         const { error } = await sb.from("aprovacoes").update({ status, parecer: m.querySelector('[data-k="parecer"]').value.trim() || null, decidido_por: me.id, decidido_em: new Date().toISOString() }).eq("id", apId);
-        if (error) { alert("Erro: " + error.message); return; }
+        if (error) { toast("Erro: " + error.message); return; }
         closeModal(); route();
       };
     });
 }
-async function delAprovacao(id) { if (!confirm("Excluir esta aprovação?")) return; await sb.from("aprovacoes").delete().eq("id", id); route(); }
+async function delAprovacao(id) { if (!(await confirmDialog("Excluir esta aprovação?"))) return; await sb.from("aprovacoes").delete().eq("id", id); route(); }
 async function addComentario(apId) {
   const el = document.getElementById("co-" + apId); const corpo = (el.value || "").trim(); if (!corpo) return;
   const { error } = await sb.from("comentarios").insert({ aprovacao_id: apId, autor_id: me.id, corpo });
-  if (error) { alert("Erro: " + error.message); return; }
+  if (error) { toast("Erro: " + error.message); return; }
   route();
 }
 
@@ -1900,13 +1959,13 @@ function novoQuestionario() {
       m.querySelector("[data-x]").onclick = closeModal;
       m.querySelector("[data-ok]").onclick = async () => {
         const titulo = m.querySelector('[data-k="titulo"]').value.trim();
-        if (!titulo) { alert("Informe o título."); return; }
+        if (!titulo) { toast("Informe o título."); return; }
         const { data, error } = await sb.from("questionarios").insert({
           projeto_id: curProjeto.id, titulo,
           descricao: m.querySelector('[data-k="descricao"]').value.trim() || null,
           criado_por: me.id
         }).select().single();
-        if (error) { alert("Erro: " + error.message); return; }
+        if (error) { toast("Erro: " + error.message); return; }
         closeModal();
         editarQuestionario(data.id);
       };
@@ -1975,7 +2034,7 @@ async function addPergunta(qid) {
 }
 
 async function delPergunta(pid, qid) {
-  if (!confirm("Excluir esta pergunta?")) return;
+  if (!(await confirmDialog("Excluir esta pergunta?"))) return;
   await sb.from("perguntas").delete().eq("id", pid);
   closeModal(); editarQuestionario(qid);
 }
@@ -1986,7 +2045,7 @@ async function toggleQStatus(qid, cur) {
 }
 
 async function delQuestionario(qid) {
-  if (!confirm("Excluir este questionário e todas as respostas?")) return;
+  if (!(await confirmDialog("Excluir este questionário e todas as respostas?"))) return;
   await sb.from("questionarios").delete().eq("id", qid);
   route();
 }
@@ -2129,8 +2188,8 @@ function novaReuniao() {
         const get = k => (m.querySelector('[data-k="' + k + '"]') || {}).value || "";
         const titulo = get("titulo").trim();
         const data_hora = get("data_hora");
-        if (!titulo) { alert("Informe o título."); return; }
-        if (!data_hora) { alert("Informe a data e hora."); return; }
+        if (!titulo) { toast("Informe o título."); return; }
+        if (!data_hora) { toast("Informe a data e hora."); return; }
         const { error } = await sb.from("reunioes").insert({
           projeto_id: curProjeto.id, titulo, data_hora: new Date(data_hora).toISOString(),
           duracao_min: parseInt(get("duracao_min")) || 60,
@@ -2138,7 +2197,7 @@ function novaReuniao() {
           descricao: get("descricao").trim() || null,
           criado_por: me.id
         });
-        if (error) { alert("Erro: " + error.message); return; }
+        if (error) { toast("Erro: " + error.message); return; }
         closeModal(); route();
       };
     });
@@ -2155,7 +2214,7 @@ async function editarReuniao(rid) {
         const get = k => (m.querySelector('[data-k="' + k + '"]') || {}).value || "";
         const titulo = get("titulo").trim();
         const data_hora = get("data_hora");
-        if (!titulo || !data_hora) { alert("Título e data são obrigatórios."); return; }
+        if (!titulo || !data_hora) { toast("Título e data são obrigatórios."); return; }
         const { error } = await sb.from("reunioes").update({
           titulo, data_hora: new Date(data_hora).toISOString(),
           duracao_min: parseInt(get("duracao_min")) || 60,
@@ -2163,7 +2222,7 @@ async function editarReuniao(rid) {
           descricao: get("descricao").trim() || null,
           notas: get("notas").trim() || null
         }).eq("id", rid);
-        if (error) { alert("Erro: " + error.message); return; }
+        if (error) { toast("Erro: " + error.message); return; }
         closeModal(); route();
       };
     });
@@ -2184,7 +2243,7 @@ async function realizarReuniao(rid) {
 }
 
 async function delReuniao(rid) {
-  if (!confirm("Excluir esta reunião?")) return;
+  if (!(await confirmDialog("Excluir esta reunião?"))) return;
   await sb.from("reunioes").delete().eq("id", rid);
   route();
 }
@@ -2273,12 +2332,12 @@ async function editarMembro(id) {
       mo.querySelector("[data-ok]").onclick = async () => {
         const rec = Object.assign({ papel: mo.querySelector('[data-k="papel"]').value }, lerPerms(mo));
         const { error } = await sb.from("membros").update(rec).eq("id", id);
-        if (error) { alert("Erro: " + error.message); return; }
+        if (error) { toast("Erro: " + error.message); return; }
         closeModal(); route();
       };
     });
 }
-async function removerMembro(id) { if (!confirm("Remover este participante do projeto?")) return; await sb.from("membros").delete().eq("id", id); route(); }
+async function removerMembro(id) { if (!(await confirmDialog("Remover este participante do projeto?"))) return; await sb.from("membros").delete().eq("id", id); route(); }
 
 /* — Editar / Excluir cliente — */
 function editarCliente() {
@@ -2296,11 +2355,11 @@ function editarCliente() {
       m.querySelector("[data-ok]").onclick = async () => {
         const get = k => m.querySelector('[data-k="' + k + '"]').value.trim();
         const empresa = get("empresa");
-        if (!empresa) { alert("Informe a empresa."); return; }
+        if (!empresa) { toast("Informe a empresa."); return; }
         const marca = Object.assign({}, c.marca || {}, { cor: get("cor"), titulo: empresa });
         const upd = { empresa, nome: get("nome") || empresa, status: get("status"), marca };
         const { error } = await sb.from("clientes").update(upd).eq("id", c.id);
-        if (error) { alert("Erro: " + error.message); return; }
+        if (error) { toast("Erro: " + error.message); return; }
         curCliente = Object.assign({}, c, upd);
         closeModal(); route();
       };
@@ -2308,11 +2367,11 @@ function editarCliente() {
 }
 
 async function excluirCliente() {
-  if (curCliente.is_interno) { alert("Não é possível excluir Meus Projetos."); return; }
+  if (curCliente.is_interno) { toast("Não é possível excluir Meus Projetos."); return; }
   const nome = curCliente.empresa || curCliente.nome;
-  if (!confirm('Excluir "' + nome + '" e TODOS os seus projetos, painéis, documentos e mensagens?\n\nEsta ação não pode ser desfeita.')) return;
+  if (!(await confirmDialog('Excluir "' + nome + '" e TODOS os seus projetos, painéis, documentos e mensagens? Esta ação não pode ser desfeita.', { ok: "Excluir tudo" }))) return;
   const { error } = await sb.from("clientes").delete().eq("id", curCliente.id);
-  if (error) { alert("Erro: " + error.message); return; }
+  if (error) { toast("Erro: " + error.message); return; }
   irConsole();
 }
 

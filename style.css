@@ -306,6 +306,22 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 .cmt-add{display:flex;gap:8px;align-items:flex-end}
 .cmt-add textarea{flex:1;min-height:44px;max-height:140px;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px 11px;color:var(--text);font-family:inherit;font-size:14px;resize:vertical}
 
+/* ===== Diálogo de confirmação tematizado (substitui confirm) ===== */
+.dlg-scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:60;animation:dlgFade .15s ease}
+.dlg-box{position:fixed;z-index:61;left:50%;top:50%;transform:translate(-50%,-50%);width:min(400px,92vw);
+  background:var(--surface);border:1px solid var(--line-strong);border-radius:14px;box-shadow:var(--shadow);padding:20px 22px;animation:dlgPop .15s ease}
+.dlg-title{font-size:16px;font-weight:800;margin-bottom:8px}
+.dlg-msg{font-size:14px;line-height:1.5;color:var(--muted);margin-bottom:18px;white-space:pre-wrap}
+.dlg-actions{display:flex;gap:8px;justify-content:flex-end}
+@keyframes dlgFade{from{opacity:0}to{opacity:1}}
+@keyframes dlgPop{from{opacity:0;transform:translate(-50%,-48%) scale(.97)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+
+/* ===== Toast (substitui alert) ===== */
+#toastHost{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:70;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.toast{background:var(--surface-solid);border:1px solid var(--line-strong);color:var(--text);border-radius:10px;padding:11px 16px;font-size:13.5px;font-weight:600;box-shadow:var(--shadow);opacity:0;transform:translateY(10px);transition:opacity .25s,transform .25s;max-width:90vw;text-align:center}
+.toast.show{opacity:1;transform:translateY(0)}
+.toast.err{border-color:var(--danger);color:var(--danger)}
+
 /* ===== Modal genérico ===== */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40}
 .panel-modal{position:fixed;z-index:41;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,94vw);max-height:88vh;overflow:auto;
@@ -387,7 +403,7 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 .space-tab{background:var(--surface-solid);border:1px solid var(--line);color:var(--muted);border-radius:9px;padding:6px 13px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
 .space-tab:hover{border-color:var(--accent);color:var(--text)}
 .space-tab.on{border-color:var(--accent);color:var(--accent);background:var(--surface)}
-.space-tab.sp-add{background:transparent;border-style:dashed;color:var(--faint);font-size:16px;padding:4px 11px}
+.space-tab.sp-add{background:transparent;border-style:dashed;color:var(--faint);font-weight:700}
 .space-tab.sp-add:hover{color:var(--accent);border-color:var(--accent)}
 .space-ctrl{display:flex;align-items:center;gap:10px;margin-top:7px;padding-top:7px;border-top:1px solid var(--line)}
 .space-ctrl-label{font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;flex:1}
