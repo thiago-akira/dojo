@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<base href="/">
 <title>Dojo · Painéis de Clientes</title>
 <link rel="icon" href="data:image/svg+xml,<svg viewBox='0 0 32 32' xmlns='http://www.w3.org/2000/svg'><rect width='32' height='32' rx='7' fill='%230f0f1a'/><circle cx='16' cy='16' r='9' fill='none' stroke='%23e8a33d' stroke-width='2.5'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -11,7 +12,7 @@
 <!-- Supabase JS (UMD) — expõe o global `supabase` -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<link rel="stylesheet" href="style.css?v=51">
+<link rel="stylesheet" href="style.css?v=52">
 </head>
 <body>
 
@@ -55,7 +56,7 @@
 <!-- DEBUG TEMPORÁRIO: overlay de auth — remover após diagnóstico -->
 <div id="_authDbg" style="position:fixed;top:0;left:0;right:0;z-index:99999;background:#000d;color:#0f0;font:12px/1.5 monospace;padding:8px 12px;pointer-events:none">⏳ carregando scripts…</div>
 
-<script src="config.js?v=51"></script>
+<script src="config.js?v=52"></script>
 <script>
 /* Debug inline — roda ANTES de app.js, captura erros de carregamento */
 window._authLog = function(msg) {
@@ -69,6 +70,6 @@ window.addEventListener('error', function(e) {
   window._authLog('JS ERROR: ' + (e.message||'') + ' ' + (e.filename||'').split('/').pop() + ':' + (e.lineno||''));
 });
 </script>
-<script src="app.js?v=51"></script>
+<script src="app.js?v=52"></script>
 </body>
 </html>
