@@ -695,7 +695,7 @@ const WIDGETS = {
               ' ondragover="riscoDragOver(event)" ondrop="riscoDrop(event,\'' + t.id + '\',' + i + ')">' +
               '<span class="risk-grip" title="Arrastar para reordenar">⠿</span>' +
               '<span class="risk-sev risk-sev-btn" onclick="riscoNextSev(\'' + t.id + '\',' + i + ')" title="Clique para alterar nível">' + (SEV[sev] || "Médio") + '</span>' +
-              '<input class="risk-edit-inp" value="' + escAttr(it.text || "") + '" oninput="onRiscoText(\'' + t.id + '\',' + i + ',this)">' +
+              '<textarea class="risk-edit-inp" rows="1" oninput="this.style.height=\'auto\';this.style.height=this.scrollHeight+\'px\';onRiscoText(\'' + t.id + '\',' + i + ',this)">' + esc(it.text || "") + '</textarea>' +
               '<div class="risk-order-btns">' +
               (i > 0 ? '<button class="lnk risk-mv" onclick="riscoMover(\'' + t.id + '\',' + i + ',-1)" title="Subir">↑</button>' : '<span class="risk-mv-ph"></span>') +
               (i < items.length - 1 ? '<button class="lnk risk-mv" onclick="riscoMover(\'' + t.id + '\',' + i + ',1)" title="Descer">↓</button>' : '<span class="risk-mv-ph"></span>') +
@@ -720,6 +720,7 @@ const WIDGETS = {
       c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Riscos & bloqueios") + '</span>' +
         (canEdit ? '<button class="btn sm risk-add-btn" id="risk-btn-' + t.id + '" onclick="toggleRiscoForm(\'' + t.id + '\')">＋ Risco</button>' : '') +
         '</div><div class="w-body"><div class="risks">' + rows + '</div>' + addForm + '</div>';
+      if (canEdit) c.querySelectorAll('.risk-edit-inp').forEach(ta => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; });
     },
     form(p) { return field("Título", "title", p.title); }
   },

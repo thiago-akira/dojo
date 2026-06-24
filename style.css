@@ -411,7 +411,7 @@ body.edit .para-edit{background:var(--surface-solid)}
 .risk-row.alto .risk-sev{color:var(--danger)}
 .risk-row.medio .risk-sev{color:#e8b53d}
 .risk-row.baixo .risk-sev{color:var(--ok)}
-.risk-txt{font-size:13px;font-weight:600;line-height:1.35;flex:1}
+.risk-txt{font-size:13px;font-weight:600;line-height:1.35;flex:1;min-width:0;word-break:break-word;overflow-wrap:break-word}
 .risk-del{opacity:0;transition:opacity .12s;font-size:11px;padding:0 3px}
 .risk-row:hover .risk-del{opacity:1}
 /* Riscos — modo edição com drag, sev cíclico, setas */
@@ -419,7 +419,7 @@ body.edit .para-edit{background:var(--surface-solid)}
 .risk-grip:hover{opacity:1}
 .risk-sev-btn{cursor:pointer;transition:opacity .1s;user-select:none}
 .risk-sev-btn:hover{opacity:.7}
-.risk-edit-inp{flex:1;background:transparent;border:none;border-bottom:1px solid transparent;color:var(--text);font-size:13px;font-weight:600;padding:3px 2px;font-family:inherit;min-width:0}
+.risk-edit-inp{flex:1;background:transparent;border:none;border-bottom:1px solid transparent;color:var(--text);font-size:13px;font-weight:600;padding:3px 2px;font-family:inherit;min-width:0;resize:none;overflow:hidden;line-height:1.4;display:block;word-break:break-word}
 .risk-edit-inp:focus{outline:none;border-bottom-color:var(--accent)}
 .risk-order-btns{display:flex;flex-direction:column;flex:none;gap:0}
 .risk-mv{font-size:11px;padding:0 2px;opacity:.3;line-height:1.15;font-weight:800}
