@@ -671,24 +671,42 @@ const WIDGETS = {
   },
   riscos: {
     emoji: "⚠️", name: "Riscos & bloqueios", desc: "Impedimentos com nível de severidade.",
-    w: 4, h: 3, defaults: { title: "Riscos & bloqueios", raw: "alto | API de pagamento atrasada\nmedio | Falta aprovação do texto\nbaixo | Revisar banco de imagens" },
+    w: 4, h: 3, defaults: { title: "Riscos & bloqueios", items: [] },
     render(t, c) {
       const p = t.props;
-      const items = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]);
+      // Migração do formato antigo (raw text)
+      if (!p.items && p.raw !== undefined) {
+        const SEV_V = { alto: 1, medio: 1, baixo: 1 };
+        p.items = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]).map(a => {
+          if (a[1] !== undefined && SEV_V[(a[0] || "").toLowerCase()]) return { sev: a[0].toLowerCase(), text: a[1] };
+          return { sev: "medio", text: a[0] };
+        });
+        delete p.raw; if (canEdit) save();
+      }
+      const items = p.items || [];
       const SEV = { alto: "Alto", medio: "Médio", baixo: "Baixo" };
-      c.innerHTML = (p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '') +
-        '<div class="w-body"><div class="risks">' + items.map(a => {
-          let sev, txt;
-          if (a[1] !== undefined && SEV[(a[0] || "").toLowerCase()]) { sev = a[0].toLowerCase(); txt = a[1]; }
-          else { sev = "medio"; txt = a[0]; }
-          return '<div class="risk-row ' + sev + '" data-item="' + escAttr(itemKey(txt)) + '" data-itemlabel="' + escAttr(txt) + '"><span class="risk-sev">' + SEV[sev] + '</span><span class="risk-txt">' + esc(txt) + '</span></div>';
-        }).join("") + '</div></div>';
+      const rows = items.map((it, i) => {
+        const sev = it.sev || "medio";
+        return '<div class="risk-row ' + sev + '" data-item="' + escAttr(itemKey(it.text || "")) + '" data-itemlabel="' + escAttr(it.text || "") + '">' +
+          '<span class="risk-sev">' + (SEV[sev] || "Médio") + '</span>' +
+          '<span class="risk-txt">' + esc(it.text || "") + '</span>' +
+          (canEdit ? '<button class="lnk del risk-del" onclick="delRisco(\'' + t.id + '\',' + i + ')" title="Remover">✕</button>' : '') +
+          '</div>';
+      }).join("") || '<p class="muted-note">Nenhum risco. Use ＋ para adicionar.</p>';
+      const addForm = canEdit
+        ? '<div class="risk-add-row" id="risk-add-' + t.id + '">' +
+          '<select class="risk-add-sev" id="risk-add-sev-' + t.id + '">' +
+          '<option value="baixo">Baixo</option><option value="medio" selected>Médio</option><option value="alto">Alto</option>' +
+          '</select>' +
+          '<input class="risk-add-input" id="risk-add-txt-' + t.id + '" placeholder="Descreva o risco ou bloqueio…" ' +
+          'onkeydown="if(event.key===\'Enter\')saveRisco(\'' + t.id + '\')">' +
+          '<button class="btn sm primary" onclick="saveRisco(\'' + t.id + '\')">Adicionar</button>' +
+          '</div>' : '';
+      c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Riscos & bloqueios") + '</span>' +
+        (canEdit ? '<button class="btn sm risk-add-btn" id="risk-btn-' + t.id + '" onclick="toggleRiscoForm(\'' + t.id + '\')">＋ Risco</button>' : '') +
+        '</div><div class="w-body"><div class="risks">' + rows + '</div>' + addForm + '</div>';
     },
-    form(p) {
-      return field("Título", "title", p.title) + '<label>Riscos</label>' +
-        '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Um por linha: <b>severidade | descrição</b>. Severidade: <b>alto</b>, <b>medio</b> ou <b>baixo</b>.</p>' +
-        '<textarea data-k="raw" spellcheck="false" style="min-height:120px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6">' + esc(p.raw) + '</textarea>';
-    }
+    form(p) { return field("Título", "title", p.title); }
   },
   proximos_passos: {
     emoji: "➡️", name: "Próximos passos", desc: "Action items — o que vem agora.",
@@ -901,6 +919,45 @@ function listaItemKeydown(e, tid, idx) {
   else if (e.key === "Backspace" && e.target.value === "") {
     e.preventDefault(); delListaItem(tid, idx);
   }
+}
+
+/* ===== Funções do widget Riscos & Bloqueios ===== */
+function toggleRiscoForm(tid) {
+  const form = document.getElementById("risk-add-" + tid);
+  const btn = document.getElementById("risk-btn-" + tid);
+  if (!form) return;
+  const opening = form.style.display === "none" || !form.style.display;
+  // Esconde qualquer outro form aberto primeiro
+  document.querySelectorAll(".risk-add-row").forEach(el => { el.style.display = "none"; });
+  document.querySelectorAll(".risk-add-btn").forEach(el => el.classList.remove("on"));
+  if (opening) {
+    form.style.display = "flex";
+    if (btn) btn.classList.add("on");
+    const inp = document.getElementById("risk-add-txt-" + tid);
+    if (inp) { inp.value = ""; inp.focus(); }
+  }
+}
+function saveRisco(tid) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const inp = document.getElementById("risk-add-txt-" + tid);
+  const sevEl = document.getElementById("risk-add-sev-" + tid);
+  const text = (inp && inp.value.trim()) || "";
+  if (!text) { if (inp) inp.focus(); return; }
+  const sev = (sevEl && sevEl.value) || "medio";
+  if (!t.props.items) t.props.items = [];
+  t.props.items.push({ sev, text });
+  save();
+  const content = document.querySelector('.tile[data-id="' + tid + '"] .content');
+  if (content) { WIDGETS.riscos.render(t, content); }
+  // Reabre o form para adicionar mais riscos rapidamente
+  toggleRiscoForm(tid);
+}
+function delRisco(tid, idx) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  t.props.items = (t.props.items || []).filter((_, i) => i !== idx);
+  save();
+  const content = document.querySelector('.tile[data-id="' + tid + '"] .content');
+  if (content) WIDGETS.riscos.render(t, content);
 }
 
 function parseRefColumns(raw) {

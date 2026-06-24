@@ -401,7 +401,15 @@ body.edit .para-edit{background:var(--surface-solid)}
 .risk-row.alto .risk-sev{color:var(--danger)}
 .risk-row.medio .risk-sev{color:#e8b53d}
 .risk-row.baixo .risk-sev{color:var(--ok)}
-.risk-txt{font-size:13px;font-weight:600;line-height:1.35}
+.risk-txt{font-size:13px;font-weight:600;line-height:1.35;flex:1}
+.risk-del{opacity:0;transition:opacity .12s;font-size:11px;padding:0 3px}
+.risk-row:hover .risk-del{opacity:1}
+.risk-add-btn{font-size:12px;padding:4px 10px;margin-left:auto}
+.risk-add-btn.on{background:var(--accent);color:#1a1300;border-color:transparent}
+.risk-add-row{display:none;gap:6px;align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+.risk-add-sev{background:var(--surface-solid);border:1px solid var(--line);border-radius:8px;color:var(--text);font-size:12px;font-weight:700;padding:7px 8px;font-family:inherit;min-width:80px}
+.risk-add-input{flex:1;background:var(--surface-solid);border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--text);font-family:inherit;font-size:13px;min-width:0}
+.risk-add-input:focus{outline:none;border-color:var(--accent)}
 
 /* ===== Widget: Próximos passos ===== */
 .steps{display:flex;flex-direction:column;gap:9px}
