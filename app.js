@@ -568,6 +568,25 @@ const WIDGETS = {
       loadMural(t.id);
     },
     form(p) { return field("Título", "title", p.title); }
+  },
+  enquete: {
+    emoji: "📊", name: "Enquete / Votação", desc: "Pergunta com opções — todos votam ao vivo.",
+    w: 4, h: 3, defaults: { pergunta: "Qual direção você prefere?", opcoes: "Opção A\nOpção B\nOpção C" },
+    render(t, c) {
+      const p = t.props;
+      const opcoes = (p.opcoes || "").split("\n").map(s => s.trim()).filter(Boolean);
+      c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.pergunta || "Enquete") + '</span></div>' +
+        '<div class="w-body"><div class="poll" id="poll-' + t.id + '">' +
+        opcoes.map(o => '<button class="poll-opt" data-op="' + escAttr(o) + '" onclick="event.stopPropagation();votarEnquete(\'' + t.id + '\',this.dataset.op)">' +
+          '<span class="poll-bar" style="width:0%"></span><span class="poll-label">' + esc(o) + '</span><span class="poll-count"></span></button>').join("") +
+        '</div><div class="poll-total" id="polltot-' + t.id + '"></div></div>';
+      loadEnquete(t.id);
+    },
+    form(p) {
+      return field("Pergunta", "pergunta", p.pergunta) + '<label>Opções</label>' +
+        '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Uma opção por linha. Quem vê pode votar e trocar o voto.</p>' +
+        '<textarea data-k="opcoes" spellcheck="false" style="min-height:110px;font-size:13px;line-height:1.6">' + esc(p.opcoes) + '</textarea>';
+    }
   }
 };
 function field(label, k, v) { return '<label>' + esc(label) + '</label><input data-k="' + k + '" value="' + escAttr(v) + '">'; }
@@ -712,6 +731,33 @@ async function delMuralNota(id, widgetId) {
   if (!confirm("Excluir esta ideia?")) return;
   await sb.from("mural_notas").delete().eq("id", id);
   loadMural(widgetId);
+}
+
+/* — Enquete / votação (widget colaborativo, dados em enquete_votos) — */
+async function loadEnquete(widgetId) {
+  if (!curProjeto) return;
+  const { data } = await sb.from("enquete_votos").select("opcao, pessoa_id").eq("widget_id", widgetId);
+  const poll = document.getElementById("poll-" + widgetId); if (!poll) return;
+  const votos = data || [], total = votos.length;
+  const counts = {}; votos.forEach(v => counts[v.opcao] = (counts[v.opcao] || 0) + 1);
+  const meu = (votos.find(v => v.pessoa_id === me.id) || {}).opcao;
+  poll.querySelectorAll(".poll-opt").forEach(btn => {
+    const op = btn.dataset.op, cnt = counts[op] || 0;
+    const pct = total ? Math.round(cnt / total * 100) : 0;
+    btn.querySelector(".poll-bar").style.width = pct + "%";
+    btn.querySelector(".poll-count").textContent = total ? cnt + " · " + pct + "%" : "";
+    btn.classList.toggle("voted", op === meu);
+  });
+  const tot = document.getElementById("polltot-" + widgetId);
+  if (tot) tot.textContent = total ? total + " voto" + (total === 1 ? "" : "s") : "Seja o primeiro a votar";
+}
+async function votarEnquete(widgetId, opcao) {
+  if (!curProjeto || !me) return;
+  const { error } = await sb.from("enquete_votos").upsert(
+    { projeto_id: curProjeto.id, widget_id: widgetId, pessoa_id: me.id, opcao },
+    { onConflict: "widget_id,pessoa_id" });
+  if (error) { alert("Erro: " + error.message); return; }
+  loadEnquete(widgetId);
 }
 
 async function loadChecklistProjeto(c) {
@@ -1273,6 +1319,7 @@ function subscribeRealtime(projetoId) {
     .on("postgres_changes", { event: "*", schema: "public", table: "aprovacoes", filter: "projeto_id=eq." + projetoId }, onRealtime)
     .on("postgres_changes", { event: "*", schema: "public", table: "comentarios" }, onRealtime)
     .on("postgres_changes", { event: "*", schema: "public", table: "mural_notas", filter: "projeto_id=eq." + projetoId }, onMuralRealtime)
+    .on("postgres_changes", { event: "*", schema: "public", table: "enquete_votos", filter: "projeto_id=eq." + projetoId }, onEnqueteRealtime)
     .subscribe();
 }
 function unsubscribeRealtime() {
@@ -1296,6 +1343,11 @@ function onMuralRealtime(payload) {
   if (view !== "painel" || projTab !== "painel") return;
   const wid = (payload.new && payload.new.widget_id) || (payload.old && payload.old.widget_id);
   if (wid && document.getElementById("mural-" + wid)) loadMural(wid);
+}
+function onEnqueteRealtime(payload) {
+  if (view !== "painel" || projTab !== "painel") return;
+  const wid = (payload.new && payload.new.widget_id) || (payload.old && payload.old.widget_id);
+  if (wid && document.getElementById("poll-" + wid)) loadEnquete(wid);
 }
 
 /* ===== 13) Autenticação ===== */
