@@ -15,7 +15,7 @@ const esc = s => String(s == null ? "" : s).replace(/[&<>]/g, c => ({ "&": "&amp
 const escAttr = s => String(s == null ? "" : s).replace(/"/g, "&quot;");
 
 /* ===== 2b) Personalização por usuário (localStorage) ===== */
-const DEFAULT_PREFS = { theme: "escuro", bg: { type: "none" }, fontScale: 100, contrast: false };
+const DEFAULT_PREFS = { theme: "escuro", fontScale: 100, contrast: false };
 let prefs = (() => { try { return Object.assign({}, DEFAULT_PREFS, JSON.parse(localStorage.getItem("dojo_prefs") || "{}")); } catch (e) { return Object.assign({}, DEFAULT_PREFS); } })();
 function savePrefs() { try { localStorage.setItem("dojo_prefs", JSON.stringify(prefs)); } catch (e) { } }
 function applyPrefs() {
@@ -147,7 +147,6 @@ function perm(flag) {
   if (isAdmin || canEdit) return true;
   return !!(myMembro && myMembro[flag]);
 }
-let brand = { titulo: "Dojo", cor: "#e8a33d", logoUrl: "" };
 
 /* Estado do painel (layout de widgets) */
 let state = defaultState();
@@ -941,7 +940,6 @@ async function refreshComentarioMarcadores(widgetIds) {
     btn.classList.toggle("has", !!n);
   });
 }
-function loadPainelComentarioCounts(widgetIds) { return refreshComentarioMarcadores(widgetIds); }
 
 /* Decora itens [data-item] dentro dos tiles com marcador de comentário */
 function decorateItemComments() {
@@ -1240,78 +1238,6 @@ function fMediaHtml(p) {
     if (e.type === "video") return '<div class="f-media f-video"><video src="' + escAttr(e.url) + '" controls></video></div>';
   }
   return "";
-}
-
-async function responderFormulario(widgetId) {
-  const { data: form } = await sb.from("form_formularios").select("*").eq("widget_id", widgetId).maybeSingle();
-  if (!form) { toast("Formulário não encontrado."); return; }
-  const [{ data: pergs }, { data: respExist }, { data: campos }, vars] = await Promise.all([
-    sb.from("form_perguntas").select("*").eq("formulario_id", form.id).order("ordem"),
-    sb.from("form_respostas").select("*").eq("formulario_id", form.id).eq("pessoa_id", me.id).maybeSingle(),
-    sb.from("form_campos").select("*").eq("projeto_id", curProjeto.id),
-    getVarsFor(me.id)
-  ]);
-  const saved = (respExist && respExist.respostas) || {};
-  // descobre quais variáveis personalizadas são usadas e ainda faltam
-  const usadas = new Set();
-  extractVars(form.descricao).forEach(k => usadas.add(k));
-  (pergs || []).forEach(p => extractVars(p.texto).forEach(k => usadas.add(k)));
-  const camposUsados = (campos || []).filter(c => usadas.has(c.chave));
-
-  const camposHtml = camposUsados.length
-    ? '<div class="f-sobre"><div class="f-sobre-tit">Sobre você</div>' + camposUsados.map(c =>
-        '<div class="perg-resp"><div class="perg-label">' + esc(c.label) + '</div><input data-campo="' + escAttr(c.chave) + '" value="' + escAttr(vars[c.chave] || "") + '" style="width:100%"></div>').join("") + '</div>'
-    : "";
-
-  const pergsHtml = (pergs || []).map((p, i) => {
-    const txt = substVars(p.texto, vars);
-    const v = saved[p.id];
-    let input = "";
-    if (p.tipo === "texto") input = '<input data-pid="' + p.id + '" value="' + escAttr(v || "") + '" style="width:100%">';
-    else if (p.tipo === "paragrafo") input = '<textarea data-pid="' + p.id + '" style="width:100%;min-height:70px">' + esc(v || "") + '</textarea>';
-    else if (p.tipo === "escala" || p.tipo === "nota") {
-      const max = p.tipo === "escala" ? 5 : 10, start = p.tipo === "escala" ? 1 : 0;
-      const nums = []; for (let n = start; n <= max; n++) nums.push(n);
-      input = '<div class="escala-row">' + nums.map(n => '<label style="display:flex;align-items:center;gap:4px;font-size:13px;text-transform:none;letter-spacing:0;margin:0"><input type="radio" name="f-' + p.id + '" data-pid="' + p.id + '" value="' + n + '"' + (String(v) === String(n) ? " checked" : "") + '> ' + n + '</label>').join("") + '</div>';
-    } else {
-      const opts = p.opcoes || [], multi = p.tipo === "multipla";
-      const sel = Array.isArray(v) ? v : (v ? [v] : []);
-      input = '<div class="opts-list">' + opts.map(o => '<label style="display:flex;align-items:center;gap:8px;font-size:13.5px;text-transform:none;letter-spacing:0;margin:0;padding:4px 0"><input type="' + (multi ? "checkbox" : "radio") + '" name="fo-' + p.id + '" data-pid="' + p.id + '" value="' + escAttr(o) + '"' + (sel.includes(o) ? " checked" : "") + '> ' + esc(o) + '</label>').join("") + '</div>';
-    }
-    return '<div class="perg-resp"><div class="perg-label">' + (i + 1) + '. ' + esc(txt) + (p.obrigatoria ? ' <span style="color:var(--danger)">*</span>' : '') + '</div>' + fMediaHtml(p) + input + '</div>';
-  }).join("");
-
-  openModal('<h3>' + esc(substVars(form.titulo, vars)) + '</h3>' +
-    (form.descricao ? '<p class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600">' + esc(substVars(form.descricao, vars)) + '</p>' : "") +
-    camposHtml + pergsHtml +
-    '<div class="auth-err" id="fErr"></div>' +
-    actions(respExist ? "Atualizar respostas" : "Enviar respostas"),
-    m => {
-      m.querySelector("[data-x]").onclick = closeModal;
-      m.querySelector("[data-ok]").onclick = async () => {
-        const errEl = m.querySelector("#fErr");
-        // salva campos dinâmicos da pessoa
-        const campoEls = m.querySelectorAll("[data-campo]");
-        if (campoEls.length) {
-          const ups = Array.from(campoEls).map(el => ({ projeto_id: curProjeto.id, pessoa_id: me.id, chave: el.dataset.campo, valor: el.value.trim() }));
-          await sb.from("pessoa_campos").upsert(ups, { onConflict: "projeto_id,pessoa_id,chave" });
-        }
-        // coleta respostas
-        const obj = {};
-        for (const p of (pergs || [])) {
-          if (p.tipo === "texto" || p.tipo === "paragrafo") { const el = m.querySelector('[data-pid="' + p.id + '"]'); obj[p.id] = el ? el.value.trim() : ""; }
-          else if (p.tipo === "escala" || p.tipo === "nota" || p.tipo === "unica") { const el = m.querySelector('[data-pid="' + p.id + '"]:checked'); obj[p.id] = el ? el.value : ""; }
-          else { obj[p.id] = Array.from(m.querySelectorAll('[data-pid="' + p.id + '"]:checked')).map(e => e.value); }
-          if (p.obrigatoria) { const r = obj[p.id]; if (!r || (Array.isArray(r) && !r.length)) { errEl.textContent = 'A pergunta "' + substVars(p.texto, vars) + '" é obrigatória.'; return; } }
-        }
-        errEl.textContent = "Salvando…";
-        let err;
-        if (respExist) ({ error: err } = await sb.from("form_respostas").update({ respostas: obj, updated_at: new Date().toISOString() }).eq("id", respExist.id));
-        else ({ error: err } = await sb.from("form_respostas").insert({ formulario_id: form.id, projeto_id: curProjeto.id, pessoa_id: me.id, respostas: obj }));
-        if (err) { errEl.textContent = "Erro: " + err.message; return; }
-        closeModal(); route();
-      };
-    });
 }
 
 async function verRespostasFormulario(formId, widgetId) {
@@ -1762,7 +1688,6 @@ async function abrirProjeto(id) {
   if (error) { toast("Erro ao abrir projeto."); return; }
   curProjeto = data;
   curCliente = data.clientes || curCliente;
-  brand = Object.assign({ titulo: "Dojo", cor: "#e8a33d", logoUrl: "" }, (curCliente && curCliente.marca) || {});
   previewCliente = false; // sempre abre no modo real
   if (isAdmin) {
     canEditReal = true; myMembro = null;
@@ -2242,12 +2167,6 @@ function openPicker() {
 
 /* ===== 10b) Gestão de espaços (abas de painel) ===== */
 function setSpace(id) { curSpaceId = id; route(); }
-
-function _spaceVisSelect(cur) {
-  return '<label>Visibilidade</label><select data-k="vis">' +
-    '<option value="interno"' + (cur === "interno" ? " selected" : "") + '>🔒 Privada — só você vê</option>' +
-    '<option value="compartilhado"' + (cur !== "interno" ? " selected" : "") + '>👁 Compartilhada — cliente vê</option></select>';
-}
 
 function addSpace() {
   const ctx = panelCtx();
