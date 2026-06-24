@@ -260,10 +260,11 @@ const WIDGETS = {
       const p = t.props;
       const style = 'font-size:' + (parseInt(p.size) || 15) + 'px;text-align:' + (p.align || "left") + ';' + (p.color ? 'color:' + p.color + ';' : '');
       const head = p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '';
+      const body = p.html ? sanitizeHtml(p.html) : esc(p.text || "");
       if (editMode && canEdit) {
-        c.innerHTML = head + '<div class="para-body para-edit" contenteditable="true" style="' + style + '" oninput="onParaInput(this,\'' + t.id + '\')">' + esc(p.text) + '</div>';
+        c.innerHTML = head + '<div class="para-body para-edit" contenteditable="true" style="' + style + '" oninput="onParaInput(this,\'' + t.id + '\')" onfocus="paraToolbar(this)" onblur="hideParaToolbar()">' + body + '</div>';
       } else {
-        c.innerHTML = head + '<div class="para-body" style="' + style + '">' + esc(p.text) + '</div>';
+        c.innerHTML = head + '<div class="para-body" style="' + style + '">' + body + '</div>';
       }
     },
     form(p) {
@@ -747,9 +748,34 @@ function copyCode(btn) {
 function onParaInput(el, id) {
   const t = space().tiles.find(x => x.id === id);
   if (!t) return;
+  t.props.html = sanitizeHtml(el.innerHTML);
   t.props.text = el.innerText;
   save(); // não chama route() — preserva o foco/cursor enquanto digita
 }
+/* Sanitiza HTML do rich text (remove script/eventos) — editores são confiáveis (canEdit) */
+function sanitizeHtml(s) {
+  const d = document.createElement("div"); d.innerHTML = String(s == null ? "" : s);
+  d.querySelectorAll("script,style,iframe,object,embed,link,meta").forEach(n => n.remove());
+  d.querySelectorAll("*").forEach(n => {
+    [...n.attributes].forEach(a => { if (/^on/i.test(a.name) || (/^(href|src)$/i.test(a.name) && /javascript:/i.test(a.value))) n.removeAttribute(a.name); });
+  });
+  return d.innerHTML;
+}
+/* Barra de formatação rápida do parágrafo (item 7) */
+function paraToolbar(el) {
+  let tb = document.getElementById("paraTb");
+  if (!tb) {
+    tb = document.createElement("div"); tb.id = "paraTb"; tb.className = "para-tb";
+    tb.innerHTML = '<button data-cmd="bold" title="Negrito"><b>B</b></button><button data-cmd="italic" title="Itálico"><i>I</i></button><button data-cmd="underline" title="Sublinhado"><u>U</u></button><span class="ptb-sep"></span><button data-sz="2" title="Menor">A−</button><button data-sz="3" title="Médio">A</button><button data-sz="5" title="Maior">A+</button>';
+    document.body.appendChild(tb);
+    tb.querySelectorAll("button").forEach(b => b.onmousedown = e => { e.preventDefault(); if (b.dataset.cmd) document.execCommand(b.dataset.cmd, false, null); else document.execCommand("fontSize", false, b.dataset.sz); });
+  }
+  const r = el.getBoundingClientRect();
+  tb.style.display = "flex";
+  tb.style.top = Math.max(8, r.top - 42) + "px";
+  tb.style.left = Math.min(r.left, window.innerWidth - 210) + "px";
+}
+function hideParaToolbar() { setTimeout(() => { const tb = document.getElementById("paraTb"); if (tb) tb.style.display = "none"; }, 150); }
 function parseRefColumns(raw) {
   const cols = [];
   let cur = null;
