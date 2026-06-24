@@ -556,6 +556,18 @@ const WIDGETS = {
         '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Uma por linha: <b>ação | responsável/prazo</b> (a parte após | é opcional).</p>' +
         '<textarea data-k="raw" spellcheck="false" style="min-height:120px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6">' + esc(p.raw) + '</textarea>';
     }
+  },
+  mural: {
+    emoji: "📌", name: "Mural de ideias", desc: "Post-its colaborativos — você e o cliente adicionam ao vivo.",
+    w: 6, h: 4, defaults: { title: "Mural de ideias" },
+    render(t, c) {
+      const p = t.props;
+      c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Mural de ideias") + '</span>' +
+        '<span class="grow"></span><button class="btn sm primary" onclick="event.stopPropagation();addMuralNota(\'' + t.id + '\')">＋ Ideia</button></div>' +
+        '<div class="w-body"><div class="mural" id="mural-' + t.id + '"><p class="muted-note">Carregando…</p></div></div>';
+      loadMural(t.id);
+    },
+    form(p) { return field("Título", "title", p.title); }
   }
 };
 function field(label, k, v) { return '<label>' + esc(label) + '</label><input data-k="' + k + '" value="' + escAttr(v) + '">'; }
@@ -655,6 +667,51 @@ async function loadAprovacoesPendentes(c) {
     '<span class="ap-pend-lbl">pendente' + (list.length === 1 ? "" : "s") + '</span></div>' +
     '<div class="ap-pend-list">' + list.slice(0, 5).map(a => '<div class="ap-pend-item">⏳ ' + esc(a.titulo) + '</div>').join("") +
     (list.length > 5 ? '<div class="muted-note" style="font-size:12px">+' + (list.length - 5) + ' mais…</div>' : '') + '</div>';
+}
+
+/* — Mural de ideias (widget colaborativo, dados em mural_notas) — */
+async function loadMural(widgetId) {
+  if (!curProjeto) return;
+  const { data } = await sb.from("mural_notas")
+    .select("id, texto, cor, autor_id, autor:pessoas!autor_id(nome,email)")
+    .eq("widget_id", widgetId).order("created_at");
+  const box = document.getElementById("mural-" + widgetId);
+  if (!box) return;
+  const notas = data || [];
+  if (!notas.length) { box.innerHTML = '<p class="muted-note">Sem ideias ainda. Clique em ＋ Ideia para começar.</p>'; return; }
+  box.innerHTML = notas.map(n => {
+    const who = (n.autor && (n.autor.nome || n.autor.email)) || "—";
+    const canDel = n.autor_id === me.id || isAdmin || canEdit;
+    return '<div class="mnota" style="--mc:' + escAttr(n.cor || "#e8a33d") + '">' +
+      '<div class="mnota-txt">' + esc(n.texto) + '</div>' +
+      '<div class="mnota-foot"><span class="mnota-who">' + esc(who) + '</span>' +
+      (canDel ? '<button class="lnk del" onclick="event.stopPropagation();delMuralNota(\'' + n.id + '\',\'' + widgetId + '\')">✕</button>' : '') +
+      '</div></div>';
+  }).join("");
+}
+function addMuralNota(widgetId) {
+  const cores = ["#e8a33d", "#5b8def", "#3fa873", "#e0604a", "#b57edc"];
+  openModal('<h3>Nova ideia</h3>' +
+    '<label>Texto</label><textarea data-k="texto" style="min-height:80px" placeholder="Escreva a ideia…"></textarea>' +
+    '<label>Cor</label><div class="cor-pick">' + cores.map((c, i) => '<button type="button" class="cor-opt' + (i === 0 ? " on" : "") + '" data-cor="' + c + '" style="background:' + c + '"></button>').join("") + '</div>' +
+    actions("Adicionar"),
+    m => {
+      let cor = cores[0];
+      m.querySelectorAll(".cor-opt").forEach(b => b.onclick = () => { cor = b.dataset.cor; m.querySelectorAll(".cor-opt").forEach(x => x.classList.toggle("on", x === b)); });
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const texto = m.querySelector('[data-k="texto"]').value.trim();
+        if (!texto) { alert("Escreva algo."); return; }
+        const { error } = await sb.from("mural_notas").insert({ projeto_id: curProjeto.id, widget_id: widgetId, autor_id: me.id, texto, cor });
+        if (error) { alert("Erro: " + error.message); return; }
+        closeModal(); loadMural(widgetId);
+      };
+    });
+}
+async function delMuralNota(id, widgetId) {
+  if (!confirm("Excluir esta ideia?")) return;
+  await sb.from("mural_notas").delete().eq("id", id);
+  loadMural(widgetId);
 }
 
 async function loadChecklistProjeto(c) {
@@ -1215,6 +1272,7 @@ function subscribeRealtime(projetoId) {
     .on("postgres_changes", { event: "*", schema: "public", table: "mensagens", filter: "projeto_id=eq." + projetoId }, onRealtime)
     .on("postgres_changes", { event: "*", schema: "public", table: "aprovacoes", filter: "projeto_id=eq." + projetoId }, onRealtime)
     .on("postgres_changes", { event: "*", schema: "public", table: "comentarios" }, onRealtime)
+    .on("postgres_changes", { event: "*", schema: "public", table: "mural_notas", filter: "projeto_id=eq." + projetoId }, onMuralRealtime)
     .subscribe();
 }
 function unsubscribeRealtime() {
@@ -1232,6 +1290,12 @@ function onRealtime() {
   }
   clearTimeout(_rtTimer);
   _rtTimer = setTimeout(() => { if (view === "painel") route(); }, 200);
+}
+/* Mural: recarrega só o widget afetado, sem re-render do painel (preserva foco). */
+function onMuralRealtime(payload) {
+  if (view !== "painel" || projTab !== "painel") return;
+  const wid = (payload.new && payload.new.widget_id) || (payload.old && payload.old.widget_id);
+  if (wid && document.getElementById("mural-" + wid)) loadMural(wid);
 }
 
 /* ===== 13) Autenticação ===== */
