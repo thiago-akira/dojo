@@ -296,6 +296,15 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 .cmt-btn.has{opacity:1;border-color:var(--accent);color:var(--accent)}
 .cmt-btn:hover{border-color:var(--accent);color:var(--accent)}
 .cmt-badge{font-size:10.5px;font-weight:800}
+/* marcador de comentário por item dentro de widgets */
+[data-item]{position:relative}
+.cmt-host{position:relative}
+.item-cmt{position:absolute;top:3px;right:3px;min-width:21px;height:21px;padding:0 5px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:10px;font-weight:800;display:none;align-items:center;justify-content:center;gap:2px;cursor:pointer;z-index:3;line-height:1}
+[data-item]:hover .item-cmt{display:flex}
+.item-cmt.has{display:flex;border-color:var(--accent);color:var(--accent)}
+.item-cmt:hover{border-color:var(--accent);color:var(--accent)}
+.kanban .item-cmt{top:2px;right:2px}
+
 .cmt-thread{max-height:340px;overflow:auto;display:flex;flex-direction:column;gap:9px;margin-bottom:12px}
 .cmt{background:var(--surface-solid);border:1px solid var(--line);border-radius:9px;padding:9px 11px}
 .cmt-head{display:flex;align-items:center;gap:8px;margin-bottom:4px}

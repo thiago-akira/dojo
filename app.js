@@ -194,7 +194,7 @@ const WIDGETS = {
       if (rows.length) {
         const head = rows[0], body = rows.slice(1);
         table = '<table class="data-table"><thead><tr>' + head.map(h => '<th>' + esc(h) + '</th>').join("") + '</tr></thead><tbody>' +
-          body.map(r => '<tr>' + head.map((_, i) => '<td>' + esc(r[i] || "") + '</td>').join("") + '</tr>').join("") + '</tbody></table>';
+          body.map(r => '<tr data-item="' + escAttr(itemKey(r[0] || "")) + '" data-itemlabel="' + escAttr(r[0] || "") + '">' + head.map((_, i) => '<td>' + esc(r[i] || "") + '</td>').join("") + '</tr>').join("") + '</tbody></table>';
       }
       c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Tabela") + '</span></div><div class="w-body">' + table + '</div>';
     },
@@ -216,7 +216,7 @@ const WIDGETS = {
         let status, titulo, data;
         if (a[0] && KNOWN[a[0].toLowerCase()]) { status = a[0].toLowerCase(); titulo = a[1] || ""; data = a[2] || ""; }
         else { status = "futuro"; titulo = a[0] || ""; data = a[1] || ""; }
-        return '<div class="tl-item ' + status + '"><div class="tl-dot"></div><div class="tl-body">' +
+        return '<div class="tl-item ' + status + '" data-item="' + escAttr(itemKey(titulo)) + '" data-itemlabel="' + escAttr(titulo) + '"><div class="tl-dot"></div><div class="tl-body">' +
           '<div class="tl-title">' + esc(titulo) + '</div>' + (data ? '<div class="tl-date">' + esc(data) + '</div>' : '') + '</div></div>';
       }).join("");
       c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Cronograma") + '</span></div>' +
@@ -476,7 +476,7 @@ const WIDGETS = {
       c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Quadro") + '</span></div>' +
         '<div class="w-body"><div class="kanban">' + cols.map((col, i) =>
           '<div class="kb-col"><div class="kb-col-head"><span>' + esc(col.title) + '</span><span class="kb-count">' + col.cards.length + '</span></div>' +
-          col.cards.map(card => '<div class="kb-card kb-c' + (i % 4) + '">' + esc(card) + '</div>').join("") + '</div>'
+          col.cards.map(card => '<div class="kb-card kb-c' + (i % 4) + '" data-item="' + escAttr(itemKey(card)) + '" data-itemlabel="' + escAttr(card) + '">' + esc(card) + '</div>').join("") + '</div>'
         ).join("") + '</div></div>';
     },
     form(p) {
@@ -515,7 +515,7 @@ const WIDGETS = {
         '<div class="w-body"><div class="team">' + items.map(a => {
           const nome = a[0], papel = a[1] || "";
           const ini = nome.split(/\s+/).map(w => w[0] || "").slice(0, 2).join("").toUpperCase();
-          return '<div class="team-row"><div class="team-av">' + esc(ini) + '</div><div class="team-info"><div class="team-name">' + esc(nome) + '</div>' + (papel ? '<div class="team-role">' + esc(papel) + '</div>' : '') + '</div></div>';
+          return '<div class="team-row" data-item="' + escAttr(itemKey(nome)) + '" data-itemlabel="' + escAttr(nome) + '"><div class="team-av">' + esc(ini) + '</div><div class="team-info"><div class="team-name">' + esc(nome) + '</div>' + (papel ? '<div class="team-role">' + esc(papel) + '</div>' : '') + '</div></div>';
         }).join("") + '</div></div>';
     },
     form(p) {
@@ -536,7 +536,7 @@ const WIDGETS = {
           let sev, txt;
           if (a[1] !== undefined && SEV[(a[0] || "").toLowerCase()]) { sev = a[0].toLowerCase(); txt = a[1]; }
           else { sev = "medio"; txt = a[0]; }
-          return '<div class="risk-row ' + sev + '"><span class="risk-sev">' + SEV[sev] + '</span><span class="risk-txt">' + esc(txt) + '</span></div>';
+          return '<div class="risk-row ' + sev + '" data-item="' + escAttr(itemKey(txt)) + '" data-itemlabel="' + escAttr(txt) + '"><span class="risk-sev">' + SEV[sev] + '</span><span class="risk-txt">' + esc(txt) + '</span></div>';
         }).join("") + '</div></div>';
     },
     form(p) {
@@ -553,7 +553,7 @@ const WIDGETS = {
       const items = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]);
       c.innerHTML = (p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '') +
         '<div class="w-body"><div class="steps">' + items.map(a =>
-          '<div class="step-row"><span class="step-ico">→</span><div class="step-body"><div class="step-txt">' + esc(a[0]) + '</div>' + (a[1] ? '<div class="step-meta">' + esc(a[1]) + '</div>' : '') + '</div></div>'
+          '<div class="step-row" data-item="' + escAttr(itemKey(a[0])) + '" data-itemlabel="' + escAttr(a[0]) + '"><span class="step-ico">→</span><div class="step-body"><div class="step-txt">' + esc(a[0]) + '</div>' + (a[1] ? '<div class="step-meta">' + esc(a[1]) + '</div>' : '') + '</div></div>'
         ).join("") + '</div></div>';
     },
     form(p) {
@@ -777,55 +777,94 @@ async function votarEnquete(widgetId, opcao) {
   loadEnquete(widgetId);
 }
 
-/* — Comentários no painel (estilo Figma, por widget) — */
-let _cmtWidgetAberto = null;
-async function loadPainelComentarioCounts(widgetIds) {
+/* — Comentários no painel (por widget E por item dentro do widget) — */
+let _cmtCtx = null; // { widget, item } do thread aberto
+function itemKey(s) { return String(s || "").trim().toLowerCase().replace(/\s+/g, "-").replace(/[^\w-]/g, "").slice(0, 48) || "item"; }
+
+async function refreshComentarioMarcadores(widgetIds) {
   if (!curProjeto || !widgetIds.length) return;
-  const { data } = await sb.from("comentarios_painel").select("widget_id").eq("projeto_id", curProjeto.id).in("widget_id", widgetIds);
-  const counts = {}; (data || []).forEach(r => counts[r.widget_id] = (counts[r.widget_id] || 0) + 1);
+  const { data } = await sb.from("comentarios_painel").select("widget_id, item_ref").eq("projeto_id", curProjeto.id).in("widget_id", widgetIds);
+  const wC = {}, iC = {};
+  (data || []).forEach(r => {
+    if (r.item_ref) iC[r.widget_id + " " + r.item_ref] = (iC[r.widget_id + " " + r.item_ref] || 0) + 1;
+    else wC[r.widget_id] = (wC[r.widget_id] || 0) + 1;
+  });
   document.querySelectorAll(".cmt-btn").forEach(btn => {
-    const n = counts[btn.dataset.wid] || 0;
-    const badge = btn.querySelector(".cmt-badge");
+    const n = wC[btn.dataset.wid] || 0, badge = btn.querySelector(".cmt-badge");
     if (n) { badge.textContent = n; badge.style.display = ""; btn.classList.add("has"); }
     else { badge.style.display = "none"; btn.classList.remove("has"); }
   });
+  document.querySelectorAll(".item-cmt").forEach(btn => {
+    const n = iC[btn.dataset.wid + " " + btn.dataset.item] || 0, badge = btn.querySelector(".item-cmt-n");
+    if (badge) badge.textContent = n || "";
+    btn.classList.toggle("has", !!n);
+  });
 }
-function abrirComentariosPainel(widgetId) {
-  _cmtWidgetAberto = widgetId;
-  openModal('<h3>💬 Comentários</h3>' +
+function loadPainelComentarioCounts(widgetIds) { return refreshComentarioMarcadores(widgetIds); }
+
+/* Decora itens [data-item] dentro dos tiles com marcador de comentário */
+function decorateItemComments() {
+  document.querySelectorAll('#canvas .tile [data-item]').forEach(el => {
+    if (el.dataset.cmtDone) return;
+    const tile = el.closest(".tile"); if (!tile) return;
+    const widgetId = tile.dataset.id, key = el.dataset.item, label = el.dataset.itemlabel || key;
+    const host = el.tagName === "TR" ? el.lastElementChild : el;
+    if (!host) return;
+    host.classList.add("cmt-host");
+    const b = document.createElement("button");
+    b.className = "item-cmt"; b.innerHTML = '💬<span class="item-cmt-n"></span>';
+    b.dataset.wid = widgetId; b.dataset.item = key; b.title = "Comentar: " + label;
+    b.onclick = e => { e.stopPropagation(); abrirComentariosPainel(widgetId, key, label); };
+    host.appendChild(b);
+    el.dataset.cmtDone = "1";
+  });
+}
+
+function abrirComentariosPainel(widgetId, itemRef, itemLabel) {
+  itemRef = itemRef || null;
+  _cmtCtx = { widget: widgetId, item: itemRef };
+  openModal('<h3>' + (itemRef ? '💬 ' + esc(itemLabel || "Item") : '💬 Comentários') + '</h3>' +
+    (itemRef ? '<p class="muted-note" style="margin:-6px 0 8px;text-transform:none;letter-spacing:0;font-weight:600">Comentário sobre este item.</p>' : '') +
     '<div id="cmtThread" class="cmt-thread"><p class="muted-note">Carregando…</p></div>' +
-    '<div class="cmt-add"><textarea id="cmtInput" placeholder="Escreva um comentário…" onkeydown="if(event.key===\'Enter\'&&(event.metaKey||event.ctrlKey))enviarComentarioPainel(\'' + widgetId + '\')"></textarea>' +
-    '<button class="btn primary" onclick="enviarComentarioPainel(\'' + widgetId + '\')">Enviar</button></div>' +
+    '<div class="cmt-add"><textarea id="cmtInput" placeholder="Escreva um comentário…" onkeydown="if(event.key===\'Enter\'&&(event.metaKey||event.ctrlKey))enviarComentarioPainel()"></textarea>' +
+    '<button class="btn primary" onclick="enviarComentarioPainel()">Enviar</button></div>' +
     '<div class="modal-actions"><span class="grow"></span><button class="btn" data-x>Fechar</button></div>',
-    m => { m.querySelector("[data-x]").onclick = () => { _cmtWidgetAberto = null; closeModal(); }; });
-  loadComentariosPainel(widgetId);
+    m => { m.querySelector("[data-x]").onclick = () => { _cmtCtx = null; closeModal(); }; });
+  loadComentariosPainel();
 }
-async function loadComentariosPainel(widgetId) {
-  if (!curProjeto) return;
-  const { data } = await sb.from("comentarios_painel")
+async function loadComentariosPainel() {
+  if (!curProjeto || !_cmtCtx) return;
+  let q = sb.from("comentarios_painel")
     .select("id, corpo, autor_id, created_at, autor:pessoas!autor_id(nome,email)")
-    .eq("widget_id", widgetId).order("created_at");
+    .eq("widget_id", _cmtCtx.widget);
+  q = _cmtCtx.item ? q.eq("item_ref", _cmtCtx.item) : q.is("item_ref", null);
+  const { data } = await q.order("created_at");
   const thread = document.getElementById("cmtThread"); if (!thread) return;
   const list = data || [];
   thread.innerHTML = list.length ? list.map(c => {
     const who = (c.autor && (c.autor.nome || c.autor.email)) || "—";
     const canDel = c.autor_id === me.id || isAdmin || canEdit;
     return '<div class="cmt"><div class="cmt-head"><span class="cmt-who">' + esc(who) + '</span><span class="cmt-when">' + fmtRel(c.created_at) + '</span>' +
-      (canDel ? '<button class="lnk del" onclick="delComentarioPainel(\'' + c.id + '\',\'' + widgetId + '\')">✕</button>' : '') +
+      (canDel ? '<button class="lnk del" onclick="delComentarioPainel(\'' + c.id + '\')">✕</button>' : '') +
       '</div><div class="cmt-body">' + esc(c.corpo) + '</div></div>';
   }).join("") : '<p class="muted-note">Nenhum comentário ainda. Seja o primeiro.</p>';
   thread.scrollTop = thread.scrollHeight;
 }
-async function enviarComentarioPainel(widgetId) {
+async function enviarComentarioPainel() {
+  if (!_cmtCtx) return;
   const inp = document.getElementById("cmtInput"); const corpo = (inp.value || "").trim(); if (!corpo) return;
-  const { error } = await sb.from("comentarios_painel").insert({ projeto_id: curProjeto.id, widget_id: widgetId, autor_id: me.id, corpo });
+  const { error } = await sb.from("comentarios_painel").insert({ projeto_id: curProjeto.id, widget_id: _cmtCtx.widget, item_ref: _cmtCtx.item, autor_id: me.id, corpo });
   if (error) { toast("Erro: " + error.message); return; }
-  inp.value = ""; loadComentariosPainel(widgetId);
+  inp.value = ""; loadComentariosPainel();
+  const ids = [...document.querySelectorAll(".cmt-btn")].map(b => b.dataset.wid);
+  if (ids.length) refreshComentarioMarcadores(ids);
 }
-async function delComentarioPainel(id, widgetId) {
+async function delComentarioPainel(id) {
   if (!(await confirmDialog("Excluir este comentário?"))) return;
   await sb.from("comentarios_painel").delete().eq("id", id);
-  loadComentariosPainel(widgetId);
+  loadComentariosPainel();
+  const ids = [...document.querySelectorAll(".cmt-btn")].map(b => b.dataset.wid);
+  if (ids.length) refreshComentarioMarcadores(ids);
 }
 
 /* ===== Widget Formulário / Pesquisa (multimídia, respostas por pessoa, dashboard) ===== */
@@ -1569,7 +1608,7 @@ function renderPainel(canvas, hint) {
     }
     tile.appendChild(card); canvas.appendChild(tile);
   });
-  if (!editMode) loadPainelComentarioCounts(tiles.map(t => t.id));
+  if (!editMode) { decorateItemComments(); refreshComentarioMarcadores(tiles.map(t => t.id)); }
 }
 
 /* ===== 10) Edição de widgets (admin/gestor) ===== */
@@ -1776,11 +1815,12 @@ function onEnqueteRealtime(payload) {
   if (wid && document.getElementById("poll-" + wid)) loadEnquete(wid);
 }
 function onComentarioPainelRealtime(payload) {
-  if (view !== "painel" || projTab !== "painel") return;
-  const wid = (payload.new && payload.new.widget_id) || (payload.old && payload.old.widget_id);
+  if (view !== "painel" || (projTab !== "painel" && projTab !== "admin")) return;
   const ids = [...document.querySelectorAll(".cmt-btn")].map(b => b.dataset.wid);
-  if (ids.length) loadPainelComentarioCounts(ids);
-  if (wid && _cmtWidgetAberto === wid && document.getElementById("cmtThread")) loadComentariosPainel(wid);
+  if (ids.length) refreshComentarioMarcadores(ids);
+  const wid = (payload.new && payload.new.widget_id) || (payload.old && payload.old.widget_id);
+  const iref = (payload.new && payload.new.item_ref) || (payload.old && payload.old.item_ref) || null;
+  if (_cmtCtx && _cmtCtx.widget === wid && (_cmtCtx.item || null) === iref && document.getElementById("cmtThread")) loadComentariosPainel();
 }
 function onFormRealtime() {
   if (view !== "painel" || (projTab !== "painel" && projTab !== "admin")) return;
