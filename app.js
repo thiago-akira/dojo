@@ -2562,6 +2562,17 @@ async function uniqueSlug(table, base, scopeCol, scopeVal) {
     n++; slug = base + "-" + n;
   }
 }
+/* Igual ao uniqueSlug, mas ignora a própria linha (para renomear/editar o link) */
+async function uniqueSlugExcept(table, base, scopeCol, scopeVal, exceptId) {
+  base = slugify(base); let slug = base, n = 1;
+  for (; ;) {
+    let q = sb.from(table).select("id").eq("slug", slug);
+    if (scopeCol) q = q.eq(scopeCol, scopeVal);
+    const { data } = await q.maybeSingle();
+    if (!data || data.id === exceptId) return slug;
+    n++; slug = base + "-" + n;
+  }
+}
 function setUrl(path) { if (location.pathname !== path) history.pushState(null, "", path); }
 async function applyUrlRoute() {
   const parts = location.pathname.split("/").filter(Boolean).map(decodeURIComponent);
@@ -2999,8 +3010,13 @@ async function editarProjeto() {
   const entregasTxt = entregas.map(e => (e.nome || "") + " | " + (e.data || "")).join("\n");
   const entreguesHtml = entregas.length ? '<label style="margin-top:8px;font-size:11.5px">Marcar entregue ✓ (conta na evolução)</label><div id="entregasChk" class="entregas-chk">' +
     entregas.map(e => '<label class="ent-row"><input type="checkbox" data-ent="' + escAttr((e.nome || "").toLowerCase()) + '"' + (e.entregue ? " checked" : "") + '> ' + esc(e.nome || "") + '</label>').join("") + '</div>' : '';
+  const baseUrl = (curCliente && curCliente.slug) ? curCliente.slug : "";
   openModal('<h3>Editar projeto</h3>' +
     field("Nome", "nome", p.nome || "") +
+    '<label>Link permanente</label>' +
+    '<div class="permalink-row"><span class="permalink-base">/' + esc(baseUrl) + '/</span>' +
+    '<input data-k="slug" class="permalink-inp" value="' + escAttr(p.slug || "") + '" spellcheck="false"></div>' +
+    '<p class="muted-note" style="font-size:11px;margin:3px 0 8px;text-transform:none;letter-spacing:0;font-weight:600">Sincroniza com o nome enquanto você não editar o link manualmente. Ao salvar, o endereço do projeto muda — links antigos deixam de funcionar.</p>' +
     '<label>Descrição</label><textarea data-k="descricao">' + esc(p.descricao || "") + '</textarea>' +
     '<label>Status</label><select data-k="status"><option value="ativo"' + (p.status === "ativo" ? " selected" : "") + '>Ativo</option><option value="pausado"' + (p.status === "pausado" ? " selected" : "") + '>Pausado</option><option value="concluido"' + (p.status === "concluido" ? " selected" : "") + '>Concluído</option></select>' +
     '<label>Evolução: <b id="evoLbl">' + (p.progresso || 0) + '%</b></label><input type="range" min="0" max="100" step="5" data-k="progresso" id="evoSlider" value="' + (p.progresso || 0) + '" style="width:100%" oninput="document.getElementById(\'evoLbl\').textContent=this.value+\'%\'">' +
@@ -3019,6 +3035,12 @@ async function editarProjeto() {
       const autoChk = m.querySelector("#autoEvo"), slider = m.querySelector("#evoSlider");
       const applyAuto = () => { slider.disabled = autoChk.checked; slider.style.opacity = autoChk.checked ? ".4" : "1"; };
       autoChk.onchange = applyAuto; applyAuto();
+      // Permalink estilo WordPress: segue o nome até o usuário editar o link manualmente
+      const nomeInp = m.querySelector('[data-k="nome"]'), slugInp = m.querySelector('[data-k="slug"]');
+      let slugEdited = false;
+      slugInp.addEventListener("input", () => { slugEdited = true; });
+      slugInp.addEventListener("blur", () => { slugInp.value = slugify(slugInp.value); });
+      nomeInp.addEventListener("input", () => { if (!slugEdited) slugInp.value = slugify(nomeInp.value); });
       m.querySelector("[data-ok]").onclick = async () => {
         const get = k => (m.querySelector('[data-k="' + k + '"]') || {}).value;
         const entregueSet = new Set(Array.from(m.querySelectorAll("#entregasChk [data-ent]")).filter(x => x.checked).map(x => x.dataset.ent));
@@ -3028,13 +3050,19 @@ async function editarProjeto() {
         // se auto, recalcula já; senão usa o slider
         curProjeto.dados = dados;
         const progresso = auto ? await computeAutoEvolucao() : (parseInt(get("progresso")) || 0);
-        const upd = { nome: get("nome").trim() || p.nome, descricao: get("descricao").trim() || null, status: get("status"), progresso, dados };
+        const nome = get("nome").trim() || p.nome;
+        const slugBase = (get("slug") || "").trim() || nome;
+        const novoSlug = await uniqueSlugExcept("projetos", slugBase, "cliente_id", p.cliente_id, p.id);
+        const upd = { nome, descricao: get("descricao").trim() || null, status: get("status"), progresso, dados, slug: novoSlug };
         const { error } = await sb.from("projetos").update(upd).eq("id", p.id);
         if (error) { toast("Erro: " + error.message); return; }
         const valorNum = parseFloat(String(get("valor")).replace(/[^\d.,]/g, "").replace(".", "").replace(",", ".")) || null;
         await sb.from("projetos_privado").upsert({ projeto_id: p.id, proposta_url: get("proposta_url").trim() || null, valor: valorNum, notas: get("notas").trim() || null, updated_at: new Date().toISOString() });
         curProjeto = Object.assign({}, curProjeto, upd);
-        closeModal(); route();
+        if (curCliente && curCliente.slug && novoSlug) setUrl("/" + curCliente.slug + "/" + novoSlug);
+        closeModal();
+        if (novoSlug !== p.slug) toast("Projeto e link atualizados.");
+        route();
       };
     });
 }

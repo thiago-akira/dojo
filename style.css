@@ -1078,3 +1078,10 @@ body.edit .kb-card{cursor:grab}
 .modelo-info{flex:1;min-width:0}
 .modelo-nome{font-size:13.5px;font-weight:700}
 .modelo-desc{font-size:12px;color:var(--muted);margin-top:2px}
+
+/* ===== Link permanente (editar projeto) ===== */
+.permalink-row{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface-solid)}
+.permalink-base{display:flex;align-items:center;padding:0 4px 0 10px;color:var(--muted);font-family:var(--font-mono);font-size:12.5px;white-space:nowrap;background:var(--bg)}
+.permalink-inp{flex:1;min-width:0;border:0;background:transparent;color:var(--accent);font-family:var(--font-mono);font-size:12.5px;font-weight:600;padding:8px 10px 8px 2px}
+.permalink-inp:focus{outline:none}
+.permalink-row:focus-within{border-color:var(--accent)}
