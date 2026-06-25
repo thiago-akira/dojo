@@ -2059,6 +2059,10 @@ function setupCanvasPan() {
   cw._panReady = true;
   cw.addEventListener("pointerdown", e => {
     if (e.button !== 0) return;
+    // Abas de conteúdo (Mensagens, formulários, aprovações…) renderizam em #emptyHint
+    // dentro da .canvas-wrap — não sequestrar o clique ali (senão campos não focam e
+    // o botão vira arraste). O pan/seleção vale só para o canvas do painel.
+    if (e.target.closest("#emptyHint")) return;
     if (!e.target.closest(".tile")) {
       _selectedTiles.clear();
       document.querySelectorAll("#canvas .tile.selected").forEach(el => el.classList.remove("selected"));
