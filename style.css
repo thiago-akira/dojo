@@ -290,6 +290,7 @@ body.edit .para-edit{background:var(--surface-solid)}
 .tl-title{font-size:13.5px;font-weight:700;line-height:1.3}
 .tl-item.futuro .tl-title{color:var(--muted)}
 .tl-date{font-size:11.5px;color:var(--faint);font-weight:600;margin-top:1px}
+.tl-linked{font-size:10.5px;font-weight:800;color:var(--accent-2);border:1px solid var(--accent-2);border-radius:6px;padding:2px 7px;white-space:nowrap;flex:none}
 
 /* ===== Widget: Painel de KPIs ===== */
 .metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:12px}

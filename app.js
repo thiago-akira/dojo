@@ -371,27 +371,66 @@ const WIDGETS = {
     form(p) { return field("Título", "title", p.title); }
   },
   marcos: {
-    emoji: "🗓", name: "Linha do tempo", desc: "Marcos do projeto com status e datas.",
-    w: 4, h: 4, defaults: { title: "Cronograma", raw: "feito | Briefing | Jan\nfeito | Design | Fev\natual | Desenvolvimento | Mar\nfuturo | Entrega | Abr" },
+    emoji: "🗓", name: "Linha do tempo", desc: "Marcos do projeto, manuais ou alimentados pelas Entregas.",
+    w: 4, h: 4, defaults: { title: "Cronograma", fonte: "manual", raw: "feito | Briefing | Jan\nfeito | Design | Fev\natual | Desenvolvimento | Mar\nfuturo | Entrega | Abr" },
     render(t, c) {
       const p = t.props;
-      const items = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a.some(x => x));
-      const KNOWN = { feito: 1, atual: 1, futuro: 1 };
-      const body = items.map(a => {
-        let status, titulo, data;
-        if (a[0] && KNOWN[a[0].toLowerCase()]) { status = a[0].toLowerCase(); titulo = a[1] || ""; data = a[2] || ""; }
-        else { status = "futuro"; titulo = a[0] || ""; data = a[1] || ""; }
-        return '<div class="tl-item ' + status + '" data-item="' + escAttr(itemKey(titulo)) + '" data-itemlabel="' + escAttr(titulo) + '"><div class="tl-dot"></div><div class="tl-body">' +
-          '<div class="tl-title">' + esc(titulo) + '</div>' + (data ? '<div class="tl-date">' + esc(data) + '</div>' : '') + '</div></div>';
-      }).join("");
-      c.innerHTML = '<div class="w-head"><span class="w-title">' + esc(p.title || "Cronograma") + '</span></div>' +
-        '<div class="w-body"><div class="timeline">' + (body || '<p class="muted-note">Sem marcos.</p>') + '</div></div>';
+      const linked = p.fonte && p.fonte !== "manual";
+      // Cabeçalho (com selo quando vinculado às Entregas)
+      const head = '<div class="w-head"><span class="w-title">' + esc(p.title || "Cronograma") + '</span>' +
+        (linked ? '<span class="grow"></span><span class="tl-linked" title="Alimentado pelo widget Entregas do projeto">🔗 Entregas</span>' : '') + '</div>';
+      let items;
+      if (linked) {
+        const found = findTileGlobal(p.fonte);
+        // Não vaza Entregas de aba interna para quem não é admin atuante
+        const privada = found && found.space && found.space.visibility === "interno" && !actingAdmin();
+        if (!found || found.tile.type !== "entregas" || privada) {
+          c.innerHTML = head + '<div class="w-body"><p class="muted-note">Fonte de Entregas vinculada não encontrada. Edite o widget para revincular.</p></div>';
+          return;
+        }
+        // Cada entrega vira um marco: concluída → feito; a 1ª pendente → atual; demais → futuro
+        let usouAtual = false;
+        items = (found.tile.props.items || []).map(e => {
+          let status;
+          if (e.done) status = "feito";
+          else if (!usouAtual) { status = "atual"; usouAtual = true; }
+          else status = "futuro";
+          const datas = [];
+          if (e.previsto) datas.push("Previsto " + e.previsto);
+          if (e.realizado) datas.push("Realizado " + e.realizado);
+          return { status, titulo: e.nome || "", data: datas.join(" · ") };
+        });
+      } else {
+        const rows = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a.some(x => x));
+        const KNOWN = { feito: 1, atual: 1, futuro: 1 };
+        items = rows.map(a => {
+          if (a[0] && KNOWN[a[0].toLowerCase()]) return { status: a[0].toLowerCase(), titulo: a[1] || "", data: a[2] || "" };
+          return { status: "futuro", titulo: a[0] || "", data: a[1] || "" };
+        });
+      }
+      const body = items.map(a =>
+        '<div class="tl-item ' + a.status + '" data-item="' + escAttr(itemKey(a.titulo)) + '" data-itemlabel="' + escAttr(a.titulo) + '"><div class="tl-dot"></div><div class="tl-body">' +
+        '<div class="tl-title">' + esc(a.titulo) + '</div>' + (a.data ? '<div class="tl-date">' + esc(a.data) + '</div>' : '') + '</div></div>'
+      ).join("");
+      c.innerHTML = head + '<div class="w-body"><div class="timeline">' + (body || '<p class="muted-note">Sem marcos.</p>') + '</div></div>';
     },
     form(p) {
+      const ents = entregaTilesList();
+      const fonte = p.fonte || "manual";
+      const opts = '<option value="manual"' + (fonte === "manual" ? " selected" : "") + '>✍ Manual (digitar marcos)</option>' +
+        ents.map(e => '<option value="' + escAttr(e.id) + '"' + (fonte === e.id ? " selected" : "") + '>📦 ' + esc(e.label) + '</option>').join("");
+      const showManual = fonte === "manual";
       return field("Título", "title", p.title) +
+        '<label>Fonte dos dados</label>' +
+        '<select data-k="fonte" onchange="marcosFonteChange(this)">' + opts + '</select>' +
+        '<p class="muted-note" style="font-size:11.5px;margin:6px 0 0;text-transform:none;letter-spacing:0;font-weight:600">' +
+        (ents.length ? 'Vinculado a um widget <b>Entregas do projeto</b>: cada entrega vira um marco (título + Previsto · Realizado) e as marcadas como entregues aparecem como concluídas.' :
+          'Nenhum widget <b>Entregas do projeto</b> no painel ainda. Adicione um para poder alimentar a linha do tempo automaticamente.') + '</p>' +
+        '<div id="marcosManual" style="display:' + (showManual ? 'block' : 'none') + '">' +
         '<label>Marcos</label>' +
         '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Um marco por linha: <b>status | nome | data</b>. Status: <b>feito</b>, <b>atual</b> ou <b>futuro</b>.</p>' +
-        '<textarea data-k="raw" spellcheck="false" style="min-height:150px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6">' + esc(p.raw) + '</textarea>';
+        '<textarea data-k="raw" spellcheck="false" style="min-height:150px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6">' + esc(p.raw) + '</textarea>' +
+        '</div>';
     }
   },
   embed: {
@@ -1004,6 +1043,26 @@ const WIDGETS = {
   }
 };
 function field(label, k, v) { return '<label>' + esc(label) + '</label><input data-k="' + k + '" value="' + escAttr(v) + '">'; }
+
+/* — Vínculo Linha do tempo ↔ Entregas — */
+function findTileGlobal(id) {
+  for (const s of (state.spaces || [])) {
+    const t = (s.tiles || []).find(x => x.id === id);
+    if (t) return { tile: t, space: s };
+  }
+  return null;
+}
+function entregaTilesList() {
+  const out = [];
+  (state.spaces || []).forEach(s => (s.tiles || []).forEach(t => {
+    if (t.type === "entregas") out.push({ id: t.id, label: (t.props.title || "Entregas do projeto") + " · " + s.name });
+  }));
+  return out;
+}
+function marcosFonteChange(sel) {
+  const man = document.getElementById("marcosManual");
+  if (man) man.style.display = sel.value === "manual" ? "block" : "none";
+}
 
 /* — Helpers dos widgets de mídia — */
 function videoEmbedUrl(url) {
