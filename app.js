@@ -3318,14 +3318,51 @@ function enableDrag(tile, card, t) {
   card.addEventListener("pointerdown", e => {
     if (!e.target.closest(".tgrip") || !editMode) return;
     e.preventDefault();
-    const cs = cellSize(); const sx = e.clientX, sy = e.clientY;
     const tiles = space().tiles;
-    // posMap: posições atuais do device para todos os tiles
+    const els = {}; document.querySelectorAll("#canvas .tile").forEach(el => els[el.dataset.id] = el);
+    const cvs = document.getElementById("canvas");
+    tile.classList.add("dragging"); card.setPointerCapture(e.pointerId);
+
+    // Modo mobile (frame dev-mobile no desktop OU tela real ≤768px)
+    const mobileMode = document.querySelector(".canvas-wrap").classList.contains("dev-mobile") || window.innerWidth <= 768;
+    if (mobileMode) {
+      const sorted = [...tiles].sort((a, b) => { const pa = tilePos(a), pb = tilePos(b); return (pa.y * 1000 + pa.x) - (pb.y * 1000 + pb.x); });
+      let newOrder = [...sorted];
+      const dropLine = document.createElement("div"); dropLine.className = "drop-line"; cvs.appendChild(dropLine);
+      const mv = ev => {
+        const oth = sorted.filter(x => x.id !== t.id);
+        let ins = oth.length;
+        for (let i = 0; i < oth.length; i++) {
+          const el = els[oth[i].id]; if (!el) continue;
+          const r = el.getBoundingClientRect();
+          if (ev.clientY < r.top + r.height / 2) { ins = i; break; }
+        }
+        const ord = [...oth]; ord.splice(ins, 0, t); newOrder = ord;
+        newOrder.forEach((x, i) => { const el = els[x.id]; if (el) el.style.order = i; });
+        const cr = cvs.getBoundingClientRect();
+        if (ins < oth.length) {
+          const el = els[oth[ins].id];
+          if (el) { const r = el.getBoundingClientRect(); dropLine.style.top = (r.top - cr.top) + "px"; dropLine.style.display = "block"; }
+        } else if (oth.length > 0) {
+          const el = els[oth[oth.length - 1].id];
+          if (el) { const r = el.getBoundingClientRect(); dropLine.style.top = (r.bottom - cr.top) + "px"; dropLine.style.display = "block"; }
+        }
+      };
+      const up = () => {
+        card.removeEventListener("pointermove", mv); card.removeEventListener("pointerup", up);
+        tile.classList.remove("dragging"); dropLine.remove();
+        let y = 0; newOrder.forEach(x => { const pos = tilePos(x); saveTilePos(x, { x: 0, y, w: pos.w, h: pos.h }); y += pos.h + 1; });
+        save(); pushHist("Moveu widget"); route();
+      };
+      card.addEventListener("pointermove", mv); card.addEventListener("pointerup", up);
+      return;
+    }
+
+    // Modo desktop/tablet: reflow com posMap
+    const cs = cellSize(); const sx = e.clientX, sy = e.clientY;
     const posMap = {}; tiles.forEach(x => { posMap[x.id] = { ...tilePos(x) }; });
     const origMap = {}; tiles.forEach(x => { origMap[x.id] = { ...posMap[x.id] }; });
     const ox = posMap[t.id].x, oy = posMap[t.id].y, tw = posMap[t.id].w;
-    const els = {}; document.querySelectorAll("#canvas .tile").forEach(el => els[el.dataset.id] = el);
-    tile.classList.add("dragging"); card.setPointerCapture(e.pointerId);
     const applyAll = () => tiles.forEach(x => { const el = els[x.id]; const p = posMap[x.id]; if (el) { el.style.setProperty("--gc", (p.x + 1) + " / span " + p.w); el.style.setProperty("--gr", (p.y + 1) + " / span " + p.h); } });
     const mv = ev => {
       posMap[t.id].x = clamp(ox + Math.round((ev.clientX - sx) / (cs.w + cs.gap)), 0, COLS - tw);
