@@ -2446,6 +2446,7 @@ async function renderMeusProjetos(hint, internoCliente, navHtml) {
     if (projetos && projetos.length) {
       projetosHtml = '<div class="cli-grid">' + projetos.map(p =>
         '<div class="cli-card" onclick="abrirProjeto(\'' + p.id + '\')">' +
+        '<button class="cli-card-menu" onclick="abrirMenuProjeto(event,\'' + p.id + '\')" title="Duplicar / Gerar modelo">⋯</button>' +
         '<div class="cli-name">' + esc(p.nome) + '</div>' +
         '<div class="cli-sub">' + esc(p.descricao || "") + '</div>' +
         '<div class="cli-meta">' +
@@ -2461,6 +2462,7 @@ async function renderMeusProjetos(hint, internoCliente, navHtml) {
     '<div><h2>🏢 Meus Projetos</h2><div class="muted-note" style="font-size:12px;margin-top:2px">' + empresa + '</div></div>' +
     '<div style="display:flex;gap:8px">' +
     (internoCliente ? '<button class="btn" onclick="editarClienteInterno()">✏ Renomear</button>' : '') +
+    '<button class="btn" onclick="abrirBibliotecaModelos()">📐 Modelos</button>' +
     '<button class="btn primary" onclick="novoMeuProjeto(' + (iid ? '\'' + iid + '\'' : 'null') + ')">＋ Novo projeto</button>' +
     '</div></div>' + projetosHtml + '</div>';
 }
@@ -2623,10 +2625,12 @@ async function renderClienteDetail(canvas, hint) {
     '<div class="page-head"><h2>' + esc(c.empresa || c.nome) + ' <span class="cli-status ' + (c.status === "ativo" ? "ativo" : "pausado") + '" style="vertical-align:middle">' + esc(c.status) + '</span></h2><div style="display:flex;gap:8px">' +
     '<button class="btn danger" onclick="excluirCliente()">🗑 Excluir</button>' +
     '<button class="btn" onclick="editarCliente()">⚙ Configurar cliente</button>' +
+    '<button class="btn" onclick="abrirBibliotecaModelos()">📐 Modelos</button>' +
     '<button class="btn primary" onclick="novoProjeto()">＋ Novo projeto</button></div></div>' +
     perfil +
     ((projetos && projetos.length) ? '<div class="cli-grid">' + projetos.map(p =>
       '<div class="cli-card" onclick="abrirProjeto(\'' + p.id + '\')">' +
+      '<button class="cli-card-menu" onclick="abrirMenuProjeto(event,\'' + p.id + '\')" title="Duplicar / Gerar modelo">⋯</button>' +
       '<div class="cli-name">' + esc(p.nome) + '</div>' +
       '<div class="cli-sub">' + esc(p.descricao || "") + '</div>' +
       '<div class="cli-meta"><span class="cli-status ' + (p.status === "ativo" ? "ativo" : "pausado") + '">' + esc(p.status) + '</span>' +
@@ -2638,21 +2642,7 @@ async function renderClienteDetail(canvas, hint) {
 
 function novoMeuProjeto(internoClienteId) {
   if (!internoClienteId) { toast("Erro: cliente interno não encontrado."); return; }
-  openModal('<h3>Novo projeto</h3>' + field("Nome", "nome", "") +
-    '<label>Descrição</label><textarea data-k="descricao"></textarea>' +
-    '<div class="modal-actions"><span class="grow"></span><button class="btn" data-x>Cancelar</button><button class="btn primary" data-ok>Criar</button></div>',
-    m => {
-      m.querySelector("[data-x]").onclick = closeModal;
-      m.querySelector("[data-ok]").onclick = async () => {
-        const nome = m.querySelector('[data-k="nome"]').value.trim();
-        const descricao = m.querySelector('[data-k="descricao"]').value.trim();
-        if (!nome) { toast("Informe o nome."); return; }
-        const slug = await uniqueSlug("projetos", nome, "cliente_id", internoClienteId);
-        const { error } = await sb.from("projetos").insert({ cliente_id: internoClienteId, nome, descricao, slug });
-        if (error) { toast("Erro: " + error.message); return; }
-        closeModal(); route();
-      };
-    });
+  criarProjetoFlow(internoClienteId);
 }
 
 function editarClienteInterno() {
@@ -2679,8 +2669,21 @@ function editarClienteInterno() {
 }
 
 function novoProjeto() {
+  criarProjetoFlow(curCliente && curCliente.id);
+}
+
+/* ===== Criar projeto (em branco ou a partir de modelo) ===== */
+async function criarProjetoFlow(clienteId) {
+  if (!clienteId) { toast("Cliente não encontrado."); return; }
+  const { data: tpls } = await sb.from("modelos").select("id,titulo").eq("tipo", "painel").order("created_at", { ascending: false });
+  const temTpl = tpls && tpls.length;
+  const tplOptions = '<option value="">Em branco</option>' +
+    (temTpl ? tpls.map(t => '<option value="' + t.id + '">' + esc(t.titulo) + '</option>').join("") : "");
   openModal('<h3>Novo projeto</h3>' + field("Nome", "nome", "") +
     '<label>Descrição</label><textarea data-k="descricao"></textarea>' +
+    '<label>Começar com</label><select data-k="modelo">' + tplOptions + '</select>' +
+    (temTpl ? '<p class="muted-note" style="font-size:11px;margin-top:4px">Um modelo recria a organização dos widgets, em branco.</p>'
+            : '<p class="muted-note" style="font-size:11px;margin-top:4px">Nenhum modelo salvo. Gere um a partir de um projeto pelo menu ⋯.</p>') +
     '<div class="modal-actions"><span class="grow"></span><button class="btn" data-x>Cancelar</button><button class="btn primary" data-ok>Criar</button></div>',
     m => {
       m.querySelector("[data-x]").onclick = closeModal;
@@ -2688,11 +2691,122 @@ function novoProjeto() {
         const nome = m.querySelector('[data-k="nome"]').value.trim();
         const descricao = m.querySelector('[data-k="descricao"]').value.trim();
         if (!nome) { toast("Informe o nome."); return; }
-        const slug = await uniqueSlug("projetos", nome, "cliente_id", curCliente.id);
-        const { error } = await sb.from("projetos").insert({ cliente_id: curCliente.id, nome, descricao, slug });
-        if (error) { toast("Erro: " + error.message); return; }
-        closeModal(); route();
+        const modeloId = m.querySelector('[data-k="modelo"]').value;
+        const slug = await uniqueSlug("projetos", nome, "cliente_id", clienteId);
+        const { data: novo, error } = await sb.from("projetos").insert({ cliente_id: clienteId, nome, descricao, slug }).select("id").single();
+        if (error || !novo) { toast("Erro: " + (error && error.message || "ao criar")); return; }
+        if (modeloId) {
+          const { data: tpl } = await sb.from("modelos").select("layout").eq("id", modeloId).maybeSingle();
+          if (tpl && tpl.layout) await sb.from("paineis").insert({ projeto_id: novo.id, layout: tpl.layout });
+        }
+        closeModal(); toast("Projeto criado."); route();
       };
+    });
+}
+
+/* ===== Nome incremental para duplicatas: "Projeto (1)", "(2)"… ===== */
+async function nextProjectName(clienteId, base) {
+  const { data } = await sb.from("projetos").select("nome").eq("cliente_id", clienteId);
+  const names = new Set((data || []).map(p => p.nome));
+  if (!names.has(base)) return base;
+  let n = 1;
+  while (names.has(base + " (" + n + ")")) n++;
+  return base + " (" + n + ")";
+}
+
+/* ===== Esqueleto do painel: mantém widgets e posições, zera o conteúdo ===== */
+function skeletonLayout(layout) {
+  const L = JSON.parse(JSON.stringify(layout || defaultState()));
+  (L.spaces || []).forEach(s => (s.tiles || []).forEach(t => {
+    const W = WIDGETS[t.type];
+    t.props = (W && W.defaults) ? JSON.parse(JSON.stringify(W.defaults)) : {};
+  }));
+  return L;
+}
+
+/* ===== Duplicar projeto (versões / testes) ===== */
+async function duplicarProjeto(projetoId) {
+  const { data: orig, error } = await sb.from("projetos").select("*").eq("id", projetoId).single();
+  if (error || !orig) { toast("Erro ao carregar projeto."); return; }
+  const nome = await nextProjectName(orig.cliente_id, orig.nome);
+  const slug = await uniqueSlug("projetos", nome, "cliente_id", orig.cliente_id);
+  const { data: novo, error: e2 } = await sb.from("projetos")
+    .insert({ cliente_id: orig.cliente_id, nome, descricao: orig.descricao, status: orig.status, dados: orig.dados, slug })
+    .select("id").single();
+  if (e2 || !novo) { toast("Erro ao duplicar: " + (e2 && e2.message || "")); return; }
+  const { data: pan } = await sb.from("paineis").select("layout").eq("projeto_id", projetoId).maybeSingle();
+  if (pan && pan.layout) await sb.from("paineis").insert({ projeto_id: novo.id, layout: pan.layout });
+  const { data: priv } = await sb.from("projetos_privado").select("proposta_url,valor,notas").eq("projeto_id", projetoId).maybeSingle();
+  if (priv) await sb.from("projetos_privado").insert({ projeto_id: novo.id, proposta_url: priv.proposta_url, valor: priv.valor, notas: priv.notas });
+  toast("Projeto duplicado: " + nome);
+  route();
+}
+
+/* ===== Gerar modelo a partir de um projeto ===== */
+async function gerarModeloDeProjeto(projetoId) {
+  const { data: proj } = await sb.from("projetos").select("nome").eq("id", projetoId).maybeSingle();
+  const { data: pan } = await sb.from("paineis").select("layout").eq("projeto_id", projetoId).maybeSingle();
+  if (!pan || !pan.layout || !(pan.layout.spaces || []).some(s => (s.tiles || []).length)) {
+    toast("Este projeto ainda não tem widgets para virar modelo."); return;
+  }
+  const skel = skeletonLayout(pan.layout);
+  const defTitulo = (proj && proj.nome ? proj.nome : "Painel") + " — modelo";
+  openModal('<h3>Gerar modelo a partir do projeto</h3>' +
+    '<p class="muted-note" style="font-size:11.5px;margin:2px 0 10px;text-transform:none;letter-spacing:0;font-weight:600">Salva a organização dos widgets, sem os dados preenchidos. Fica na biblioteca de modelos.</p>' +
+    field("Nome do modelo", "titulo", defTitulo) +
+    '<label>Descrição (opcional)</label><textarea data-k="descricao"></textarea>' +
+    actions("Salvar modelo"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const titulo = m.querySelector('[data-k="titulo"]').value.trim();
+        if (!titulo) { toast("Informe o nome do modelo."); return; }
+        const descricao = m.querySelector('[data-k="descricao"]').value.trim() || null;
+        const { error } = await sb.from("modelos").insert({ tipo: "painel", titulo, descricao, layout: skel, criado_por: me.id });
+        if (error) { toast("Erro: " + error.message); return; }
+        closeModal(); toast("Modelo salvo na biblioteca.");
+      };
+    });
+}
+
+/* ===== Menu de contexto do card de projeto (⋯) ===== */
+function abrirMenuProjeto(ev, projetoId) {
+  ev.stopPropagation(); ev.preventDefault();
+  const ex = document.getElementById("projMenu"); if (ex) ex.remove();
+  const html = '<button class="ctx-it" data-a="dup">⧉ Duplicar projeto</button>' +
+    '<button class="ctx-it" data-a="modelo">📐 Gerar modelo</button>';
+  const menu = document.createElement("div"); menu.id = "projMenu"; menu.className = "ctx-menu"; menu.innerHTML = html;
+  document.body.appendChild(menu);
+  menu.style.left = Math.min(ev.clientX, window.innerWidth - menu.offsetWidth - 8) + "px";
+  menu.style.top = Math.min(ev.clientY, window.innerHeight - menu.offsetHeight - 8) + "px";
+  const close = () => { menu.remove(); document.removeEventListener("click", close, true); document.removeEventListener("contextmenu", close, true); };
+  menu.querySelectorAll(".ctx-it").forEach(b => b.onclick = e => {
+    e.stopPropagation(); const a = b.dataset.a; close();
+    if (a === "dup") duplicarProjeto(projetoId);
+    else if (a === "modelo") gerarModeloDeProjeto(projetoId);
+  });
+  setTimeout(() => { document.addEventListener("click", close, true); document.addEventListener("contextmenu", close, true); }, 0);
+}
+
+/* ===== Biblioteca de modelos ===== */
+async function abrirBibliotecaModelos() {
+  const { data: tpls } = await sb.from("modelos").select("id,titulo,descricao,created_at").eq("tipo", "painel").order("created_at", { ascending: false });
+  const lista = (tpls && tpls.length)
+    ? tpls.map(t => '<div class="modelo-row" data-id="' + t.id + '">' +
+        '<div class="modelo-info"><div class="modelo-nome">📐 ' + esc(t.titulo) + '</div>' +
+        (t.descricao ? '<div class="modelo-desc">' + esc(t.descricao) + '</div>' : '') + '</div>' +
+        '<button class="lnk del" data-del="' + t.id + '" title="Excluir modelo">🗑</button></div>').join("")
+    : '<p class="muted-note">Nenhum modelo salvo. Abra um projeto pelo menu ⋯ e escolha “Gerar modelo”.</p>';
+  openModal('<div class="kbm-head"><h3>Biblioteca de modelos</h3><button class="modal-x" onclick="closeModal()">✕</button></div>' +
+    '<p class="muted-note" style="font-size:11.5px;margin:0 0 12px;text-transform:none;letter-spacing:0;font-weight:600">Modelos são usados ao criar um novo projeto (campo “Começar com”).</p>' +
+    '<div class="modelo-lista">' + lista + '</div>',
+    m => {
+      m.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
+        if (!confirm("Excluir este modelo? Projetos já criados a partir dele não são afetados.")) return;
+        const { error } = await sb.from("modelos").delete().eq("id", b.dataset.del);
+        if (error) { toast("Erro: " + error.message); return; }
+        toast("Modelo excluído."); abrirBibliotecaModelos();
+      });
     });
 }
 
