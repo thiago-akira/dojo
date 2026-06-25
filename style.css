@@ -120,7 +120,7 @@ body{padding-top:53px}
 .ntoast-x:hover{color:var(--text)}
 
 /* ===== Canvas / grid ===== */
-.canvas-wrap{padding:var(--gap);min-height:calc(100vh - 52px)}
+.canvas-wrap{padding:var(--gap);min-height:calc(100vh - 52px);max-width:1500px;margin-left:auto;margin-right:auto}
 .canvas{display:grid;grid-template-columns:repeat(var(--cols),1fr);grid-auto-rows:var(--row);gap:var(--gap);align-content:start;position:relative}
 .empty-hint{color:var(--muted);text-align:center;padding:60px 20px;font-size:14px}
 
