@@ -3231,18 +3231,18 @@ function renderPainel(canvas, hint) {
     hint.textContent = canEdit ? "Aba vazia — clique em ＋ Adicionar." : "Nada por aqui ainda.";
   } else hint.style.display = "none";
 
-  // Ordem mobile: y primeiro, depois x
-  const mobileOrder = {};
-  [...tiles].sort((a, b) => { const pa = tilePos(a), pb = tilePos(b); return (pa.y * 1000 + pa.x) - (pb.y * 1000 + pb.x); }).forEach((t, i) => { mobileOrder[t.id] = i; });
+  // Em mobile: renderiza na ordem vertical correta (DOM order = visual order na coluna única)
+  const renderTiles = isMobileCanvas()
+    ? [...tiles].sort((a, b) => { const pa = tilePos(a), pb = tilePos(b); return (pa.y * 1000 + pa.x) - (pb.y * 1000 + pb.x); })
+    : tiles;
 
-  tiles.forEach(t => {
+  renderTiles.forEach(t => {
     const W = WIDGETS[t.type]; if (!W) return;
     const tile = document.createElement("div"); tile.className = "tile"; tile.dataset.id = t.id;
     const tl = tilePos(t);
     tile.style.setProperty("--gc", (tl.x + 1) + " / span " + tl.w);
     tile.style.setProperty("--gr", (tl.y + 1) + " / span " + tl.h);
     tile.style.setProperty("--gh", tl.h);
-    tile.style.order = mobileOrder[t.id] || 0;
     const card = document.createElement("div"); card.className = "card";
     const content = document.createElement("div"); content.className = "content";
     try { W.render(t, content); } catch (e) { content.textContent = "Erro no widget."; }
@@ -3296,6 +3296,9 @@ async function removeTile(id) {
   save(); pushHist("Removeu widget"); route();
 }
 
+function isMobileCanvas() {
+  return deviceView === "mobile" || window.innerWidth <= 768;
+}
 function cellSize() { const c = $("#canvas"); const gap = 14; const w = (c.clientWidth - gap * (COLS - 1)) / COLS; return { w, h: 48, gap }; }
 /* Reflow com posMap (device-aware): empurra tiles para baixo para não sobrepor o fixed */
 function reflowPushMap(tiles, fixed, posMap) {
@@ -3324,7 +3327,7 @@ function enableDrag(tile, card, t) {
     tile.classList.add("dragging"); card.setPointerCapture(e.pointerId);
 
     // Modo mobile (frame dev-mobile no desktop OU tela real ≤768px)
-    const mobileMode = document.querySelector(".canvas-wrap").classList.contains("dev-mobile") || window.innerWidth <= 768;
+    const mobileMode = isMobileCanvas();
     if (mobileMode) {
       const sorted = [...tiles].sort((a, b) => { const pa = tilePos(a), pb = tilePos(b); return (pa.y * 1000 + pa.x) - (pb.y * 1000 + pb.x); });
       let newOrder = [...sorted];
@@ -5084,7 +5087,7 @@ async function excluirCliente() {
 
 /* ===== 14) Topbar ===== */
 /* ===== Item 4: visualização responsiva (desktop/tablet/celular) — admin ===== */
-let deviceView = window.innerWidth <= 520 ? "mobile" : (window.innerWidth <= 900 ? "tablet" : "desktop");
+let deviceView = window.innerWidth <= 768 ? "mobile" : (window.innerWidth <= 1080 ? "tablet" : "desktop");
 const DEV_ICON = { desktop: "🖥", tablet: "📲", mobile: "📱" };
 const DEV_NOME = { desktop: "Desktop", tablet: "Tablet", mobile: "Celular" };
 function applyDevice() {
