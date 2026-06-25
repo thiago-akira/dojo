@@ -113,9 +113,9 @@ body{padding-top:53px}
 .bell-when{font-size:11.5px;color:var(--faint);font-weight:600}
 
 /* ===== Toast de novidades (cliente) — some ao fechar ===== */
-#ntoastHost{position:fixed;right:16px;bottom:16px;z-index:65;display:flex;flex-direction:column;gap:10px;width:320px;max-width:calc(100vw - 32px)}
-.ntoast{display:flex;align-items:flex-start;gap:11px;background:var(--surface);border:1px solid var(--line-strong);border-left:3px solid var(--accent);border-radius:11px;box-shadow:var(--shadow);padding:13px 14px;opacity:0;transform:translateX(20px);transition:opacity .25s,transform .25s}
-.ntoast.show{opacity:1;transform:translateX(0)}
+#ntoastHost{position:fixed;right:16px;bottom:16px;z-index:65;display:flex;flex-direction:column;gap:10px;width:320px;max-width:calc(100vw - 32px);pointer-events:none}
+.ntoast{pointer-events:none;display:flex;align-items:flex-start;gap:11px;background:var(--surface);border:1px solid var(--line-strong);border-left:3px solid var(--accent);border-radius:11px;box-shadow:var(--shadow);padding:13px 14px;opacity:0;transform:translateX(20px);transition:opacity .25s,transform .25s}
+.ntoast.show{opacity:1;transform:translateX(0);pointer-events:auto}
 .ntoast-ico{font-size:18px;flex:none;line-height:1.3}
 .ntoast-body{flex:1;min-width:0}
 .ntoast-t{font-size:13.5px;font-weight:800;line-height:1.3}

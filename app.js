@@ -4654,9 +4654,11 @@ function notifToast(n) {
   el.innerHTML = '<div class="ntoast-ico">' + (NOTIF_ICON[n.tipo] || "🔔") + '</div>' +
     '<div class="ntoast-body"><div class="ntoast-t">' + esc(n.titulo) + '</div>' + (n.corpo ? '<div class="ntoast-c">' + esc(n.corpo) + '</div>' : '') + '</div>' +
     '<button class="ntoast-x" title="Fechar">✕</button>';
-  el.querySelector(".ntoast-x").onclick = () => { el.classList.remove("show"); setTimeout(() => el.remove(), 250); };
+  const fechar = () => { el.classList.remove("show"); setTimeout(() => el.remove(), 250); };
+  el.querySelector(".ntoast-x").onclick = fechar;
   host.appendChild(el);
   requestAnimationFrame(() => el.classList.add("show"));
+  setTimeout(fechar, 8000); // some sozinho — não acumula sobre a tela/composer
 }
 
 let _notifChannel = null;
