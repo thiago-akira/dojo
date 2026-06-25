@@ -3,7 +3,7 @@
   --bg:#0f0f14; --surface:#1a1b22; --surface-solid:#20212a; --line:#2c2e3a; --line-strong:#3a3d4d;
   --text:#e9eaf0; --muted:#9aa0b5; --faint:#6b7186;
   --accent:#e8a33d; --accent-2:#5b8def; --danger:#e0604a; --ok:#3fa873;
-  --radius:14px; --gap:14px; --row:48px; --cols:24;
+  --radius:14px; --gap:14px; --row:17px; --cols:48;
   --font-ui:"Bricolage Grotesque",system-ui,sans-serif; --font-mono:"JetBrains Mono",monospace;
   --shadow:0 10px 30px rgba(0,0,0,.35);
 }
@@ -82,6 +82,10 @@ body{padding-top:53px}
   .topbar::-webkit-scrollbar{display:none}
   .subnav{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
   .subnav::-webkit-scrollbar{display:none}
+  /* Abas em 2 linhas que deslizam horizontalmente em dispositivos reais */
+  #spaceTabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  #spaceTabs::-webkit-scrollbar{display:none}
+  .space-tabs{display:grid;grid-auto-flow:column;grid-template-rows:repeat(2,auto);grid-auto-columns:max-content;justify-content:start}
   /* Sem frame de "preview" em dispositivos reais — canvas ocupa tela toda */
   .canvas-wrap.dev-tablet,.canvas-wrap.dev-mobile{max-width:100%!important;margin:0!important;border:none!important;border-radius:0!important;box-shadow:none!important}
 }
@@ -128,14 +132,14 @@ body{padding-top:53px}
 .canvas-wrap.dev-tablet,.canvas-wrap.dev-mobile{margin:16px auto;border:2px solid var(--line-strong);border-radius:20px;box-shadow:var(--shadow);min-height:auto;background:var(--bg);transition:max-width .25s}
 .canvas-wrap.dev-tablet{max-width:768px}
 .canvas-wrap.dev-mobile{max-width:390px}
-.canvas-wrap.dev-tablet .canvas{--cols:24}
+.canvas-wrap.dev-tablet .canvas{--cols:48}
 /* preview mobile: coluna única para visualizar ordem real */
 .canvas-wrap.dev-mobile .canvas{grid-template-columns:1fr !important;grid-auto-rows:var(--row)}
-.canvas-wrap.dev-mobile .tile{grid-column:1/-1 !important;grid-row:auto / span var(--gh,4) !important}
+.canvas-wrap.dev-mobile .tile{grid-column:1/-1 !important;grid-row:auto / span var(--gh,8) !important}
 /* mobile real: coluna única */
 @media (max-width:768px){
   .canvas{grid-template-columns:1fr !important;grid-auto-rows:var(--row)}
-  .tile{grid-column:1/-1 !important;grid-row:auto / span var(--gh,4) !important}
+  .tile{grid-column:1/-1 !important;grid-row:auto / span var(--gh,8) !important}
 }
 
 /* ===== Tile / card ===== */
@@ -709,7 +713,11 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 
 /* ===== Abas de espaços (múltiplos painéis por projeto) ===== */
 #spaceTabs{padding:0 0 10px 0}
-.space-tabs{display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:center}
+.space-tabs{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+/* Mobile/tablet: abas em até 2 linhas que deslizam horizontalmente (como o topo) */
+.canvas-wrap.dev-tablet #spaceTabs,.canvas-wrap.dev-mobile #spaceTabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.canvas-wrap.dev-tablet #spaceTabs::-webkit-scrollbar,.canvas-wrap.dev-mobile #spaceTabs::-webkit-scrollbar{display:none}
+.canvas-wrap.dev-tablet .space-tabs,.canvas-wrap.dev-mobile .space-tabs{display:grid;grid-auto-flow:column;grid-template-rows:repeat(2,auto);grid-auto-columns:max-content;justify-content:start}
 .space-tab{background:var(--surface-solid);border:1px solid var(--line);color:var(--muted);border-radius:9px;padding:6px 13px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
 .space-tab:hover{border-color:var(--accent);color:var(--text)}
 .space-tab.on{border-color:var(--accent);color:var(--accent);background:var(--surface)}

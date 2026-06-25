@@ -6,8 +6,9 @@
 /* ===== 1) Cliente Supabase ===== */
 const CFG = window.DOJO_CONFIG || {};
 const sb = supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);
-const COLS = 24;   // resolução do grid (era 12; dobrada p/ ajustes mais finos)
+const COLS = 24;   // resolução lógica do grid (coordenadas dos tiles)
 const RES = 2;     // fator de migração de layouts antigos (12→24)
+const SUB = 2;     // sub-resolução de render: permite passo de 0,5 célula (ajuste fino)
 
 /* ===== 2) Helpers ===== */
 const uid = () => "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -3240,9 +3241,9 @@ function renderPainel(canvas, hint) {
     const W = WIDGETS[t.type]; if (!W) return;
     const tile = document.createElement("div"); tile.className = "tile"; tile.dataset.id = t.id;
     const tl = tilePos(t);
-    tile.style.setProperty("--gc", (tl.x + 1) + " / span " + tl.w);
-    tile.style.setProperty("--gr", (tl.y + 1) + " / span " + tl.h);
-    tile.style.setProperty("--gh", tl.h);
+    tile.style.setProperty("--gc", (tl.x * SUB + 1) + " / span " + (tl.w * SUB));
+    tile.style.setProperty("--gr", (tl.y * SUB + 1) + " / span " + (tl.h * SUB));
+    tile.style.setProperty("--gh", tl.h * SUB);
     const card = document.createElement("div"); card.className = "card";
     const content = document.createElement("div"); content.className = "content";
     try { W.render(t, content); } catch (e) { content.textContent = "Erro no widget."; }
@@ -3299,7 +3300,10 @@ async function removeTile(id) {
 function isMobileCanvas() {
   return deviceView === "mobile" || window.innerWidth <= 768;
 }
-function cellSize() { const c = $("#canvas"); const gap = 14; const w = (c.clientWidth - gap * (COLS - 1)) / COLS; return { w, h: 48, gap }; }
+// Retorna o tamanho da SUB-célula (1/SUB de célula lógica) para snap fino de 0,5
+function cellSize() { const c = $("#canvas"); const gap = 14; const N = COLS * SUB; const w = (c.clientWidth - gap * (N - 1)) / N; return { w, h: 17, gap }; }
+// Arredonda para o múltiplo de 0,5 lógico mais próximo a partir de um deslocamento em px
+function snapSteps(deltaPx, cellPx, gap) { return Math.round(deltaPx / (cellPx + gap)) / SUB; }
 /* Reflow com posMap (device-aware): empurra tiles para baixo para não sobrepor o fixed */
 function reflowPushMap(tiles, fixed, posMap) {
   const others = tiles.filter(t => t !== fixed).sort((a, b) => posMap[a.id].y - posMap[b.id].y || posMap[a.id].x - posMap[b.id].x);
@@ -3408,10 +3412,10 @@ function enableDrag(tile, card, t) {
     const gMinX = Math.min(...grp.map(x => origMap[x.id].x));
     const gMaxXe = Math.max(...grp.map(x => origMap[x.id].x + origMap[x.id].w));
     const gMinY = Math.min(...grp.map(x => origMap[x.id].y));
-    const applyAll = () => tiles.forEach(x => { const el = els[x.id]; const p = posMap[x.id]; if (el) { el.style.setProperty("--gc", (p.x + 1) + " / span " + p.w); el.style.setProperty("--gr", (p.y + 1) + " / span " + p.h); } });
+    const applyAll = () => tiles.forEach(x => { const el = els[x.id]; const p = posMap[x.id]; if (el) { el.style.setProperty("--gc", (p.x * SUB + 1) + " / span " + (p.w * SUB)); el.style.setProperty("--gr", (p.y * SUB + 1) + " / span " + (p.h * SUB)); } });
     const mv = ev => {
-      let dx = Math.round((ev.clientX - sx) / (cs.w + cs.gap));
-      let dy = Math.round((ev.clientY - sy) / (cs.h + cs.gap));
+      let dx = snapSteps(ev.clientX - sx, cs.w, cs.gap);
+      let dy = snapSteps(ev.clientY - sy, cs.h, cs.gap);
       dx = clamp(dx, -gMinX, COLS - gMaxXe);
       dy = Math.max(dy, -gMinY);
       tiles.forEach(x => { posMap[x.id] = { ...origMap[x.id] }; });
@@ -3438,12 +3442,12 @@ function enableResize(tile, handle, t) {
     const ow = initPos.w, oh = initPos.h;
     tile.classList.add("resizing"); handle.setPointerCapture(e.pointerId);
     const mv = ev => {
-      const nw = clamp(ow + Math.round((ev.clientX - sx) / (cs.w + cs.gap)), 1, COLS - initPos.x);
-      const nh = Math.max(1, oh + Math.round((ev.clientY - sy) / (cs.h + cs.gap)));
+      const nw = clamp(ow + snapSteps(ev.clientX - sx, cs.w, cs.gap), 0.5, COLS - initPos.x);
+      const nh = Math.max(0.5, oh + snapSteps(ev.clientY - sy, cs.h, cs.gap));
       saveTilePos(t, { ...initPos, w: nw, h: nh });
-      tile.style.setProperty("--gc", (initPos.x + 1) + " / span " + nw);
-      tile.style.setProperty("--gr", (initPos.y + 1) + " / span " + nh);
-      tile.style.setProperty("--gh", nh);
+      tile.style.setProperty("--gc", (initPos.x * SUB + 1) + " / span " + (nw * SUB));
+      tile.style.setProperty("--gr", (initPos.y * SUB + 1) + " / span " + (nh * SUB));
+      tile.style.setProperty("--gh", nh * SUB);
     };
     const up = () => { handle.removeEventListener("pointermove", mv); handle.removeEventListener("pointerup", up); tile.classList.remove("resizing"); save(); pushHist("Redimensionou widget"); };
     handle.addEventListener("pointermove", mv); handle.addEventListener("pointerup", up);
