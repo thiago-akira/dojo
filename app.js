@@ -3317,14 +3317,52 @@ function reflowPushMap(tiles, fixed, posMap) {
     posMap[t.id] = { ...posMap[t.id], y }; placed.push(t);
   }
 }
+/* Reflow tratando um GRUPO de tiles como fixo (movem juntos); empurra os demais para baixo */
+function reflowPushGroup(tiles, fixedIds, posMap) {
+  const others = tiles.filter(t => !fixedIds.has(t.id)).sort((a, b) => posMap[a.id].y - posMap[b.id].y || posMap[a.id].x - posMap[b.id].x);
+  const placed = tiles.filter(t => fixedIds.has(t.id));
+  for (const t of others) {
+    const { x: tx, w: tw, h: th } = posMap[t.id];
+    let y = posMap[t.id].y, moved = true, guard = 0;
+    while (moved && guard++ < 200) {
+      moved = false;
+      for (const q of placed) {
+        const qp = posMap[q.id];
+        if (tx < qp.x + qp.w && tx + tw > qp.x && y < qp.y + qp.h && y + th > qp.y) { y = qp.y + qp.h; moved = true; }
+      }
+    }
+    posMap[t.id] = { ...posMap[t.id], y }; placed.push(t);
+  }
+}
+/* Reaplica o destaque visual da seleção após um route() */
+function applySelectionHighlight() {
+  if (!_selectedTiles || _selectedTiles.size < 2) return;
+  document.querySelectorAll("#canvas .tile").forEach(el => el.classList.toggle("selected", _selectedTiles.has(el.dataset.id)));
+}
 function enableDrag(tile, card, t) {
   card.addEventListener("pointerdown", e => {
-    if (!e.target.closest(".tgrip") || !editMode) return;
+    if (!editMode) return;
+    const onGrip = !!e.target.closest(".tgrip");
+    const partOfSelection = _selectedTiles.size > 1 && _selectedTiles.has(t.id);
+    const onInteractive = !!e.target.closest("input,textarea,select,button,a,[contenteditable],.kb-card,.lnk,.poll-opt");
+    // Arrasta se: pegou o grip ⠿, OU é parte de uma seleção múltipla e não clicou num elemento interativo
+    if (!onGrip && !(partOfSelection && !onInteractive)) return;
     e.preventDefault();
     const tiles = space().tiles;
     const els = {}; document.querySelectorAll("#canvas .tile").forEach(el => els[el.dataset.id] = el);
     const cvs = document.getElementById("canvas");
+    // Grupo: se o tile arrastado faz parte de uma multi-seleção, movem todos juntos.
+    // Caso contrário, limpa a seleção e arrasta só este.
+    const isGroup = _selectedTiles.size > 1 && _selectedTiles.has(t.id);
+    if (!isGroup) {
+      _selectedTiles.clear();
+      document.querySelectorAll("#canvas .tile.selected").forEach(el => el.classList.remove("selected"));
+    }
+    const groupIds = isGroup
+      ? new Set([..._selectedTiles].filter(id => tiles.some(x => x.id === id)))
+      : new Set([t.id]);
     tile.classList.add("dragging"); card.setPointerCapture(e.pointerId);
+    if (isGroup) groupIds.forEach(id => { const el = els[id]; if (el) el.classList.add("dragging"); });
 
     // Modo mobile (frame dev-mobile no desktop OU tela real ≤768px)
     const mobileMode = isMobileCanvas();
@@ -3365,20 +3403,29 @@ function enableDrag(tile, card, t) {
     const cs = cellSize(); const sx = e.clientX, sy = e.clientY;
     const posMap = {}; tiles.forEach(x => { posMap[x.id] = { ...tilePos(x) }; });
     const origMap = {}; tiles.forEach(x => { origMap[x.id] = { ...posMap[x.id] }; });
-    const ox = posMap[t.id].x, oy = posMap[t.id].y, tw = posMap[t.id].w;
+    // Limites coletivos do grupo (para clamp ao mover junto)
+    const grp = tiles.filter(x => groupIds.has(x.id));
+    const gMinX = Math.min(...grp.map(x => origMap[x.id].x));
+    const gMaxXe = Math.max(...grp.map(x => origMap[x.id].x + origMap[x.id].w));
+    const gMinY = Math.min(...grp.map(x => origMap[x.id].y));
     const applyAll = () => tiles.forEach(x => { const el = els[x.id]; const p = posMap[x.id]; if (el) { el.style.setProperty("--gc", (p.x + 1) + " / span " + p.w); el.style.setProperty("--gr", (p.y + 1) + " / span " + p.h); } });
     const mv = ev => {
-      posMap[t.id].x = clamp(ox + Math.round((ev.clientX - sx) / (cs.w + cs.gap)), 0, COLS - tw);
-      posMap[t.id].y = Math.max(0, oy + Math.round((ev.clientY - sy) / (cs.h + cs.gap)));
-      tiles.forEach(x => { if (x !== t) posMap[x.id] = { ...origMap[x.id] }; });
-      reflowPushMap(tiles, t, posMap);
+      let dx = Math.round((ev.clientX - sx) / (cs.w + cs.gap));
+      let dy = Math.round((ev.clientY - sy) / (cs.h + cs.gap));
+      dx = clamp(dx, -gMinX, COLS - gMaxXe);
+      dy = Math.max(dy, -gMinY);
+      tiles.forEach(x => { posMap[x.id] = { ...origMap[x.id] }; });
+      grp.forEach(x => { posMap[x.id].x = origMap[x.id].x + dx; posMap[x.id].y = origMap[x.id].y + dy; });
+      reflowPushGroup(tiles, groupIds, posMap);
       applyAll();
     };
     const up = () => {
       card.removeEventListener("pointermove", mv); card.removeEventListener("pointerup", up);
       tile.classList.remove("dragging");
+      groupIds.forEach(id => { const el = els[id]; if (el) el.classList.remove("dragging"); });
       tiles.forEach(x => saveTilePos(x, posMap[x.id]));
-      save(); pushHist("Moveu widget"); route();
+      save(); pushHist(groupIds.size > 1 ? "Moveu " + groupIds.size + " widgets" : "Moveu widget"); route();
+      applySelectionHighlight();
     };
     card.addEventListener("pointermove", mv); card.addEventListener("pointerup", up);
   });
