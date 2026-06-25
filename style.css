@@ -709,7 +709,7 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 
 /* ===== Abas de espaços (múltiplos painéis por projeto) ===== */
 #spaceTabs{padding:0 0 10px 0}
-.space-tabs{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.space-tabs{display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:center}
 .space-tab{background:var(--surface-solid);border:1px solid var(--line);color:var(--muted);border-radius:9px;padding:6px 13px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
 .space-tab:hover{border-color:var(--accent);color:var(--text)}
 .space-tab.on{border-color:var(--accent);color:var(--accent);background:var(--surface)}
