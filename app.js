@@ -1661,7 +1661,7 @@ function setupCanvasPan() {
       _selectedTiles.clear();
       document.querySelectorAll("#canvas .tile.selected").forEach(el => el.classList.remove("selected"));
     }
-    if (e.target.closest(".tile,.tbar,.tgrip,.thandle")) return;
+    if (e.target.closest(".tile,.tbar,.tgrip,.thandle,.space-tab,.space-tabs")) return;
     if (editMode) {
       startSelectionRect(e);
       return;
