@@ -433,6 +433,9 @@ img.team-av{object-fit:cover}
 .lix-info{min-width:0;flex:1}
 .lix-name{font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lix-actions{display:flex;gap:7px;flex:none}
+.dup-ck{align-items:flex-start}
+.dup-ck span{display:flex;flex-direction:column;gap:1px}
+.dup-hint{font-size:11px;color:var(--muted);font-weight:600;text-transform:none;letter-spacing:0}
 /* config Equipe: lista de participantes */
 .eq-part-list{display:flex;flex-direction:column;gap:8px;margin-top:4px}
 .eq-part-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}

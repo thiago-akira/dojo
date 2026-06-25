@@ -2999,21 +2999,45 @@ function skeletonLayout(layout) {
 }
 
 /* ===== Duplicar projeto (versões / testes) ===== */
+const DUP_MENUS = [
+  ["admin", "Admin", "Abas internas do painel + dados privados (proposta, valor, notas)"],
+  ["materiais", "Materiais", "Documentos, anotações e checklists"],
+  ["aprovacoes", "Aprovações", "Itens de aprovação e seus pareceres"],
+  ["questionarios", "Questionários", "Questionários e suas perguntas (sem respostas)"],
+  ["reunioes", "Reuniões", "Reuniões agendadas e notas"],
+  ["mensagens", "Mensagens", "Histórico de mensagens do projeto"],
+  ["participantes", "Participantes", "Equipe, clientes e permissões"]
+];
 async function duplicarProjeto(projetoId) {
-  const { data: orig, error } = await sb.from("projetos").select("*").eq("id", projetoId).single();
+  const { data: orig, error } = await sb.from("projetos").select("id,nome,cliente_id").eq("id", projetoId).single();
   if (error || !orig) { toast("Erro ao carregar projeto."); return; }
-  const nome = await nextProjectName(orig.cliente_id, orig.nome);
-  const slug = await uniqueSlug("projetos", nome, "cliente_id", orig.cliente_id);
-  const { data: novo, error: e2 } = await sb.from("projetos")
-    .insert({ cliente_id: orig.cliente_id, nome, descricao: orig.descricao, status: orig.status, dados: orig.dados, slug })
-    .select("id").single();
-  if (e2 || !novo) { toast("Erro ao duplicar: " + (e2 && e2.message || "")); return; }
-  const { data: pan } = await sb.from("paineis").select("layout").eq("projeto_id", projetoId).maybeSingle();
-  if (pan && pan.layout) await sb.from("paineis").insert({ projeto_id: novo.id, layout: pan.layout });
-  const { data: priv } = await sb.from("projetos_privado").select("proposta_url,valor,notas").eq("projeto_id", projetoId).maybeSingle();
-  if (priv) await sb.from("projetos_privado").insert({ projeto_id: novo.id, proposta_url: priv.proposta_url, valor: priv.valor, notas: priv.notas });
-  toast("Projeto duplicado: " + nome);
-  route();
+  const checks = DUP_MENUS.map(([k, label, hint]) =>
+    '<label class="ckrow dup-ck"><input type="checkbox" data-k="' + k + '"> <span><b>' + esc(label) + '</b>' +
+    '<span class="dup-hint">' + esc(hint) + '</span></span></label>').join("");
+  openModal('<h3>⧉ Duplicar projeto</h3>' +
+    '<p class="muted-note" style="font-size:12.5px;text-transform:none;letter-spacing:0;font-weight:600;margin:0 0 4px">O <b>Painel</b> (abas do cliente) é sempre duplicado. Quer também copiar o conteúdo de:</p>' +
+    '<label class="ckrow" style="margin:6px 0 2px"><input type="checkbox" id="dupAll"> <b>Selecionar todos</b></label>' +
+    '<div class="ckgroup" style="margin-top:2px">' + checks + '</div>' +
+    '<div class="auth-err" id="dupErr"></div>' + actions("Duplicar"),
+    m => {
+      const cks = Array.from(m.querySelectorAll('[data-k]'));
+      m.querySelector("#dupAll").onchange = e => cks.forEach(c => { c.checked = e.target.checked; });
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const incluir = cks.filter(c => c.checked).map(c => c.dataset.k);
+        const err = m.querySelector("#dupErr");
+        err.textContent = "Duplicando…";
+        const nome = await nextProjectName(orig.cliente_id, orig.nome);
+        const slug = await uniqueSlug("projetos", nome, "cliente_id", orig.cliente_id);
+        const { data: novoId, error: e2 } = await sb.rpc("duplicar_projeto", {
+          p_origem: projetoId, p_nome: nome, p_slug: slug, p_incluir: incluir
+        });
+        if (e2) { err.textContent = "Erro ao duplicar: " + e2.message; return; }
+        closeModal();
+        toast('Projeto duplicado: ' + nome + (incluir.length ? ' (+' + incluir.length + ' menu' + (incluir.length === 1 ? '' : 's') + ')' : ''));
+        if (novoId) { await abrirProjeto(novoId); } else { route(); }
+      };
+    });
 }
 
 /* ===== Lixeira de projetos (soft-delete) ===== */
