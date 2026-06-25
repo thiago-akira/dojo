@@ -3218,6 +3218,7 @@ function renderPainel(canvas, hint) {
       ? '<div class="space-ctrl"><span class="space-ctrl-label">' +
         (ctx === "interno" ? "🔒 só você · " : "👁 cliente vê · ") + esc(cur.name) + '</span>' +
         '<button class="lnk" onclick="editarSpace(\'' + cur.id + '\')">✏ renomear</button>' +
+        '<button class="lnk" onclick="duplicarSpace(\'' + cur.id + '\')">⧉ duplicar</button>' +
         (list.length > 1 ? '<button class="lnk del" onclick="deletarSpace(\'' + cur.id + '\')">excluir aba</button>' : '') +
         '</div>'
       : '';
@@ -3250,9 +3251,10 @@ function renderPainel(canvas, hint) {
     card.appendChild(content);
     if (editMode) {
       const bar = document.createElement("div"); bar.className = "tbar";
-      bar.innerHTML = '<span class="tgrip" title="Arrastar para mover">⠿</span><button title="Configurar">⚙</button><button title="Excluir">✕</button>';
+      bar.innerHTML = '<span class="tgrip" title="Arrastar para mover">⠿</span><button title="Configurar">⚙</button><button title="Duplicar / Mover para aba">⧉</button><button title="Excluir">✕</button>';
       bar.children[1].onclick = e => { e.stopPropagation(); widgetSettings(t); };
-      bar.children[2].onclick = e => { e.stopPropagation(); removeTile(t.id); };
+      bar.children[2].onclick = e => { e.stopPropagation(); abrirMenuWidget(e, t); };
+      bar.children[3].onclick = e => { e.stopPropagation(); removeTile(t.id); };
       card.appendChild(bar);
       const h = document.createElement("div"); h.className = "thandle"; card.appendChild(h);
       enableDrag(tile, card, t); enableResize(tile, h, t);
@@ -3639,6 +3641,28 @@ async function deletarSpace(id) {
   const list = spacesFor(ctx);
   curSpaceId = list.length ? list[0].id : null;
   save(); pushHist("Excluiu aba"); route();
+}
+
+function duplicarSpace(id) {
+  const s = (state.spaces || []).find(x => x.id === id); if (!s) return;
+  const ns = JSON.parse(JSON.stringify(s));
+  ns.id = uid();
+  ns.name = s.name + " (cópia)";
+  const idMap = {};
+  ns.tiles.forEach(t => { const oldId = t.id; t.id = uid(); idMap[oldId] = t.id; });
+  if (ns._layouts) {
+    ["mobile","tablet"].forEach(lk => {
+      if (!ns._layouts[lk]) return;
+      const newLayout = {};
+      Object.entries(ns._layouts[lk]).forEach(([oldId, pos]) => { const newId = idMap[oldId]; if (newId) newLayout[newId] = pos; });
+      ns._layouts[lk] = newLayout;
+    });
+  }
+  const idx = state.spaces.findIndex(x => x.id === id);
+  state.spaces.splice(idx + 1, 0, ns);
+  curSpaceId = ns.id;
+  save(); pushHist("Duplicou aba: " + s.name); route();
+  toast('Aba "' + ns.name + '" criada.');
 }
 
 /* ===== 11) Modal helpers ===== */
