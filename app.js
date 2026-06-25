@@ -2753,7 +2753,18 @@ async function loadQuestionariosPendentes(c) {
 }
 
 /* ===== 5) Roteamento de telas ===== */
+let _routeView = null, _routeTab = null;
+function clearStuckOverlays(navChanged) {
+  // Scrim de modal preso sem conteúdo (bloquearia cliques na página inteira)
+  const md = $("#modal"), sc = $("#scrim");
+  if (md && !md.innerHTML.trim()) { if (md.style.display !== "none") md.style.display = "none"; if (sc && sc.style.display !== "none") sc.style.display = "none"; }
+  // Ao navegar entre telas/abas, remove popovers e diálogos órfãos presos ao body
+  // (não roda em re-render do realtime, para não fechar um diálogo legitimamente aberto)
+  if (navChanged) document.querySelectorAll(".dlg-scrim,.dlg-box,.ctx-menu,.proj-switch,.place-ac").forEach(el => el.remove());
+}
 function route() {
+  clearStuckOverlays(_routeView !== view || _routeTab !== projTab);
+  _routeView = view; _routeTab = projTab;
   applyBrand(); paintTools(); applyPrefs();
   const canvas = $("#canvas"), hint = $("#emptyHint");
   canvas.style.display = "none"; hint.style.display = "none";
