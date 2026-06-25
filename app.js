@@ -3231,12 +3231,18 @@ function renderPainel(canvas, hint) {
     hint.textContent = canEdit ? "Aba vazia — clique em ＋ Adicionar." : "Nada por aqui ainda.";
   } else hint.style.display = "none";
 
+  // Ordem mobile: y primeiro, depois x
+  const mobileOrder = {};
+  [...tiles].sort((a, b) => { const pa = tilePos(a), pb = tilePos(b); return (pa.y * 1000 + pa.x) - (pb.y * 1000 + pb.x); }).forEach((t, i) => { mobileOrder[t.id] = i; });
+
   tiles.forEach(t => {
     const W = WIDGETS[t.type]; if (!W) return;
     const tile = document.createElement("div"); tile.className = "tile"; tile.dataset.id = t.id;
     const tl = tilePos(t);
     tile.style.setProperty("--gc", (tl.x + 1) + " / span " + tl.w);
     tile.style.setProperty("--gr", (tl.y + 1) + " / span " + tl.h);
+    tile.style.setProperty("--gh", tl.h);
+    tile.style.order = mobileOrder[t.id] || 0;
     const card = document.createElement("div"); card.className = "card";
     const content = document.createElement("div"); content.className = "content";
     try { W.render(t, content); } catch (e) { content.textContent = "Erro no widget."; }
@@ -3350,6 +3356,7 @@ function enableResize(tile, handle, t) {
       saveTilePos(t, { ...initPos, w: nw, h: nh });
       tile.style.setProperty("--gc", (initPos.x + 1) + " / span " + nw);
       tile.style.setProperty("--gr", (initPos.y + 1) + " / span " + nh);
+      tile.style.setProperty("--gh", nh);
     };
     const up = () => { handle.removeEventListener("pointermove", mv); handle.removeEventListener("pointerup", up); tile.classList.remove("resizing"); save(); pushHist("Redimensionou widget"); };
     handle.addEventListener("pointermove", mv); handle.addEventListener("pointerup", up);
@@ -3633,7 +3640,7 @@ function paintTools() {
   $("#bellBtn").style.display = me ? "" : "none";
   const pv = $("#previewBtn");
   if (pv) {
-    pv.style.display = (canEditReal && view === "painel" && window.innerWidth > 900) ? "" : "none";
+    pv.style.display = (canEditReal && view === "painel") ? "" : "none";
     pv.classList.toggle("on", previewCliente);
     pv.textContent = previewCliente ? "✕" : "👁";
     pv.title = previewCliente ? "Sair da prévia do cliente" : "Ver como o cliente vê";

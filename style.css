@@ -73,7 +73,6 @@ body{padding-top:53px}
 .ps-st{font-size:10.5px;color:var(--faint);font-weight:700;text-transform:uppercase}
 
 /* topbar responsiva: esconde secundários em telas estreitas */
-@media (max-width:1080px){ .proj-evo{display:none !important} }
 @media (max-width:920px){ .role-badge{display:none !important} }
 @media (max-width:760px){ .client-brand{display:none !important} .brand .title{font-size:15px} }
 /* Mobile: corpo travado; topbar e subnav deslizam sozinhos */
@@ -129,7 +128,15 @@ body{padding-top:53px}
 .canvas-wrap.dev-tablet,.canvas-wrap.dev-mobile{margin:16px auto;border:2px solid var(--line-strong);border-radius:20px;box-shadow:var(--shadow);min-height:auto;background:var(--bg);transition:max-width .25s}
 .canvas-wrap.dev-tablet{max-width:768px}
 .canvas-wrap.dev-mobile{max-width:390px}
-.canvas-wrap.dev-tablet .canvas,.canvas-wrap.dev-mobile .canvas{--cols:24}
+.canvas-wrap.dev-tablet .canvas{--cols:24}
+/* preview mobile: coluna única para visualizar ordem real */
+.canvas-wrap.dev-mobile .canvas{grid-template-columns:1fr !important;grid-auto-rows:var(--row)}
+.canvas-wrap.dev-mobile .tile{grid-column:1/-1 !important;grid-row:auto / span var(--gh,4) !important}
+/* mobile real: coluna única */
+@media (max-width:768px){
+  .canvas{grid-template-columns:1fr !important;grid-auto-rows:var(--row)}
+  .tile{grid-column:1/-1 !important;grid-row:auto / span var(--gh,4) !important}
+}
 
 /* ===== Tile / card ===== */
 .tile{grid-column:var(--gc);grid-row:var(--gr);position:relative;min-width:0;min-height:0}
