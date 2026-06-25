@@ -823,18 +823,25 @@ const WIDGETS = {
     w: 4, h: 3, defaults: { title: "Equipe", raw: "Ana Souza | Design\nBruno Lima | Desenvolvimento\nCarla Dias | Gestão", vinculados: [] },
     render(t, c) {
       const p = t.props;
+      // Consultor (admin master) sempre no topo. Cache assíncrono; re-renderiza ao carregar.
+      const adminsReady = _projAdminsFor === (curProjeto && curProjeto.id) && _projAdmins;
+      if (!adminsReady && curProjeto) ensureProjAdmins().then(() => { if (_projAdminsFor === curProjeto.id) route(); });
+      const consultores = adminsReady ? _projAdmins : [];
       const manual = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0])
         .map(a => ({ nome: a[0], resp: a[1] || "", manual: true }));
       const vinc = (p.vinculados || []).map(v => ({ pessoa_id: v.pessoa_id, nome: v.nome || v.email || "—", email: v.email || "", papel: v.papel || "", resp: v.resp || "", manual: false }));
-      const people = [...vinc, ...manual];
+      const people = [...consultores, ...vinc, ...manual];
       const rows = people.length === 0
         ? '<p class="muted-note">Ninguém na equipe ainda.' + (canEdit ? ' Use ⚙ para adicionar.' : '') + '</p>'
         : people.map((pe, i) => {
-          const ini = (pe.nome || "?").split(/\s+/).map(w => w[0] || "").slice(0, 2).join("").toUpperCase();
-          const sub = pe.resp || (pe.papel === "gestor" ? "Equipe" : pe.papel === "cliente" ? "Cliente" : "");
-          return '<div class="team-row team-click" data-idx="' + i + '" data-item="' + escAttr(itemKey(pe.nome)) + '" data-itemlabel="' + escAttr(pe.nome) + '">' +
-            '<div class="team-av">' + esc(ini) + '</div><div class="team-info"><div class="team-name">' + esc(pe.nome) +
-            (pe.manual ? '' : ' <span class="team-link-dot" title="Participante do projeto">●</span>') + '</div>' +
+          const av = pe.avatar_url
+            ? '<img class="team-av" src="' + escAttr(pe.avatar_url) + '" alt="">'
+            : '<div class="team-av">' + esc((pe.nome || "?").split(/\s+/).map(w => w[0] || "").slice(0, 2).join("").toUpperCase()) + '</div>';
+          const sub = pe.consultor ? (pe.resp ? pe.resp + " · Consultor" : "Consultor do projeto")
+            : (pe.resp || (pe.papel === "gestor" ? "Equipe" : pe.papel === "cliente" ? "Cliente" : ""));
+          return '<div class="team-row team-click' + (pe.consultor ? ' team-consultor' : '') + '" data-idx="' + i + '" data-item="' + escAttr(itemKey(pe.nome)) + '" data-itemlabel="' + escAttr(pe.nome) + '">' +
+            av + '<div class="team-info"><div class="team-name">' + esc(pe.nome) +
+            (pe.consultor ? ' <span class="team-consultor-tag">consultor</span>' : pe.manual ? '' : ' <span class="team-link-dot" title="Participante do projeto">●</span>') + '</div>' +
             (sub ? '<div class="team-role">' + esc(sub) + '</div>' : '') + '</div></div>';
         }).join("");
       c.innerHTML = (p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '') +
@@ -1100,6 +1107,21 @@ async function carregarParticipantes() {
 }
 function papelLabel(papel) { return papel === "admin" ? "admin master" : (papel === "gestor" ? "equipe" : "cliente"); }
 
+/* Cache dos admins master do projeto atual — para o widget Equipe renderizar de forma síncrona.
+   _projAdminsFor guarda o id do projeto; troca de projeto invalida automaticamente. */
+let _projAdmins = null, _projAdminsFor = null;
+async function ensureProjAdmins() {
+  if (!curProjeto) return [];
+  if (_projAdminsFor === curProjeto.id && _projAdmins) return _projAdmins;
+  const { data } = await sb.from("pessoas").select("id,nome,email,avatar_url,perfil").eq("is_admin", true);
+  _projAdmins = (data || []).map(a => ({
+    pessoa_id: a.id, nome: a.nome || a.email || "—", email: a.email || "",
+    avatar_url: a.avatar_url || "", resp: (a.perfil && a.perfil.cargo) || "", consultor: true, manual: false
+  }));
+  _projAdminsFor = curProjeto.id;
+  return _projAdmins;
+}
+
 /* Seletor de responsável (camada própria, empilha sobre o modal aberto). Resolve:
    objeto participante (atribuir) · null (remover) · undefined (cancelar) */
 async function escolherResponsavel(atualId) {
@@ -1177,13 +1199,17 @@ async function equipeConfig(t) {
 
 function abrirPessoaEquipe(pe) {
   const ini = (pe.nome || "?").split(/\s+/).map(w => w[0] || "").slice(0, 2).join("").toUpperCase();
-  const podeMsg = pe.pessoa_id && (!me || pe.pessoa_id !== me.id) && perm("pode_enviar_mensagens");
-  const papelLbl = pe.papel === "gestor" ? "Equipe / gestor" : pe.papel === "cliente" ? "Cliente" : "";
-  let html = '<div class="perfil-top"><div class="perfil-av">' + esc(ini) + '</div>' +
-    '<div><div class="perfil-nome">' + esc(pe.nome) + '</div>' +
+  // Consultor (admin master) pode ser contatado por qualquer participante, mesmo sem a permissão geral.
+  const podeMsg = pe.pessoa_id && (!me || pe.pessoa_id !== me.id) && (pe.consultor || perm("pode_enviar_mensagens"));
+  const papelLbl = pe.consultor ? "Consultor do projeto" : pe.papel === "gestor" ? "Equipe / gestor" : pe.papel === "cliente" ? "Cliente" : "";
+  const av = pe.avatar_url
+    ? '<img class="perfil-av" src="' + escAttr(pe.avatar_url) + '" alt="">'
+    : '<div class="perfil-av' + (pe.consultor ? ' perfil-av-consultor' : '') + '">' + esc(ini) + '</div>';
+  let html = '<div class="perfil-top">' + av +
+    '<div><div class="perfil-nome">' + esc(pe.nome) + (pe.consultor ? ' <span class="team-consultor-tag">consultor</span>' : '') + '</div>' +
     (papelLbl ? '<div class="muted-note" style="font-size:12.5px;text-transform:none;letter-spacing:0">' + esc(papelLbl) + '</div>' : '') + '</div></div>';
   html += '<div class="eq-dados">';
-  if (pe.resp) html += '<div class="eq-dado"><span>Responsabilidade</span><b>' + esc(pe.resp) + '</b></div>';
+  if (pe.resp) html += '<div class="eq-dado"><span>' + (pe.consultor ? 'Função' : 'Responsabilidade') + '</span><b>' + esc(pe.resp) + '</b></div>';
   if (pe.email) html += '<div class="eq-dado"><span>E-mail</span><b>' + esc(pe.email) + '</b></div>';
   html += '</div>';
   if (pe.manual) html += '<p class="muted-note" style="margin-top:10px;text-transform:none;letter-spacing:0;font-weight:600">Adicionada manualmente — sem conta no portal, não é possível enviar mensagem.</p>';
@@ -5227,21 +5253,16 @@ function avatarHtml(p, size) {
   return '<span class="team-av" style="width:' + size + 'px;height:' + size + 'px;font-size:' + Math.round(size * 0.37) + 'px">' + esc(ini) + '</span>';
 }
 
-/* Linha de um admin master: sempre topo, badge fixo, só editável por outro admin master. */
+/* Linha de um admin master: sempre topo, badge fixo, contato aberto a todos, só editável por outro admin master. */
 function adminRowHtml(a, podeGerenciar) {
   const cargo = (a.perfil && a.perfil.cargo) || "";
-  const badge = '<span class="papel admin" title="Nível máximo — não pode ser removido">admin master</span>';
-  if (!podeGerenciar) {
-    return '<div class="grow-row admin-row"><div class="gr-main" style="gap:10px">' + avatarHtml(a, 34) +
-      '<span class="gr-name">' + esc(a.nome || a.email || "—") +
-      (cargo ? ' <span class="muted-note" style="font-weight:600;text-transform:none;letter-spacing:0;font-size:12px">· ' + esc(cargo) + '</span>' : '') +
-      ' ' + badge + '</span></div></div>';
-  }
-  // Editar só liberado para outro admin master; nunca há "remover".
-  const acoes = actingAdmin()
-    ? '<div class="gr-actions"><button class="lnk" onclick="editarAdminPerfil(\'' + a.id + '\')">✏ editar</button></div>'
-    : '<div class="gr-actions"><span class="muted-note" style="font-size:11px">protegido</span></div>';
-  return '<div class="grow-row admin-row"><div class="gr-main" style="gap:10px">' + avatarHtml(a, 38) +
+  const badge = '<span class="papel admin" title="Consultor contratado — nível máximo, não pode ser removido">consultor</span>';
+  const eu = me && a.id === me.id;
+  const contatoBtn = '<button class="lnk" onclick="event.stopPropagation();abrirAdminContato(\'' + a.id + '\')">✉ contato</button>';
+  const editBtn = actingAdmin() ? '<button class="lnk" onclick="event.stopPropagation();editarAdminPerfil(\'' + a.id + '\')">✏ editar</button>' : '';
+  const acoes = '<div class="gr-actions">' + (eu ? '' : contatoBtn) + editBtn + '</div>';
+  return '<div class="grow-row admin-row" style="cursor:pointer" onclick="abrirAdminContato(\'' + a.id + '\')">' +
+    '<div class="gr-main" style="gap:10px">' + avatarHtml(a, 38) +
     '<div style="flex:1;min-width:0">' +
     '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
     '<span class="gr-name">' + esc(a.nome || a.email || "—") + '</span>' + badge +
@@ -5249,6 +5270,12 @@ function adminRowHtml(a, podeGerenciar) {
     '</div>' +
     '<div class="ano-prev">' + esc(a.email || "") + '</div>' +
     '</div>' + acoes + '</div></div>';
+}
+async function abrirAdminContato(pessoaId) {
+  const list = await ensureProjAdmins();
+  const pe = list.find(a => a.pessoa_id === pessoaId);
+  if (pe) abrirPessoaEquipe(pe);
+  else toast("Consultor não encontrado.");
 }
 
 async function renderParticipantes(canvas, hint) {
