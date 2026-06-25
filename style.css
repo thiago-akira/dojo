@@ -853,9 +853,14 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 .apbadge.reprovado{color:var(--danger);border:1px solid var(--danger)}
 .ap-desc{font-size:13.5px;color:var(--text);line-height:1.5;white-space:pre-wrap;margin-bottom:10px}
 .ap-decision{font-size:13px;color:var(--muted);background:var(--surface-solid);border-radius:9px;padding:8px 11px;margin-bottom:8px}
-.ap-actions{display:flex;gap:8px;margin-bottom:10px}
+.ap-actions{display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap}
 .ap-del{position:absolute;top:12px;right:12px}
 .apcard .ap-head{padding-right:60px}
+.ap-resp{font-size:12.5px;color:var(--muted);margin-bottom:8px}
+.ap-resp b{color:var(--text)}
+.ap-actions .btn.ok.on{background:var(--ok);color:#0a1f12;border-color:var(--ok)}
+.ap-actions .btn.danger.on{background:var(--danger);color:#fff;border-color:var(--danger)}
+.ap-undo-hint{font-size:11px;color:var(--faint);font-style:italic}
 
 /* thread de comentários */
 .co-thread{border-top:1px solid var(--line);padding-top:9px;display:flex;flex-direction:column;gap:6px}

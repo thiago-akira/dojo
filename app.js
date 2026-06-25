@@ -4730,11 +4730,22 @@ async function renderAprovacoes(canvas, hint) {
       '<div class="co"><span class="co-who">' + esc((c.autor && (c.autor.nome || c.autor.email)) || "—") + '</span> ' + esc(c.corpo) + '</div>').join("");
     const decided = a.status !== "pendente";
     const decisor = a.decisor && (a.decisor.nome || a.decisor.email);
+    const quando = a.decidido_em ? new Date(a.decidido_em).toLocaleDateString("pt-BR") : "";
+    const respNome = a.responsavel_nome || "";
+    const respLine = '<div class="ap-resp">👤 Responsável: ' +
+      (respNome ? '<b>' + esc(respNome) + '</b>' : '<span class="muted-note" style="text-transform:none;letter-spacing:0">não definido</span>') +
+      (canEdit ? ' <button class="lnk" onclick="setRespAprovacao(\'' + a.id + '\')">' + (respNome ? "alterar" : "definir") + '</button>' : '') + '</div>';
+    const btns = '<div class="ap-actions">' +
+      '<button class="btn sm ok' + (a.status === "aprovado" ? " on" : "") + '" onclick="decidir(\'' + a.id + '\',\'aprovado\',\'' + a.status + '\')">✓ ' + (a.status === "aprovado" ? "Aprovado" : "Aprovar") + '</button>' +
+      '<button class="btn sm danger' + (a.status === "reprovado" ? " on" : "") + '" onclick="decidir(\'' + a.id + '\',\'reprovado\',\'' + a.status + '\')">✕ ' + (a.status === "reprovado" ? "Reprovado" : "Reprovar") + '</button>' +
+      (decided ? '<span class="ap-undo-hint">clique de novo no status atual para voltar ao aguardo</span>' : '') +
+      '</div>';
     return '<div class="apcard">' +
       '<div class="ap-head"><span class="ap-title">' + esc(a.titulo) + '</span><span class="apbadge ' + a.status + '">' + APBADGE[a.status] + '</span></div>' +
       (a.descricao ? '<div class="ap-desc">' + esc(a.descricao) + '</div>' : "") +
-      (decided ? '<div class="ap-decision">' + (a.status === "aprovado" ? "Aprovado" : "Reprovado") + (decisor ? " por " + esc(decisor) : "") + (a.parecer ? ' — “' + esc(a.parecer) + '”' : "") + '</div>'
-        : '<div class="ap-actions"><button class="btn sm ok" onclick="decidir(\'' + a.id + '\',\'aprovado\')">✓ Aprovar</button><button class="btn sm danger" onclick="decidir(\'' + a.id + '\',\'reprovado\')">✕ Reprovar</button></div>') +
+      respLine +
+      (decided ? '<div class="ap-decision">' + (a.status === "aprovado" ? "Aprovado" : "Reprovado") + (decisor ? " por " + esc(decisor) : "") + (quando ? " · " + quando : "") + (a.parecer ? ' — “' + esc(a.parecer) + '”' : "") + '</div>' : "") +
+      btns +
       '<div class="co-thread">' + coms +
       '<div class="co-add"><input id="co-' + a.id + '" placeholder="Comentar…" onkeydown="if(event.key===\'Enter\')addComentario(\'' + a.id + '\')"><button class="btn sm" onclick="addComentario(\'' + a.id + '\')">Enviar</button></div>' +
       '</div>' +
@@ -4760,7 +4771,20 @@ function novaAprovacao() {
       };
     });
 }
-function decidir(apId, status) {
+async function recomputeProgressoRPC() {
+  if (!curProjeto) return;
+  const { data, error } = await sb.rpc("recompute_progresso", { p_projeto: curProjeto.id });
+  if (!error && typeof data === "number" && curProjeto.dados && curProjeto.dados.auto_evolucao) {
+    curProjeto.progresso = data; applyBrand();
+  }
+}
+async function decidir(apId, status, statusAtual) {
+  // Clicar de novo no status atual volta para "aguardo" (pendente)
+  if (statusAtual === status) {
+    const { error } = await sb.from("aprovacoes").update({ status: "pendente", decidido_por: null, decidido_em: null }).eq("id", apId);
+    if (error) { toast("Erro: " + error.message); return; }
+    await recomputeProgressoRPC(); toast("Voltou para o aguardo."); route(); return;
+  }
   openModal('<h3>' + (status === "aprovado" ? "Aprovar" : "Reprovar") + '</h3>' +
     '<label>Comentário (opcional)</label><textarea data-k="parecer"></textarea>' + actions(status === "aprovado" ? "Confirmar aprovação" : "Confirmar reprovação"),
     m => {
@@ -4768,9 +4792,19 @@ function decidir(apId, status) {
       m.querySelector("[data-ok]").onclick = async () => {
         const { error } = await sb.from("aprovacoes").update({ status, parecer: m.querySelector('[data-k="parecer"]').value.trim() || null, decidido_por: me.id, decidido_em: new Date().toISOString() }).eq("id", apId);
         if (error) { toast("Erro: " + error.message); return; }
-        recomputeEvolucaoSeAuto(); closeModal(); route();
+        await recomputeProgressoRPC(); closeModal(); route();
       };
     });
+}
+async function setRespAprovacao(apId) {
+  const sel = await escolherResponsavel(null);
+  if (sel === undefined) return; // cancelou
+  const upd = sel
+    ? { responsavel_id: sel.pessoa_id, responsavel_nome: sel.nome }
+    : { responsavel_id: null, responsavel_nome: null };
+  const { error } = await sb.from("aprovacoes").update(upd).eq("id", apId);
+  if (error) { toast("Erro: " + error.message); return; }
+  route();
 }
 async function delAprovacao(id) { if (!(await confirmDialog("Excluir esta aprovação?"))) return; await sb.from("aprovacoes").delete().eq("id", id); route(); }
 async function addComentario(apId) {
