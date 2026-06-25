@@ -1164,3 +1164,12 @@ body.edit .kb-card{cursor:grab}
 .step-resp-btn{flex:none;border:1px solid var(--line);background:var(--surface-solid);border-radius:7px;width:30px;cursor:pointer;font-size:13px;color:var(--text)}
 .step-resp-btn:hover{border-color:var(--accent)}
 .step-resp-av{width:16px;height:16px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:5px}
+/* ===== Marcações: quem marcou, responsável, histórico (riscos/proximos) ===== */
+.risk-chk,.step-chk{cursor:pointer}
+.risk-meta{display:inline-flex;align-items:center;gap:7px;margin-left:auto;flex:none}
+.mk-resp,.mk-by{font-size:10.5px;font-weight:700;white-space:nowrap}
+.mk-resp{color:var(--accent-2)}
+.mk-by{color:var(--ok)}
+.step-by{font-size:10.5px;font-weight:700;color:var(--ok);margin-top:2px}
+.mk-btn{flex:none;border:1px solid var(--line);background:var(--surface-solid);border-radius:6px;padding:1px 6px;font-size:11px;cursor:pointer;color:var(--muted)}
+.mk-btn:hover{border-color:var(--accent);color:var(--text)}

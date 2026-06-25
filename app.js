@@ -15,6 +15,7 @@ const uid = () => "t" + Date.now().toString(36) + Math.random().toString(36).sli
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s == null ? "" : s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 const escAttr = s => String(s == null ? "" : s).replace(/"/g, "&quot;");
+const escJs = s => String(s == null ? "" : s).replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/[\r\n]+/g, " ");
 
 /* ===== 2b) Personalização por usuário (localStorage) ===== */
 const DEFAULT_PREFS = { theme: "escuro", fontScale: 100, contrast: false };
@@ -874,15 +875,27 @@ const WIDGETS = {
         ? '<p class="muted-note">Nenhum risco. Use ＋ para adicionar.</p>'
         : items.map((it, i) => {
           const sev = it.sev || "medio";
-          const isDone = !!it.done;
+          const iid = it.id || ("idx" + i);
+          const m = marcOf(t.id, iid);
+          const isDone = itemFeito(t.id, iid, it.done);
+          const lblJs = escAttr(escJs((it.text || "").slice(0, 80)));
+          const respNome = (m && m.responsavel_nome) || "";
+          const quem = isDone && m && m.marcado_por_nome ? m.marcado_por_nome : "";
+          const meta = '<div class="risk-meta">' +
+            (respNome ? '<span class="mk-resp" title="Responsável">👤 ' + esc(respNome) + '</span>' : '') +
+            (quem ? '<span class="mk-by" title="Última marcação">✓ ' + esc(quem) + '</span>' : '') +
+            (canEdit ? '<button class="mk-btn" title="Definir responsável" onclick="event.stopPropagation();definirRespItem(\'' + t.id + '\',\'' + iid + '\')">resp</button>' : '') +
+            '<button class="mk-btn" title="Histórico" onclick="event.stopPropagation();verHistoricoItem(\'' + t.id + '\',\'' + iid + '\',\'' + lblJs + '\')">🕘</button>' +
+            '</div>';
+          const chk = '<input type="checkbox" class="risk-chk"' + (isDone ? ' checked' : '') + ' onchange="toggleMarcItem(\'' + t.id + '\',\'' + iid + '\',this.checked)" title="Marcar como concluído">';
           if (canEdit) {
             return '<div class="risk-row ' + sev + ' risk-row-edit' + (isDone ? ' done' : '') + '" draggable="true"' +
               ' ondragstart="riscoDragStart(event,\'' + t.id + '\',' + i + ')"' +
               ' ondragover="riscoDragOver(event)" ondrop="riscoDrop(event,\'' + t.id + '\',' + i + ')">' +
-              '<span class="risk-grip" title="Arrastar para reordenar">⠿</span>' +
-              '<input type="checkbox" class="risk-chk"' + (isDone ? ' checked' : '') + ' onchange="toggleRiscoDone(\'' + t.id + '\',' + i + ')" title="Marcar como concluído">' +
+              '<span class="risk-grip" title="Arrastar para reordenar">⠿</span>' + chk +
               '<span class="risk-sev risk-sev-btn" onclick="riscoNextSev(\'' + t.id + '\',' + i + ')" title="Clique para alterar nível">' + (SEV[sev] || "Médio") + '</span>' +
               '<textarea class="risk-edit-inp" rows="1" oninput="this.style.height=\'auto\';this.style.height=this.scrollHeight+\'px\';onRiscoText(\'' + t.id + '\',' + i + ',this)">' + esc(it.text || "") + '</textarea>' +
+              meta +
               '<div class="risk-order-btns">' +
               (i > 0 ? '<button class="lnk risk-mv" onclick="riscoMover(\'' + t.id + '\',' + i + ',-1)" title="Subir">↑</button>' : '<span class="risk-mv-ph"></span>') +
               (i < items.length - 1 ? '<button class="lnk risk-mv" onclick="riscoMover(\'' + t.id + '\',' + i + ',1)" title="Descer">↓</button>' : '<span class="risk-mv-ph"></span>') +
@@ -891,9 +904,9 @@ const WIDGETS = {
               '</div>';
           }
           return '<div class="risk-row ' + sev + (isDone ? ' done' : '') + '" data-item="' + escAttr(itemKey(it.text || "")) + '" data-itemlabel="' + escAttr(it.text || "") + '">' +
-            '<input type="checkbox" class="risk-chk"' + (isDone ? ' checked' : '') + ' disabled>' +
+            chk +
             '<span class="risk-sev">' + (SEV[sev] || "Médio") + '</span>' +
-            '<span class="risk-txt">' + esc(it.text || "") + '</span>' +
+            '<span class="risk-txt">' + esc(it.text || "") + '</span>' + meta +
             '</div>';
         }).join("");
       const addForm = canEdit
@@ -939,9 +952,15 @@ const WIDGETS = {
       const body = items.length === 0
         ? '<p class="muted-note">Nenhum passo. Use ＋ para adicionar.</p>'
         : items.map((it, i) => {
+          const iid = it.id || ("idx" + i);
+          const m = marcOf(t.id, iid);
+          const isDone = itemFeito(t.id, iid, it.done);
+          const quem = isDone && m && m.marcado_por_nome ? m.marcado_por_nome : "";
+          const lblJs = escAttr(escJs((it.texto || "").slice(0, 80)));
+          const histBtn = '<button class="mk-btn" title="Histórico de marcações" onclick="event.stopPropagation();verHistoricoItem(\'' + t.id + '\',\'' + iid + '\',\'' + lblJs + '\')">🕘</button>';
+          const chk = '<input type="checkbox" class="step-chk"' + (isDone ? ' checked' : '') + ' onchange="toggleMarcItem(\'' + t.id + '\',\'' + iid + '\',this.checked)" title="Marcar como feito">';
           if (canEdit) {
-            return '<div class="step-row step-edit' + (it.done ? ' done' : '') + '">' +
-              '<input type="checkbox" class="step-chk"' + (it.done ? ' checked' : '') + ' onchange="passoToggle(\'' + t.id + '\',' + i + ')">' +
+            return '<div class="step-row step-edit' + (isDone ? ' done' : '') + '">' + chk +
               '<div class="step-fields">' +
               '<input class="step-inp step-main" value="' + escAttr(it.texto || "") + '" placeholder="O que precisa ser feito?" oninput="passoSave(\'' + t.id + '\',' + i + ',\'texto\',this.value)">' +
               '<div class="step-meta-row">' +
@@ -951,18 +970,20 @@ const WIDGETS = {
               '</div>' +
               '<input class="step-inp step-sub" value="' + escAttr(it.prazo || "") + '" placeholder="Pra quando" oninput="passoSave(\'' + t.id + '\',' + i + ',\'prazo\',this.value)">' +
               '</div>' +
+              (quem ? '<div class="step-by">✓ por ' + esc(quem) + '</div>' : '') +
               '<textarea class="step-inp step-det" rows="1" placeholder="Detalhes (opcional)" oninput="this.style.height=\'auto\';this.style.height=this.scrollHeight+\'px\';passoSave(\'' + t.id + '\',' + i + ',\'detalhes\',this.value)">' + esc(it.detalhes || "") + '</textarea>' +
-              '</div>' +
+              '</div>' + histBtn +
               '<button class="lnk del" onclick="passoDel(\'' + t.id + '\',' + i + ')" title="Remover">✕</button>' +
               '</div>';
           }
           const av = it.responsavel_av ? '<img class="step-resp-av" src="' + escAttr(it.responsavel_av) + '" alt="">' : '';
-          const meta = [it.responsavel, it.prazo].filter(Boolean).join(" · ");
-          return '<div class="step-row' + (it.done ? " done" : "") + '" data-item="' + escAttr(itemKey(it.texto || "")) + '" data-itemlabel="' + escAttr(it.texto || "") + '">' +
-            '<input type="checkbox" class="step-chk"' + (it.done ? " checked" : "") + ' disabled>' +
+          const metaTxt = [it.responsavel, it.prazo].filter(Boolean).join(" · ");
+          return '<div class="step-row' + (isDone ? " done" : "") + '" data-item="' + escAttr(itemKey(it.texto || "")) + '" data-itemlabel="' + escAttr(it.texto || "") + '">' +
+            chk +
             '<div class="step-body"><div class="step-txt">' + esc(it.texto || "") + '</div>' +
-            (meta ? '<div class="step-meta">' + av + esc(meta) + '</div>' : '') +
-            (it.detalhes ? '<div class="step-det-txt">' + esc(it.detalhes) + '</div>' : '') + '</div></div>';
+            (metaTxt ? '<div class="step-meta">' + av + esc(metaTxt) + '</div>' : '') +
+            (quem ? '<div class="step-by">✓ por ' + esc(quem) + '</div>' : '') +
+            (it.detalhes ? '<div class="step-det-txt">' + esc(it.detalhes) + '</div>' : '') + '</div>' + histBtn + '</div>';
         }).join("");
       c.innerHTML = head + '<div class="w-body"><div class="steps">' + body + '</div></div>';
       if (canEdit) requestAnimationFrame(() => {
@@ -1147,6 +1168,80 @@ async function escolherResponsavel(atualId) {
     const noneBtn = box.querySelector("[data-none]"); if (noneBtn) noneBtn.onclick = () => done(null);
     box.querySelectorAll(".resp-opt").forEach(b => b.onclick = () => done(parts.find(x => x.pessoa_id === b.dataset.id) || null));
   });
+}
+
+/* ===== Marcações de itens (overlay sobre o layout — qualquer participante) ===== */
+let _marc = {}, _marcFor = null;
+async function ensureMarcacoes(force) {
+  if (!curProjeto) { _marc = {}; _marcFor = null; return; }
+  if (_marcFor === curProjeto.id && !force) return;
+  const { data } = await sb.from("marcacoes")
+    .select("widget_id,item_ref,feito,responsavel_id,responsavel_nome,marcado_por_nome,marcado_em")
+    .eq("projeto_id", curProjeto.id);
+  const map = {};
+  (data || []).forEach(r => { map[r.widget_id + "|" + r.item_ref] = r; });
+  _marc = map; _marcFor = curProjeto.id;
+}
+function marcOf(widgetId, itemId) { return _marc[widgetId + "|" + itemId] || null; }
+/* done efetivo: a marcação prevalece; se não houver, usa o estado antigo do layout */
+function itemFeito(widgetId, itemId, legacyDone) {
+  const m = marcOf(widgetId, itemId);
+  return m ? !!m.feito : !!legacyDone;
+}
+async function toggleMarcItem(widgetId, itemId, novoFeito) {
+  if (!curProjeto) return;
+  const { data, error } = await sb.rpc("marcar_item", { p_projeto: curProjeto.id, p_widget: widgetId, p_item: itemId, p_feito: novoFeito });
+  if (error) { toast("Erro: " + error.message); return; }
+  const k = widgetId + "|" + itemId;
+  _marc[k] = Object.assign({}, _marc[k], { widget_id: widgetId, item_ref: itemId, feito: novoFeito, marcado_por_nome: (data && data.por) || (me && me.nome) || "", marcado_em: (data && data.em) || new Date().toISOString() });
+  if (curProjeto.dados && curProjeto.dados.auto_evolucao) { const pct = await sb.rpc("recompute_progresso", { p_projeto: curProjeto.id }); if (!pct.error && typeof pct.data === "number") { curProjeto.progresso = pct.data; applyBrand(); } }
+  route();
+}
+async function definirRespItem(widgetId, itemId) {
+  const sel = await escolherResponsavelItem();
+  if (sel === undefined) return; // cancelou
+  const resp_id = sel ? sel.pessoa_id : null, resp_nome = sel ? sel.nome : null;
+  const { error } = await sb.rpc("set_resp_item", { p_projeto: curProjeto.id, p_widget: widgetId, p_item: itemId, p_resp_id: resp_id, p_resp_nome: resp_nome });
+  if (error) { toast("Erro: " + error.message); return; }
+  const k = widgetId + "|" + itemId;
+  _marc[k] = Object.assign({}, _marc[k], { widget_id: widgetId, item_ref: itemId, responsavel_id: resp_id, responsavel_nome: resp_nome });
+  route();
+}
+/* Picker de responsável com opção de digitar manualmente — resolve {pessoa_id,nome} | null | undefined */
+async function escolherResponsavelItem() {
+  const parts = await carregarParticipantes();
+  return new Promise(resolve => {
+    const scrim = document.createElement("div"); scrim.className = "dlg-scrim";
+    const box = document.createElement("div"); box.className = "dlg-box resp-pick";
+    const rows = parts.map(p =>
+      '<button class="resp-opt" data-id="' + p.pessoa_id + '">' + avatarHtml(p, 30) +
+      '<span class="resp-opt-nome">' + esc(p.nome) + '</span><span class="papel ' + p.papel + '">' + papelLabel(p.papel) + '</span></button>').join("");
+    box.innerHTML = '<div class="dlg-title">Responsável pelo item</div>' +
+      '<div class="resp-list">' + (rows || '<p class="muted-note" style="padding:4px 2px">Sem participantes cadastrados.</p>') + '</div>' +
+      '<label style="font-size:12px;margin-top:8px;display:block;color:var(--muted)">Ou digite manualmente</label>' +
+      '<div style="display:flex;gap:6px"><input id="respManual" placeholder="Nome do responsável…" style="flex:1"><button class="btn sm" data-man>Usar</button></div>' +
+      '<div class="dlg-actions"><button class="btn" data-x>Cancelar</button><button class="btn" data-none>Sem responsável</button></div>';
+    document.body.append(scrim, box);
+    const done = v => { scrim.remove(); box.remove(); document.removeEventListener("keydown", onKey); resolve(v); };
+    const onKey = e => { if (e.key === "Escape") done(undefined); };
+    document.addEventListener("keydown", onKey);
+    scrim.onclick = () => done(undefined);
+    box.querySelector("[data-x]").onclick = () => done(undefined);
+    box.querySelector("[data-none]").onclick = () => done(null);
+    box.querySelector("[data-man]").onclick = () => { const v = (box.querySelector("#respManual").value || "").trim(); if (v) done({ pessoa_id: null, nome: v }); };
+    box.querySelectorAll(".resp-opt").forEach(b => b.onclick = () => { const p = parts.find(x => x.pessoa_id === b.dataset.id); done(p ? { pessoa_id: p.pessoa_id, nome: p.nome } : null); });
+  });
+}
+async function verHistoricoItem(widgetId, itemId, label) {
+  openModal('<h3>🕘 Histórico</h3><p class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;margin-top:-4px">' + esc(label || "") + '</p><div id="histBody"><p class="muted-note">Carregando…</p></div><div class="modal-actions"><span class="grow"></span><button class="btn primary" data-x>Fechar</button></div>',
+    m => { m.querySelector("[data-x]").onclick = closeModal; });
+  const { data, error } = await sb.from("marcacoes_hist").select("acao,pessoa_nome,at").eq("projeto_id", curProjeto.id).eq("widget_id", widgetId).eq("item_ref", itemId).order("at", { ascending: false }).limit(50);
+  const body = document.getElementById("histBody"); if (!body) return;
+  if (error) { body.innerHTML = '<p class="muted-note">Erro: ' + esc(error.message) + '</p>'; return; }
+  if (!(data || []).length) { body.innerHTML = '<p class="muted-note">Sem histórico ainda.</p>'; return; }
+  body.innerHTML = '<div class="hist-list">' + data.map(h =>
+    '<div class="hist-item"><span class="hist-dot' + (h.acao === "feito" ? " on" : "") + '"></span><div class="hist-b"><div class="hist-l">' +
+    (h.acao === "feito" ? "✓ marcou como feito" : "↩ desmarcou") + '</div><div class="hist-t">' + esc(h.pessoa_nome || "—") + ' · ' + new Date(h.at).toLocaleString("pt-BR") + '</div></div></div>').join("") + '</div>';
 }
 
 /* — Widget Equipe: config (manual + participantes) e clique na pessoa — */
@@ -1410,7 +1505,7 @@ function saveRisco(tid) {
   if (!text) { if (inp) inp.focus(); return; }
   const sev = (sevEl && sevEl.value) || "medio";
   if (!t.props.items) t.props.items = [];
-  t.props.items.push({ sev, text });
+  t.props.items.push({ id: uid(), sev, text });
   save();
   const content = document.querySelector('.tile[data-id="' + tid + '"] .content');
   if (content) { WIDGETS.riscos.render(t, content); }
@@ -1466,7 +1561,7 @@ function passoTitleSave(tid, el) {
 function passoAdd(tid) {
   const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
   if (!t.props.items) t.props.items = [];
-  t.props.items.push({texto: "", responsavel: "", prazo: "", detalhes: "", done: false}); save(); recomputeEvolucaoSeAuto(); route();
+  t.props.items.push({id: uid(), texto: "", responsavel: "", prazo: "", detalhes: "", done: false}); save(); recomputeEvolucaoSeAuto(); route();
 }
 function passoSave(tid, i, key, val) {
   const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
@@ -3233,6 +3328,7 @@ async function abrirProjeto(id) {
   }
   canEdit = canEditReal;
   await loadPainel(id);
+  _marcFor = null; await ensureMarcacoes();
   histReset(); deviceView = window.innerWidth <= 768 ? "mobile" : "desktop";
   const vis = visibleSpaces();
   curSpaceId = vis.length ? vis[0].id : (state.spaces[0] && state.spaces[0].id) || null;
