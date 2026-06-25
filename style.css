@@ -57,6 +57,7 @@ body{padding-top:53px}
 .evo-bar{width:80px;height:7px;border-radius:6px;background:var(--line-strong);overflow:hidden}
 .evo-bar i{display:block;height:100%;background:var(--accent);border-radius:6px;transition:width .4s}
 .evo-pct{font-size:12px;font-weight:800;color:var(--muted)}
+.panel-modal h3{padding-right:32px}
 
 /* trocar de projeto (item 6) */
 .cr-switch{cursor:pointer}
@@ -950,9 +951,9 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 .evo-ring{transform:rotate(-90deg);flex:none}
 .evo-ring .evo-bg{fill:none;stroke:var(--line-strong);stroke-width:3.5}
 .evo-ring .evo-fg{fill:none;stroke:var(--ok);stroke-width:3.5;stroke-linecap:round;transition:stroke-dashoffset .45s}
-.entregas-meter .evo-meta{display:flex;flex-direction:column;line-height:1.05}
-.entregas-meter .evo-lbl{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted)}
-.entregas-meter .evo-val{font-size:13px;font-weight:800;color:var(--text)}
+.evo-meta{display:flex;flex-direction:column;line-height:1.05}
+.evo-lbl{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted)}
+.evo-val{font-size:13px;font-weight:800;color:var(--text)}
 
 /* ===== Riscos: checkbox de concluído ===== */
 .risk-chk{flex:none;width:15px;height:15px;accent-color:var(--ok);cursor:pointer;margin:2px 2px 0 0}
@@ -1012,6 +1013,8 @@ body.edit .kb-card{cursor:grab}
 .kbm-title:focus{outline:none;border-color:var(--accent)}
 .modal-x{flex:none;width:30px;height:30px;border:0;border-radius:8px;background:var(--surface-solid);color:var(--muted);font-size:14px;cursor:pointer}
 .modal-x:hover{background:var(--line);color:var(--text)}
+.modal-auto-x{position:absolute;top:10px;right:12px;width:28px;height:28px;border:0;border-radius:8px;background:var(--surface-solid);color:var(--muted);font-size:13px;cursor:pointer;z-index:2;display:flex;align-items:center;justify-content:center}
+.modal-auto-x:hover{background:var(--line);color:var(--text)}
 .kbm-grid{display:grid;grid-template-columns:90px 1fr;gap:11px 12px;align-items:start}
 .kbm-grid>label{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);padding-top:6px}
 .kbm-inp{width:100%;box-sizing:border-box;background:var(--surface-solid);border:1px solid var(--line);border-radius:8px;padding:7px 9px;color:var(--text);font-family:inherit;font-size:13px}

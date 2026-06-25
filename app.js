@@ -2784,7 +2784,8 @@ async function gerarModeloDeProjeto(projetoId) {
 function abrirMenuProjeto(ev, projetoId) {
   ev.stopPropagation(); ev.preventDefault();
   const ex = document.getElementById("projMenu"); if (ex) ex.remove();
-  const html = '<button class="ctx-it" data-a="dup">⧉ Duplicar projeto</button>' +
+  const html = '<button class="ctx-it" data-a="edit">✏ Editar projeto</button>' +
+    '<button class="ctx-it" data-a="dup">⧉ Duplicar projeto</button>' +
     '<button class="ctx-it" data-a="modelo">📐 Gerar modelo</button>';
   const menu = document.createElement("div"); menu.id = "projMenu"; menu.className = "ctx-menu"; menu.innerHTML = html;
   document.body.appendChild(menu);
@@ -2793,10 +2794,63 @@ function abrirMenuProjeto(ev, projetoId) {
   const close = () => { menu.remove(); document.removeEventListener("click", close, true); document.removeEventListener("contextmenu", close, true); };
   menu.querySelectorAll(".ctx-it").forEach(b => b.onclick = e => {
     e.stopPropagation(); const a = b.dataset.a; close();
-    if (a === "dup") duplicarProjeto(projetoId);
+    if (a === "edit") editarMetadataProjeto(projetoId);
+    else if (a === "dup") duplicarProjeto(projetoId);
     else if (a === "modelo") gerarModeloDeProjeto(projetoId);
   });
   setTimeout(() => { document.addEventListener("click", close, true); document.addEventListener("contextmenu", close, true); }, 0);
+}
+
+async function editarMetadataProjeto(projetoId) {
+  const { data: p, error } = await sb.from("projetos").select("*, clientes(slug)").eq("id", projetoId).single();
+  if (error || !p) { toast("Erro ao carregar projeto."); return; }
+  const { data: priv } = await sb.from("projetos_privado").select("*").eq("projeto_id", projetoId).maybeSingle();
+  const pr = priv || {};
+  const cliSlug = (p.clientes && p.clientes.slug) || (curCliente && curCliente.slug) || "";
+  openModal(
+    '<h3>Editar projeto</h3>' +
+    field("Nome", "nome", p.nome || "") +
+    '<label>Link permanente</label>' +
+    '<div class="permalink-row"><span class="permalink-base">/' + esc(cliSlug) + '/</span>' +
+    '<input data-k="slug" class="permalink-inp" value="' + escAttr(p.slug || "") + '" spellcheck="false"></div>' +
+    '<label>Descrição</label><textarea data-k="descricao" style="min-height:56px">' + esc(p.descricao || "") + '</textarea>' +
+    '<label>Status</label><select data-k="status">' +
+      '<option value="ativo"' + (p.status === "ativo" ? " selected" : "") + '>Ativo</option>' +
+      '<option value="pausado"' + (p.status === "pausado" ? " selected" : "") + '>Pausado</option>' +
+      '<option value="concluido"' + (p.status === "concluido" ? " selected" : "") + '>Concluído</option>' +
+    '</select>' +
+    '<div class="pz-sec-tit" style="margin-top:16px">🔒 Só você (privado)</div>' +
+    field("Link da proposta", "proposta_url", pr.proposta_url || "") +
+    field("Valor do projeto (R$)", "valor", pr.valor != null ? pr.valor : "") +
+    '<label>Notas privadas</label><textarea data-k="notas" style="min-height:60px">' + esc(pr.notas || "") + '</textarea>' +
+    actions("Salvar"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      const nomeInp = m.querySelector('[data-k="nome"]'), slugInp = m.querySelector('[data-k="slug"]');
+      let slugEdited = false;
+      slugInp.addEventListener("input", () => { slugEdited = true; });
+      slugInp.addEventListener("blur", () => { slugInp.value = slugify(slugInp.value); });
+      nomeInp.addEventListener("input", () => { if (!slugEdited) slugInp.value = slugify(nomeInp.value); });
+      m.querySelector("[data-ok]").onclick = async () => {
+        const get = k => (m.querySelector('[data-k="' + k + '"]') || {}).value;
+        const nome = get("nome").trim() || p.nome;
+        const slugBase = (get("slug") || "").trim() || nome;
+        const novoSlug = await uniqueSlugExcept("projetos", slugBase, "cliente_id", p.cliente_id, p.id);
+        const upd = { nome, descricao: get("descricao").trim() || null, status: get("status"), slug: novoSlug };
+        const { error: ue } = await sb.from("projetos").update(upd).eq("id", p.id);
+        if (ue) { toast("Erro: " + ue.message); return; }
+        const valorNum = parseFloat(String(get("valor")).replace(/[^\d.,]/g, "").replace(".", "").replace(",", ".")) || null;
+        await sb.from("projetos_privado").upsert({ projeto_id: p.id, proposta_url: get("proposta_url").trim() || null, valor: valorNum, notas: get("notas").trim() || null, updated_at: new Date().toISOString() });
+        if (curProjeto && curProjeto.id === p.id) {
+          curProjeto = Object.assign({}, curProjeto, upd);
+          if (curCliente && curCliente.slug && novoSlug) setUrl("/" + curCliente.slug + "/" + novoSlug);
+        }
+        closeModal();
+        toast(novoSlug !== p.slug ? "Projeto e link atualizados." : "Projeto atualizado.");
+        route();
+      };
+    }
+  );
 }
 
 /* ===== Biblioteca de modelos ===== */
@@ -3021,7 +3075,7 @@ async function editarProjeto() {
     '<label>Status</label><select data-k="status"><option value="ativo"' + (p.status === "ativo" ? " selected" : "") + '>Ativo</option><option value="pausado"' + (p.status === "pausado" ? " selected" : "") + '>Pausado</option><option value="concluido"' + (p.status === "concluido" ? " selected" : "") + '>Concluído</option></select>' +
     '<label>Evolução: <b id="evoLbl">' + (p.progresso || 0) + '%</b></label><input type="range" min="0" max="100" step="5" data-k="progresso" id="evoSlider" value="' + (p.progresso || 0) + '" style="width:100%" oninput="document.getElementById(\'evoLbl\').textContent=this.value+\'%\'">' +
     '<label class="pz-toggle" style="margin-top:6px"><input type="checkbox" id="autoEvo"' + ((p.dados && p.dados.auto_evolucao) ? " checked" : "") + '> Calcular automaticamente pelas tarefas concluídas (checklists, Kanban, marcos, próximos passos, aprovações, questionários, entregas e metas)</label>' +
-    '<div class="pz-sec-tit" style="margin-top:16px">Entregas <span class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:11px">(o cliente vê)</span></div>' +
+    '<div class="pz-sec-tit" style="margin-top:16px">Tarefas <span class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:11px">(o cliente vê)</span></div>' +
     '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Uma por linha: <b>nome | AAAA-MM-DD</b></p>' +
     '<textarea data-k="entregas" placeholder="Logo final | 2026-07-10\nSite no ar | 2026-08-01" style="min-height:70px;font-family:var(--font-mono);font-size:12.5px">' + esc(entregasTxt) + '</textarea>' +
     entreguesHtml +
@@ -3490,7 +3544,17 @@ async function deletarSpace(id) {
 }
 
 /* ===== 11) Modal helpers ===== */
-function openModal(html, after) { const m = $("#modal"), s = $("#scrim"); m.innerHTML = html; m.style.display = "block"; s.style.display = "block"; s.onclick = closeModal; if (after) after(m); }
+function openModal(html, after) {
+  const m = $("#modal"), s = $("#scrim");
+  m.innerHTML = html;
+  m.style.display = "block"; s.style.display = "block"; s.onclick = closeModal;
+  if (!m.querySelector(".modal-x")) {
+    const x = document.createElement("button");
+    x.className = "modal-auto-x"; x.textContent = "✕"; x.title = "Fechar";
+    x.onclick = closeModal; m.prepend(x);
+  }
+  if (after) after(m);
+}
 function closeModal() { $("#modal").style.display = "none"; $("#scrim").style.display = "none"; $("#modal").innerHTML = ""; }
 
 /* Diálogo de confirmação tematizado (substitui confirm()). Camada própria — empilha sobre modais. */
@@ -3552,7 +3616,8 @@ function applyBrand() {
     const pr = Math.max(0, Math.min(100, curProjeto.progresso || 0));
     pe.style.display = "";
     pe.innerHTML = '<div class="evo' + (canEdit ? " evo-edit" : "") + '"' + (canEdit ? ' onclick="editarProjeto()" title="Editar evolução"' : ' title="Evolução do projeto"') + '>' +
-      '<div class="evo-bar"><i style="width:' + pr + '%"></i></div><span class="evo-pct">' + pr + '%</span></div>';
+      '<div class="evo-bar"><i style="width:' + pr + '%"></i></div>' +
+      '<div class="evo-meta"><span class="evo-lbl">Tarefas</span><span class="evo-val">' + pr + '%</span></div></div>';
     updateEntregasMeter();
   } else {
     pe.style.display = "none"; pe.innerHTML = "";
