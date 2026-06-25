@@ -4440,6 +4440,24 @@ function abrirPerfil() {
     });
 }
 
+function abrirDefinirNovaSenha() {
+  openModal('<h3>🔑 Definir nova senha</h3>' +
+    '<p class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:13px;margin-top:-4px">Você entrou pelo link de redefinição. Escolha uma nova senha.</p>' +
+    '<input type="password" id="npNew" placeholder="Nova senha (mín. 6)"><input type="password" id="npConf" placeholder="Repita a nova senha" style="margin-top:8px">' +
+    '<div class="auth-err" id="npErr"></div>' +
+    '<div class="modal-actions"><span class="grow"></span><button class="btn primary" id="npBtn">Salvar nova senha</button></div>',
+    m => {
+      m.querySelector("#npBtn").onclick = async () => {
+        const a = m.querySelector("#npNew").value, b = m.querySelector("#npConf").value, errEl = m.querySelector("#npErr");
+        if (a.length < 6) { errEl.textContent = "Mínimo 6 caracteres."; return; }
+        if (a !== b) { errEl.textContent = "As senhas não conferem."; return; }
+        errEl.textContent = "Salvando…";
+        const { error } = await sb.auth.updateUser({ password: a });
+        if (error) { errEl.textContent = "Erro: " + error.message; return; }
+        closeModal(); toast("Senha redefinida! Você já está logado.");
+      };
+    });
+}
 function authModal() {
   if (me) { abrirPerfil(); return; }
   openModal(
@@ -4448,6 +4466,7 @@ function authModal() {
     '<div data-pane="up" style="display:none">' + field("Nome", "nome", "") + '</div>' +
     field("E-mail", "email", "") +
     '<label>Senha</label><input data-k="senha" type="password" placeholder="•••••••• (ou use link mágico)">' +
+    '<div style="margin-top:6px"><button class="lnk" data-forgot style="font-size:12px">Esqueci minha senha</button></div>' +
     '<div class="auth-err" id="authErr"></div>' +
     '<div class="modal-actions">' +
     '<button class="btn ghost" data-magic>✉ Link mágico</button><span class="grow"></span>' +
@@ -4468,6 +4487,13 @@ function authModal() {
         err("Enviando…");
         const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.href } });
         err(error ? error.message : "✓ Link enviado! Verifique seu e-mail.");
+      };
+      m.querySelector("[data-forgot]").onclick = async (e) => {
+        e.preventDefault();
+        const email = val("email").trim(); if (!email) return err("Informe o e-mail para receber o link de redefinição.");
+        err("Enviando…");
+        const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+        err(error ? error.message : "✓ Enviamos um link para redefinir a senha. Verifique seu e-mail.");
       };
       m.querySelector("[data-go]").onclick = async () => {
         const email = val("email").trim(), senha = val("senha");
@@ -5691,26 +5717,44 @@ async function carregarAdesaoProjeto(pid) {
     '<div class="uso-table-wrap"><table class="data-table uso-table"><thead><tr><th>Participante</th><th>Status</th><th>Último acesso</th><th>Contribuições aqui</th></tr></thead><tbody>' + trs + '</tbody></table></div>';
 }
 
+function gerarSenha() {
+  const a = "abcdefghijkmnpqrstuvwxyz", A = "ABCDEFGHJKLMNPQRSTUVWXYZ", n = "23456789", s = "!@#$";
+  const all = a + A + n + s;
+  const pick = set => set[Math.floor(Math.random() * set.length)];
+  let out = [pick(a), pick(A), pick(n), pick(s)];
+  for (let i = 0; i < 6; i++) out.push(pick(all));
+  return out.sort(() => Math.random() - 0.5).join("");
+}
 function adicionarParticipante() {
   openModal('<h3>Adicionar participante</h3>' +
     field("E-mail", "email", "") + field("Nome (opcional)", "nome", "") +
     papelSelect("cliente") + permChecks(null) +
-    '<p class="muted-note" style="font-size:12px;margin-top:8px">Se a pessoa ainda não tiver conta, ela será convidada por e-mail.</p>' +
-    '<div class="auth-err" id="ppErr"></div>' + actions("Adicionar / convidar"),
+    '<div class="pz-sec-tit" style="margin-top:16px">Acesso</div>' +
+    '<label class="ckrow" style="margin-bottom:6px"><input type="checkbox" id="ppComSenha"> Criar conta com <b>senha inicial</b> (entra na hora, sem depender de e-mail)</label>' +
+    '<div id="ppSenhaWrap" style="display:none">' +
+    '<div style="display:flex;gap:6px"><input data-k="senha" id="ppSenha" placeholder="Senha inicial (mín. 6)" autocomplete="off" style="flex:1"><button class="btn sm" type="button" id="ppGen">🎲 Gerar</button></div>' +
+    '<p class="muted-note" style="font-size:11.5px;margin-top:4px;text-transform:none;letter-spacing:0">Você define a senha e repassa à pessoa; ela pode trocar depois no perfil.</p></div>' +
+    '<p class="muted-note" id="ppHint" style="font-size:12px;margin-top:8px">Sem senha inicial, a pessoa será <b>convidada por e-mail</b> (link mágico).</p>' +
+    '<div class="auth-err" id="ppErr"></div>' + actions("Adicionar"),
     m => {
+      const chk = m.querySelector("#ppComSenha"), wrap = m.querySelector("#ppSenhaWrap"), hint = m.querySelector("#ppHint");
+      chk.onchange = () => {
+        wrap.style.display = chk.checked ? "block" : "none";
+        hint.style.display = chk.checked ? "none" : "block";
+        if (chk.checked && !m.querySelector("#ppSenha").value) m.querySelector("#ppSenha").value = gerarSenha();
+      };
+      m.querySelector("#ppGen").onclick = () => { m.querySelector("#ppSenha").value = gerarSenha(); };
       m.querySelector("[data-x]").onclick = closeModal;
       m.querySelector("[data-ok]").onclick = async () => {
         const email = m.querySelector('[data-k="email"]').value.trim();
         const errEl = m.querySelector("#ppErr");
         if (!email) { errEl.textContent = "Informe o e-mail."; return; }
+        const senha = chk.checked ? (m.querySelector("#ppSenha").value || "").trim() : "";
+        if (chk.checked && senha.length < 6) { errEl.textContent = "Senha inicial: mínimo 6 caracteres."; return; }
+        const nome = m.querySelector('[data-k="nome"]').value.trim();
         errEl.textContent = "Processando…";
         const { data, error } = await sb.functions.invoke("adicionar-participante", {
-          body: {
-            projeto_id: curProjeto.id, email,
-            nome: m.querySelector('[data-k="nome"]').value.trim(),
-            papel: m.querySelector('[data-k="papel"]').value,
-            permissoes: lerPerms(m)
-          }
+          body: { projeto_id: curProjeto.id, email, nome, papel: m.querySelector('[data-k="papel"]').value, permissoes: lerPerms(m), senha }
         });
         if (error) {
           let msg = error.message;
@@ -5718,9 +5762,28 @@ function adicionarParticipante() {
           errEl.textContent = "Erro: " + msg; return;
         }
         if (data && data.error) { errEl.textContent = "Erro: " + data.error; return; }
-        closeModal(); route();
+        closeModal();
+        if (data && data.status === "criado_com_senha") mostrarCredenciais(email, senha);
+        else if (data && data.status === "ja_existia") toast("Pessoa já tinha conta — vinculada ao projeto.");
+        else toast("Convite enviado por e-mail.");
+        route();
       };
     });
+}
+function mostrarCredenciais(email, senha) {
+  const link = location.origin + (curCliente && curCliente.slug && curProjeto && curProjeto.slug ? "/" + curCliente.slug + "/" + curProjeto.slug : "");
+  const linha = (lbl, val) => '<div class="cred-row"><div><div class="cred-lbl">' + lbl + '</div><div class="cred-val">' + esc(val) + '</div></div><button class="btn sm" onclick="copiarTexto(\'' + escAttr(escJs(val)) + '\',this)">copiar</button></div>';
+  const tudo = "Acesso ao Dojo\nLink: " + link + "\nE-mail: " + email + "\nSenha: " + senha + "\n(Você pode trocar a senha depois no seu perfil.)";
+  openModal('<h3>✅ Conta criada</h3>' +
+    '<p class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:13px;margin-top:-4px">Repasse estes dados à pessoa (WhatsApp, e-mail, etc.). Ela entra na hora e pode trocar a senha no perfil.</p>' +
+    '<div class="cred-list">' + linha("Link de acesso", link) + linha("E-mail", email) + linha("Senha inicial", senha) + '</div>' +
+    '<div class="modal-actions"><button class="btn" onclick="copiarTexto(\'' + escAttr(escJs(tudo)) + '\',this)">📋 Copiar tudo</button><span class="grow"></span><button class="btn primary" data-x>Pronto</button></div>',
+    m => { m.querySelector("[data-x]").onclick = closeModal; });
+}
+function copiarTexto(txt, btn) {
+  const done = () => { if (btn) { const o = btn.textContent; btn.textContent = "✓ copiado"; setTimeout(() => { btn.textContent = o; }, 1400); } };
+  if (navigator.clipboard) navigator.clipboard.writeText(txt).then(done, () => toast("Não foi possível copiar."));
+  else { const ta = document.createElement("textarea"); ta.value = txt; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); done(); } catch (e) {} ta.remove(); }
 }
 
 async function editarMembro(id) {
@@ -6054,6 +6117,12 @@ sb.auth.onAuthStateChange((event, session) => {
     clearTimeout(_bootSafety);
     _authBooted = true;
     setTimeout(() => onSession(null), 0);
+    return;
+  }
+  if (event === "PASSWORD_RECOVERY") {
+    clearTimeout(_bootSafety);
+    _authBooted = true;
+    setTimeout(() => { if (session) onSession(session); abrirDefinirNovaSenha(); }, 0);
     return;
   }
   // USER_UPDATED e outros: mantém sessão ativa se disponível
