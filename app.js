@@ -746,17 +746,29 @@ const WIDGETS = {
         (canEdit ? '<button class="btn sm" onclick="kanbanAddCol(\'' + t.id + '\')">＋ Coluna</button>' : '') + '</div>';
       const board = cols.map(col => {
         const cards = col.cards || [];
-        const cardsHtml = cards.map(card => {
+        const cardsHtml = cards.map((card, ci) => {
           const done = (card.checklist || []).filter(x => x.done).length;
           const totalChk = (card.checklist || []).length;
+          const cardDone = itemFeito(t.id, card.id, false);
+          const cm = marcOf(t.id, card.id);
+          const quem = cardDone && cm && cm.marcado_por_nome ? cm.marcado_por_nome : "";
           const badges = [];
           if (card.prazo) badges.push('<span class="kb-badge kb-prazo">🕑 ' + esc(card.prazo) + '</span>');
           if (totalChk) badges.push('<span class="kb-badge' + (done === totalChk ? ' done' : '') + '">☑ ' + done + '/' + totalChk + '</span>');
           if (card.desc) badges.push('<span class="kb-badge">≡</span>');
           if (card.responsavel) badges.push('<span class="kb-badge kb-assignee" title="Responsável: ' + escAttr(card.responsavel.nome) + '">' + avatarHtml(card.responsavel, 18) + '<span class="kb-assignee-nome">' + esc(card.responsavel.nome.split(/\s+/)[0]) + '</span></span>');
-          return '<div class="kb-card"' + (canEdit ? ' draggable="true" ondragstart="kanbanCardDragStart(event,\'' + t.id + '\',\'' + col.id + '\',\'' + card.id + '\')"' : '') +
+          if (quem) badges.push('<span class="kb-badge kb-by" title="Feito por ' + escAttr(quem) + '">✓ ' + esc(quem.split(/\s+/)[0]) + '</span>');
+          const ctl = '<div class="kb-card-ctl">' +
+            '<input type="checkbox" class="kb-done-chk"' + (cardDone ? ' checked' : '') + ' onclick="event.stopPropagation()" onchange="event.stopPropagation();toggleMarcItem(\'' + t.id + '\',\'' + card.id + '\',this.checked)" title="Marcar como feito">' +
+            '<span class="kb-mv">' +
+            (ci > 0 ? '<button onclick="event.stopPropagation();kanbanMoverCard(\'' + t.id + '\',\'' + col.id + '\',\'' + card.id + '\',-1)" title="Subir">↑</button>' : '') +
+            (ci < cards.length - 1 ? '<button onclick="event.stopPropagation();kanbanMoverCard(\'' + t.id + '\',\'' + col.id + '\',\'' + card.id + '\',1)" title="Descer">↓</button>' : '') +
+            '</span></div>';
+          return '<div class="kb-card' + (cardDone ? ' kb-done' : '') + '" draggable="true"' +
+            ' ondragstart="kanbanCardDragStart(event,\'' + t.id + '\',\'' + col.id + '\',\'' + card.id + '\')"' +
             ' onclick="kanbanOpenCard(\'' + t.id + '\',\'' + col.id + '\',\'' + card.id + '\')"' +
             ' data-item="' + escAttr(itemKey(card.titulo || "")) + '" data-itemlabel="' + escAttr(card.titulo || "") + '">' +
+            ctl +
             (card.etiqueta && ETIQ[card.etiqueta] ? '<span class="kb-etiq" style="background:' + ETIQ[card.etiqueta] + '"></span>' : '') +
             '<span class="kb-card-title">' + esc(card.titulo || "Sem título") + '</span>' +
             (badges.length ? '<div class="kb-badges">' + badges.join("") + '</div>' : '') +
@@ -766,7 +778,7 @@ const WIDGETS = {
           ? '<div class="kb-col-head"><span class="kb-col-name" contenteditable="true" spellcheck="false" onblur="kanbanColRename(\'' + t.id + '\',\'' + col.id + '\',this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}">' + esc(col.nome) + '</span>' +
             '<span class="kb-count">' + cards.length + '</span><button class="lnk del kb-col-del" onclick="kanbanDelCol(\'' + t.id + '\',\'' + col.id + '\')" title="Excluir coluna">✕</button></div>'
           : '<div class="kb-col-head"><span class="kb-col-name">' + esc(col.nome) + '</span><span class="kb-count">' + cards.length + '</span></div>';
-        return '<div class="kb-col"' + (canEdit ? ' ondragover="kanbanColDragOver(event)" ondragleave="kanbanColDragLeave(event)" ondrop="kanbanCardDrop(event,\'' + t.id + '\',\'' + col.id + '\')"' : '') + '>' +
+        return '<div class="kb-col" ondragover="kanbanColDragOver(event)" ondragleave="kanbanColDragLeave(event)" ondrop="kanbanCardDrop(event,\'' + t.id + '\',\'' + col.id + '\')">' +
           colHead + '<div class="kb-cards">' + cardsHtml + '</div>' +
           (canEdit ? '<button class="kb-add-card" onclick="kanbanAddCard(\'' + t.id + '\',\'' + col.id + '\')">＋ Adicionar card</button>' : '') +
           '</div>';
@@ -1671,15 +1683,42 @@ function kanbanColDragLeave(e) { e.currentTarget.classList.remove("kb-col-over")
 function kanbanCardDrop(e, tid, destColId) {
   e.preventDefault(); e.currentTarget.classList.remove("kb-col-over");
   if (!_kbDrag || _kbDrag.tid !== tid) return;
-  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
-  const srcCol = _kbCol(t, _kbDrag.colId), destCol = _kbCol(t, destColId);
+  const cardId = _kbDrag.cardId; _kbDrag = null;
+  const t = space().tiles.find(x => x.id === tid); if (!t) return;
+  const srcCol = _kbCol(t, _kbColOfCard(t, cardId)), destCol = _kbCol(t, destColId);
   if (!srcCol || !destCol) return;
-  const idx = (srcCol.cards || []).findIndex(c => c.id === _kbDrag.cardId);
+  const idx = (srcCol.cards || []).findIndex(c => c.id === cardId);
   if (idx < 0) return;
   const [card] = srcCol.cards.splice(idx, 1);
   if (!destCol.cards) destCol.cards = [];
   destCol.cards.push(card);
-  _kbDrag = null; save(); recomputeEvolucaoSeAuto(); route();
+  kanbanPersistMove(t, tid, cardId, destColId, destCol.cards.length - 1);
+}
+function _kbColOfCard(t, cardId) {
+  const col = (t.props.columns || []).find(c => (c.cards || []).some(x => x.id === cardId));
+  return col ? col.id : null;
+}
+/* ↑/↓ — move o card uma posição dentro da coluna */
+function kanbanMoverCard(tid, colId, cardId, dir) {
+  const t = space().tiles.find(x => x.id === tid); if (!t) return;
+  const col = _kbCol(t, colId); if (!col || !col.cards) return;
+  const i = col.cards.findIndex(c => c.id === cardId); if (i < 0) return;
+  const j = i + dir; if (j < 0 || j >= col.cards.length) return;
+  const [card] = col.cards.splice(i, 1);
+  col.cards.splice(j, 0, card);
+  kanbanPersistMove(t, tid, cardId, colId, j);
+}
+/* Persiste a movimentação: admin/gestor grava o layout; demais participantes via RPC controlada */
+async function kanbanPersistMove(t, widgetId, cardId, toColId, toIndex) {
+  if (canEdit) { save(); recomputeEvolucaoSeAuto(); route(); return; }
+  route(); // UI otimista
+  const { error } = await sb.rpc("kanban_mover_card", { p_projeto: curProjeto.id, p_widget: widgetId, p_card: cardId, p_to_col: toColId, p_to_index: toIndex });
+  if (error) { toast("Erro ao mover: " + error.message); await loadPainel(curProjeto.id); route(); return; }
+  await recomputeProgressoRPC();
+}
+async function kanbanToggleDone(tid, colId, cardId, checked) {
+  await toggleMarcItem(tid, cardId, checked); // grava marcação + recompute + route (re-renderiza o quadro)
+  const m = $("#modal"); if (m && m.style.display !== "none") kanbanReopenCard(tid, colId, cardId);
 }
 function kanbanOpenCard(tid, colId, cardId) {
   openModal(kanbanCardModalHtml(tid, colId, cardId), m => kanbanWireCardModal(m, tid, colId, cardId));
@@ -1692,6 +1731,10 @@ function kanbanCardModalHtml(tid, colId, cardId) {
   const chk = card.checklist || [];
   const doneN = chk.filter(x => x.done).length;
   const chkPct = chk.length ? Math.round(doneN / chk.length * 100) : 0;
+  const cardDone = itemFeito(tid, cardId, false);
+  const cmm = marcOf(tid, cardId);
+  const quemCard = cardDone && cmm && cmm.marcado_por_nome ? cmm.marcado_por_nome : "";
+  const lblCardJs = escAttr(escJs((card.titulo || "").slice(0, 80)));
   const chkHtml = chk.map((x, i) =>
     '<div class="kbm-chk-row">' +
     '<input type="checkbox" ' + (x.done ? "checked" : "") + (ro ? " disabled" : "") + ' onchange="kanbanChkToggle(\'' + tid + '\',\'' + colId + '\',\'' + cardId + '\',' + i + ')">' +
@@ -1704,6 +1747,10 @@ function kanbanCardModalHtml(tid, colId, cardId) {
     '<div class="kbm-head"><h3>' + (ro ? esc(card.titulo || "Card") : '<input class="kbm-title" value="' + escAttr(card.titulo || "") + '" placeholder="Título do card" oninput="kanbanCardSave(\'' + tid + '\',\'' + colId + '\',\'' + cardId + '\',\'titulo\',this.value)">') + '</h3>' +
     '<button class="modal-x" onclick="closeModal()">✕</button></div>' +
     '<div class="kbm-grid">' +
+    '<label>Concluído</label>' +
+    '<div class="kbm-done"><label class="kbm-done-lbl"><input type="checkbox"' + (cardDone ? ' checked' : '') + ' onchange="kanbanToggleDone(\'' + tid + '\',\'' + colId + '\',\'' + cardId + '\',this.checked)"> Marcar como feito</label>' +
+    (quemCard ? '<span class="kbm-by">✓ por ' + esc(quemCard) + '</span>' : '') +
+    '<button class="mk-btn" onclick="verHistoricoItem(\'' + tid + '\',\'' + cardId + '\',\'' + lblCardJs + '\')">🕘 histórico</button></div>' +
     '<label>Etiqueta</label>' +
     (ro ? '<div>' + esc((card.etiqueta || "—")) + '</div>'
         : '<div class="kbm-etiqs">' + ETIQS.map(([v, lbl]) => '<button class="kbm-etiq-btn ' + (v || "none") + (card.etiqueta === v ? " on" : "") + '" title="' + lbl + '" onclick="kanbanCardSave(\'' + tid + '\',\'' + colId + '\',\'' + cardId + '\',\'etiqueta\',\'' + v + '\');kanbanReopenCard(\'' + tid + '\',\'' + colId + '\',\'' + cardId + '\')"></button>').join("") + '</div>') +
