@@ -2642,7 +2642,7 @@ async function renderConsole(canvas, hint) {
   const since24h = new Date(Date.now() - 86400000).toISOString();
   const [cliRes, projRes, apRes, msgRes] = await Promise.all([
     sb.from("clientes").select("*, projetos(count)").order("nome"),
-    sb.from("projetos").select("*", { count: "exact", head: true }).eq("status", "ativo"),
+    sb.from("projetos").select("*", { count: "exact", head: true }).eq("status", "ativo").is("deleted_at", null),
     sb.from("aprovacoes").select("*", { count: "exact", head: true }).eq("status", "pendente"),
     sb.from("mensagens").select("projeto_id, projetos!inner(cliente_id)").gt("created_at", since24h).neq("autor_id", me.id)
   ]);
@@ -2702,7 +2702,7 @@ async function renderConsole(canvas, hint) {
 async function renderMeusProjetos(hint, internoCliente, navHtml) {
   let projetosHtml = '<p class="muted-note">Nenhum projeto ainda. Crie o primeiro com <b>＋ Novo projeto</b>.</p>';
   if (internoCliente) {
-    const { data: projetos } = await sb.from("projetos").select("*").eq("cliente_id", internoCliente.id).order("created_at");
+    const { data: projetos } = await sb.from("projetos").select("*").eq("cliente_id", internoCliente.id).is("deleted_at", null).order("created_at");
     if (projetos && projetos.length) {
       projetosHtml = '<div class="cli-grid">' + projetos.map(p =>
         '<div class="cli-card" onclick="abrirProjeto(\'' + p.id + '\')">' +
@@ -2723,6 +2723,7 @@ async function renderMeusProjetos(hint, internoCliente, navHtml) {
     '<div style="display:flex;gap:8px">' +
     (internoCliente ? '<button class="btn" onclick="editarClienteInterno()">✏ Renomear</button>' : '') +
     '<button class="btn" onclick="abrirBibliotecaModelos()">📐 Modelos</button>' +
+    (iid ? '<button class="btn" onclick="abrirLixeiraProjetos(\'' + iid + '\')">🗑 Lixeira</button>' : '') +
     '<button class="btn primary" onclick="novoMeuProjeto(' + (iid ? '\'' + iid + '\'' : 'null') + ')">＋ Novo projeto</button>' +
     '</div></div>' + projetosHtml + '</div>';
 }
@@ -2879,7 +2880,8 @@ async function abrirCliente(id) {
 async function renderClienteDetail(canvas, hint) {
   const c = curCliente;
   $("#crumb").innerHTML = '<a class="cr-link" onclick="irConsole()">Clientes</a><span class="cr-sep">›</span><span class="cr-cur">' + esc(c.empresa || c.nome) + '</span>';
-  const { data: projetos } = await sb.from("projetos").select("*").eq("cliente_id", c.id).order("created_at");
+  const { data: projetos } = await sb.from("projetos").select("*").eq("cliente_id", c.id).is("deleted_at", null).order("created_at");
+  const { count: nLix } = await sb.from("projetos").select("id", { count: "exact", head: true }).eq("cliente_id", c.id).not("deleted_at", "is", null);
   hint.style.display = "block";
   const d = c.dados || {};
   const logo = c.marca && c.marca.logoUrl;
@@ -2897,6 +2899,7 @@ async function renderClienteDetail(canvas, hint) {
     '<button class="btn danger" onclick="excluirCliente()">🗑 Excluir</button>' +
     '<button class="btn" onclick="editarCliente()">⚙ Configurar cliente</button>' +
     '<button class="btn" onclick="abrirBibliotecaModelos()">📐 Modelos</button>' +
+    '<button class="btn" onclick="abrirLixeiraProjetos(\'' + c.id + '\')">🗑 Lixeira' + (nLix ? ' <span class="lix-badge">' + nLix + '</span>' : '') + '</button>' +
     '<button class="btn primary" onclick="novoProjeto()">＋ Novo projeto</button></div></div>' +
     perfil +
     ((projetos && projetos.length) ? '<div class="cli-grid">' + projetos.map(p =>
@@ -3013,6 +3016,58 @@ async function duplicarProjeto(projetoId) {
   route();
 }
 
+/* ===== Lixeira de projetos (soft-delete) ===== */
+async function moverProjetoLixeira(projetoId) {
+  const { data: p } = await sb.from("projetos").select("nome").eq("id", projetoId).maybeSingle();
+  const nome = (p && p.nome) || "este projeto";
+  if (!(await confirmDialog('Mover "' + nome + '" para a lixeira? Ele sai do ar e das listagens. Você pode restaurar depois.', { ok: "Mover para lixeira", danger: true }))) return;
+  const { error } = await sb.from("projetos").update({ deleted_at: new Date().toISOString() }).eq("id", projetoId);
+  if (error) { toast("Erro: " + error.message); return; }
+  if (curProjeto && curProjeto.id === projetoId) { curProjeto = null; }
+  toast('"' + nome + '" foi para a lixeira.');
+  route();
+}
+async function restaurarProjeto(projetoId) {
+  const { error } = await sb.from("projetos").update({ deleted_at: null }).eq("id", projetoId);
+  if (error) { toast("Erro: " + error.message); return; }
+  _lixeiraDirty = true;
+  toast("Projeto restaurado.");
+  abrirLixeiraProjetos(_lixeiraClienteId);
+}
+async function excluirProjetoDefinitivo(projetoId, nome) {
+  if (!(await confirmDialog('Excluir DEFINITIVAMENTE "' + (nome || "este projeto") + '"? Painel, documentos, mensagens e tudo mais serão apagados para sempre. Não dá para desfazer.', { ok: "Excluir para sempre" }))) return;
+  const { error } = await sb.from("projetos").delete().eq("id", projetoId);
+  if (error) { toast("Erro: " + error.message); return; }
+  _lixeiraDirty = true;
+  toast("Projeto excluído definitivamente.");
+  abrirLixeiraProjetos(_lixeiraClienteId);
+}
+let _lixeiraClienteId = null, _lixeiraDirty = false;
+async function abrirLixeiraProjetos(clienteId) {
+  _lixeiraClienteId = clienteId || null;
+  const fechar = () => { closeModal(); if (_lixeiraDirty) { _lixeiraDirty = false; route(); } };
+  openModal('<h3>🗑 Lixeira de projetos</h3><div id="lixBody"><p class="muted-note">Carregando…</p></div>' +
+    '<div class="modal-actions"><span class="grow"></span><button class="btn primary" data-x>Fechar</button></div>',
+    m => { m.querySelector("[data-x]").onclick = fechar; $("#scrim").onclick = fechar; });
+  let q = sb.from("projetos").select("id,nome,descricao,deleted_at,cliente_id").not("deleted_at", "is", null).order("deleted_at", { ascending: false });
+  if (clienteId) q = q.eq("cliente_id", clienteId);
+  const { data, error } = await q;
+  const body = document.getElementById("lixBody"); if (!body) return;
+  if (error) { body.innerHTML = '<p class="muted-note">Erro: ' + esc(error.message) + '</p>'; return; }
+  const list = data || [];
+  if (!list.length) { body.innerHTML = '<p class="muted-note">A lixeira está vazia.</p>'; return; }
+  body.innerHTML = '<div class="lix-list">' + list.map(p => {
+    const quando = p.deleted_at ? fmtRel(p.deleted_at) : "";
+    const nomeJs = (p.nome || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+    return '<div class="lix-row"><div class="lix-info"><div class="lix-name">' + esc(p.nome) + '</div>' +
+      '<div class="muted-note" style="font-size:11.5px;text-transform:none;letter-spacing:0">Apagado ' + esc(quando) + '</div></div>' +
+      '<div class="lix-actions">' +
+      '<button class="btn sm" onclick="restaurarProjeto(\'' + p.id + '\')">♻ Restaurar</button>' +
+      '<button class="btn sm danger" onclick="excluirProjetoDefinitivo(\'' + p.id + '\',\'' + nomeJs + '\')">✕ Excluir</button>' +
+      '</div></div>';
+  }).join("") + '</div>';
+}
+
 /* ===== Gerar modelo a partir de um projeto ===== */
 async function gerarModeloDeProjeto(projetoId) {
   const { data: proj } = await sb.from("projetos").select("nome").eq("id", projetoId).maybeSingle();
@@ -3046,7 +3101,8 @@ function abrirMenuProjeto(ev, projetoId) {
   const ex = document.getElementById("projMenu"); if (ex) ex.remove();
   const html = '<button class="ctx-it" data-a="edit">✏ Editar projeto</button>' +
     '<button class="ctx-it" data-a="dup">⧉ Duplicar projeto</button>' +
-    '<button class="ctx-it" data-a="modelo">📐 Gerar modelo</button>';
+    '<button class="ctx-it" data-a="modelo">📐 Gerar modelo</button>' +
+    '<button class="ctx-it ctx-del" data-a="lixeira">🗑 Mover para lixeira</button>';
   const menu = document.createElement("div"); menu.id = "projMenu"; menu.className = "ctx-menu"; menu.innerHTML = html;
   document.body.appendChild(menu);
   menu.style.left = Math.min(ev.clientX, window.innerWidth - menu.offsetWidth - 8) + "px";
@@ -3057,6 +3113,7 @@ function abrirMenuProjeto(ev, projetoId) {
     if (a === "edit") editarMetadataProjeto(projetoId);
     else if (a === "dup") duplicarProjeto(projetoId);
     else if (a === "modelo") gerarModeloDeProjeto(projetoId);
+    else if (a === "lixeira") moverProjetoLixeira(projetoId);
   });
   setTimeout(() => { document.addEventListener("click", close, true); document.addEventListener("contextmenu", close, true); }, 0);
 }
@@ -3285,7 +3342,7 @@ async function abrirSwitchProjeto(ev) {
   if (existing) { existing.remove(); document.removeEventListener("click", _closeSwitchOutside, true); return; }
   let projetos = [];
   if (isAdmin && !previewCliente && curCliente) {
-    const { data } = await sb.from("projetos").select("id,nome,status").eq("cliente_id", curCliente.id).order("created_at");
+    const { data } = await sb.from("projetos").select("id,nome,status").eq("cliente_id", curCliente.id).is("deleted_at", null).order("created_at");
     projetos = data || [];
   } else {
     const { data } = await sb.from("membros").select("projetos(id,nome,status,cliente_id)").eq("pessoa_id", me.id);
