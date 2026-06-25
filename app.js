@@ -2892,7 +2892,7 @@ async function abrirProjeto(id) {
   }
   canEdit = canEditReal;
   await loadPainel(id);
-  histReset(); deviceView = "desktop";
+  histReset(); deviceView = window.innerWidth <= 768 ? "mobile" : "desktop";
   const vis = visibleSpaces();
   curSpaceId = vis.length ? vis[0].id : (state.spaces[0] && state.spaces[0].id) || null;
   subscribeRealtime(id);
