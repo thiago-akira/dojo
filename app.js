@@ -818,23 +818,33 @@ const WIDGETS = {
     }
   },
   equipe: {
-    emoji: "👥", name: "Equipe & responsáveis", desc: "Quem cuida de quê no projeto.",
-    w: 4, h: 3, defaults: { title: "Equipe", raw: "Ana Souza | Design\nBruno Lima | Desenvolvimento\nCarla Dias | Gestão" },
+    emoji: "👥", name: "Equipe & responsáveis", desc: "Quem cuida de quê — manual ou puxando dos Participantes.",
+    w: 4, h: 3, defaults: { title: "Equipe", raw: "Ana Souza | Design\nBruno Lima | Desenvolvimento\nCarla Dias | Gestão", vinculados: [] },
     render(t, c) {
       const p = t.props;
-      const items = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0]);
+      const manual = (p.raw || "").split("\n").map(l => l.split("|").map(s => s.trim())).filter(a => a[0])
+        .map(a => ({ nome: a[0], resp: a[1] || "", manual: true }));
+      const vinc = (p.vinculados || []).map(v => ({ pessoa_id: v.pessoa_id, nome: v.nome || v.email || "—", email: v.email || "", papel: v.papel || "", resp: v.resp || "", manual: false }));
+      const people = [...vinc, ...manual];
+      const rows = people.length === 0
+        ? '<p class="muted-note">Ninguém na equipe ainda.' + (canEdit ? ' Use ⚙ para adicionar.' : '') + '</p>'
+        : people.map((pe, i) => {
+          const ini = (pe.nome || "?").split(/\s+/).map(w => w[0] || "").slice(0, 2).join("").toUpperCase();
+          const sub = pe.resp || (pe.papel === "gestor" ? "Equipe" : pe.papel === "cliente" ? "Cliente" : "");
+          return '<div class="team-row team-click" data-idx="' + i + '" data-item="' + escAttr(itemKey(pe.nome)) + '" data-itemlabel="' + escAttr(pe.nome) + '">' +
+            '<div class="team-av">' + esc(ini) + '</div><div class="team-info"><div class="team-name">' + esc(pe.nome) +
+            (pe.manual ? '' : ' <span class="team-link-dot" title="Participante do projeto">●</span>') + '</div>' +
+            (sub ? '<div class="team-role">' + esc(sub) + '</div>' : '') + '</div></div>';
+        }).join("");
       c.innerHTML = (p.title ? '<div class="w-head"><span class="w-title">' + esc(p.title) + '</span></div>' : '') +
-        '<div class="w-body"><div class="team">' + items.map(a => {
-          const nome = a[0], papel = a[1] || "";
-          const ini = nome.split(/\s+/).map(w => w[0] || "").slice(0, 2).join("").toUpperCase();
-          return '<div class="team-row" data-item="' + escAttr(itemKey(nome)) + '" data-itemlabel="' + escAttr(nome) + '"><div class="team-av">' + esc(ini) + '</div><div class="team-info"><div class="team-name">' + esc(nome) + '</div>' + (papel ? '<div class="team-role">' + esc(papel) + '</div>' : '') + '</div></div>';
-        }).join("") + '</div></div>';
+        '<div class="w-body"><div class="team">' + rows + '</div></div>';
+      if (!editMode) c.querySelectorAll(".team-click").forEach(row => {
+        const pe = people[+row.dataset.idx];
+        row.style.cursor = "pointer";
+        row.onclick = e => { e.stopPropagation(); abrirPessoaEquipe(pe); };
+      });
     },
-    form(p) {
-      return field("Título", "title", p.title) + '<label>Pessoas</label>' +
-        '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Uma por linha: <b>Nome | Responsabilidade</b>.</p>' +
-        '<textarea data-k="raw" spellcheck="false" style="min-height:120px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6">' + esc(p.raw) + '</textarea>';
-    }
+    configure(t) { equipeConfig(t); }
   },
   riscos: {
     emoji: "⚠️", name: "Riscos & bloqueios", desc: "Impedimentos com nível de severidade.",
@@ -1062,6 +1072,93 @@ function entregaTilesList() {
 function marcosFonteChange(sel) {
   const man = document.getElementById("marcosManual");
   if (man) man.style.display = sel.value === "manual" ? "block" : "none";
+}
+
+/* — Widget Equipe: config (manual + participantes) e clique na pessoa — */
+async function equipeConfig(t) {
+  const p = t.props;
+  openModal('<h3>👥 Equipe & responsáveis</h3>' +
+    field("Título", "title", p.title) +
+    '<label>Pessoas adicionadas manualmente</label>' +
+    '<p class="muted-note" style="font-size:11.5px;margin:2px 0 6px;text-transform:none;letter-spacing:0;font-weight:600">Uma por linha: <b>Nome | Responsabilidade</b>.</p>' +
+    '<textarea data-k="raw" spellcheck="false" style="min-height:90px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6">' + esc(p.raw || "") + '</textarea>' +
+    '<label>Puxar dos Participantes do projeto</label>' +
+    '<div id="eqPartList" class="eq-part-list"><p class="muted-note">Carregando participantes…</p></div>' +
+    actions("Salvar"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = () => {
+        p.title = m.querySelector('[data-k="title"]').value;
+        p.raw = m.querySelector('[data-k="raw"]').value;
+        const vinc = [];
+        m.querySelectorAll(".eq-part-row").forEach(row => {
+          const chk = row.querySelector('input[type=checkbox]');
+          if (chk && chk.checked) vinc.push({
+            pessoa_id: chk.value, nome: chk.dataset.nome, email: chk.dataset.email,
+            papel: chk.dataset.papel, resp: (row.querySelector(".eq-part-resp").value || "").trim()
+          });
+        });
+        p.vinculados = vinc;
+        save(); pushHist("Editou equipe"); route(); closeModal();
+      };
+    });
+  const box = document.getElementById("eqPartList");
+  const { data: ms, error } = await sb.from("membros").select("pessoa_id, papel, pessoas(nome,email)").eq("projeto_id", curProjeto.id).order("created_at");
+  if (!box || !document.body.contains(box)) return;
+  if (error) { box.innerHTML = '<p class="muted-note">Erro ao carregar participantes.</p>'; return; }
+  const list = ms || [];
+  if (!list.length) { box.innerHTML = '<p class="muted-note">Nenhum participante cadastrado ainda. Adicione na aba <b>Participantes</b>.</p>'; return; }
+  const sel = {}; (p.vinculados || []).forEach(v => { sel[v.pessoa_id] = v.resp || ""; });
+  box.innerHTML = list.map(m => {
+    const pp = m.pessoas || {}, nome = pp.nome || pp.email || "—";
+    const ini = nome.split(/\s+/).map(w => w[0] || "").slice(0, 2).join("").toUpperCase();
+    const checked = Object.prototype.hasOwnProperty.call(sel, m.pessoa_id);
+    return '<div class="eq-part-row">' +
+      '<label class="eq-part-pick"><input type="checkbox" value="' + escAttr(m.pessoa_id) + '"' +
+        ' data-nome="' + escAttr(nome) + '" data-email="' + escAttr(pp.email || "") + '" data-papel="' + escAttr(m.papel || "") + '"' + (checked ? " checked" : "") + '>' +
+      '<span class="team-av" style="width:26px;height:26px;font-size:10px">' + esc(ini) + '</span>' +
+      '<span class="eq-part-name">' + esc(nome) + ' <span class="papel ' + m.papel + '">' + (m.papel === "gestor" ? "equipe" : "cliente") + '</span></span></label>' +
+      '<input class="eq-part-resp entrega-inp" placeholder="Responsabilidade (opcional)" value="' + escAttr(sel[m.pessoa_id] || "") + '"></div>';
+  }).join("");
+}
+
+function abrirPessoaEquipe(pe) {
+  const ini = (pe.nome || "?").split(/\s+/).map(w => w[0] || "").slice(0, 2).join("").toUpperCase();
+  const podeMsg = pe.pessoa_id && (!me || pe.pessoa_id !== me.id) && perm("pode_enviar_mensagens");
+  const papelLbl = pe.papel === "gestor" ? "Equipe / gestor" : pe.papel === "cliente" ? "Cliente" : "";
+  let html = '<div class="perfil-top"><div class="perfil-av">' + esc(ini) + '</div>' +
+    '<div><div class="perfil-nome">' + esc(pe.nome) + '</div>' +
+    (papelLbl ? '<div class="muted-note" style="font-size:12.5px;text-transform:none;letter-spacing:0">' + esc(papelLbl) + '</div>' : '') + '</div></div>';
+  html += '<div class="eq-dados">';
+  if (pe.resp) html += '<div class="eq-dado"><span>Responsabilidade</span><b>' + esc(pe.resp) + '</b></div>';
+  if (pe.email) html += '<div class="eq-dado"><span>E-mail</span><b>' + esc(pe.email) + '</b></div>';
+  html += '</div>';
+  if (pe.manual) html += '<p class="muted-note" style="margin-top:10px;text-transform:none;letter-spacing:0;font-weight:600">Adicionada manualmente — sem conta no portal, não é possível enviar mensagem.</p>';
+  if (podeMsg) html += '<label style="margin-top:14px">💬 Enviar mensagem direta</label>' +
+    '<textarea id="eqMsgBody" placeholder="Escreva para ' + escAttr(pe.nome) + '…"></textarea>' +
+    '<div class="auth-err" id="eqMsgErr"></div>';
+  else if (pe.pessoa_id && !perm("pode_enviar_mensagens")) html += '<p class="muted-note" style="margin-top:12px">Você não tem permissão para enviar mensagens neste projeto.</p>';
+  const btns = '<div class="modal-actions"><span class="grow"></span>' +
+    (actingAdmin() && pe.pessoa_id ? '<button class="btn" id="eqVerPart">Ver em Participantes</button>' : '') +
+    '<button class="btn" data-x>Fechar</button>' +
+    (podeMsg ? '<button class="btn primary" id="eqSend">Enviar</button>' : '') + '</div>';
+  openModal('<h3>👤 Dados de ' + esc(pe.nome) + '</h3>' + html + btns, m => {
+    m.querySelector("[data-x]").onclick = closeModal;
+    const send = m.querySelector("#eqSend");
+    if (send) send.onclick = () => enviarMensagemDireta(pe.pessoa_id, m);
+    const vp = m.querySelector("#eqVerPart");
+    if (vp) vp.onclick = () => { closeModal(); projTab = "participantes"; route(); };
+  });
+}
+
+async function enviarMensagemDireta(pessoaId, m) {
+  const ta = m.querySelector("#eqMsgBody"), err = m.querySelector("#eqMsgErr");
+  const corpo = (ta && ta.value || "").trim();
+  if (!corpo) { if (err) err.textContent = "Escreva uma mensagem."; return; }
+  if (err) err.textContent = "Enviando…";
+  const { error } = await sb.from("mensagens").insert({ projeto_id: curProjeto.id, autor_id: me.id, destinatario_id: pessoaId, corpo });
+  if (error) { if (err) err.textContent = "Erro: " + error.message; return; }
+  closeModal(); toast("Mensagem enviada.");
 }
 
 /* — Helpers dos widgets de mídia — */
@@ -3643,6 +3740,7 @@ function attachTabReorder() {
 
 function widgetSettings(t) {
   const W = WIDGETS[t.type];
+  if (W.configure) { W.configure(t); return; }
   openModal('<h3>' + W.emoji + ' ' + esc(W.name) + '</h3>' + W.form(t.props) +
     '<div class="modal-actions"><span class="grow"></span><button class="btn" data-x>Cancelar</button><button class="btn primary" data-ok>Salvar</button></div>',
     m => {

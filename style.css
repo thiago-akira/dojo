@@ -415,6 +415,21 @@ body.edit .para-edit{background:var(--surface-solid)}
 .team-av{width:34px;height:34px;border-radius:50%;background:var(--accent);color:#1a1300;font-size:12.5px;font-weight:800;display:grid;place-items:center;flex:none}
 .team-name{font-size:13.5px;font-weight:700;line-height:1.2}
 .team-role{font-size:12px;color:var(--muted);margin-top:1px}
+.team-row.team-click{border-radius:9px;padding:5px;margin:-5px;transition:background .12s}
+.team-row.team-click:hover{background:var(--surface-solid)}
+.team-link-dot{color:var(--accent-2);font-size:9px;vertical-align:middle}
+/* config Equipe: lista de participantes */
+.eq-part-list{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.eq-part-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.eq-part-pick{display:flex;align-items:center;gap:8px;flex:1;min-width:160px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:600;margin:0}
+.eq-part-pick input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);flex:none}
+.eq-part-name{font-size:13px;font-weight:700}
+.eq-part-resp{flex:1;min-width:140px}
+/* modal de dados da pessoa */
+.eq-dados{display:flex;flex-direction:column;gap:7px;margin-top:6px}
+.eq-dado{display:flex;justify-content:space-between;gap:12px;font-size:13px;border-bottom:1px solid var(--line);padding-bottom:7px}
+.eq-dado span{color:var(--muted);font-weight:700}
+.eq-dado b{text-align:right;word-break:break-word}
 
 /* ===== Widget: Riscos & bloqueios ===== */
 .risks{display:flex;flex-direction:column;gap:7px}
