@@ -4886,7 +4886,7 @@ async function renderMensagens(canvas, hint) {
     ? '<div class="composer">' +
       '<select id="msgTo">' + opts + '</select>' +
       '<div class="composer-body">' +
-      '<textarea id="msgBody" placeholder="Escreva uma mensagem…" onkeydown="if(event.key===\'Enter\'&&(event.metaKey||event.ctrlKey))enviarMsg()"></textarea>' +
+      '<textarea id="msgBody" placeholder="Escreva uma mensagem… (Enter envia · Shift+Enter pula linha)" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();enviarMsg();}"></textarea>' +
       '<div id="msgAnexoPrev" class="msg-anexo-prev" style="display:none"></div>' +
       '</div>' +
       '<div class="composer-send">' +
@@ -4930,6 +4930,7 @@ async function enviarMsg() {
   });
   if (error) { toast("Erro: " + error.message); return; }
   route();
+  setTimeout(() => { const b = document.getElementById("msgBody"); if (b) b.focus(); }, 350);
 }
 
 async function baixarChatAnexo(path) {
