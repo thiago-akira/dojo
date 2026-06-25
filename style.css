@@ -891,6 +891,18 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 
 /* ===== Reuniões ===== */
 .reucard{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:14px 15px;margin-bottom:12px}
+.reucard.collapsible{padding:0;overflow:hidden}
+.reu-summary{padding:12px 38px 12px 14px;cursor:pointer;position:relative;display:flex;flex-direction:column;gap:4px;transition:background .12s}
+.reu-summary:hover{background:var(--surface-solid)}
+.reucard.expanded .reu-summary{background:var(--surface-solid);border-bottom:1px solid var(--line)}
+.reu-sum-main{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.reu-sum-meta{font-size:12.5px;font-weight:600;color:var(--muted);display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.reu-sum-prev{font-size:12.5px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.reu-chip{font-size:10.5px;font-weight:700;color:var(--muted);background:transparent;border:1px solid var(--line-strong);border-radius:20px;padding:1px 8px;white-space:nowrap}
+.reu-chevron{position:absolute;right:13px;top:13px;color:var(--muted);font-size:13px;transition:transform .15s}
+.reucard.expanded .reu-chevron{transform:rotate(180deg)}
+.reu-details{display:none;padding:12px 14px 13px}
+.reucard.expanded .reu-details{display:block}
 .reu-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
 .reu-title{font-weight:800;font-size:15px}
 .reubadge{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;border-radius:6px;padding:3px 8px;white-space:nowrap}

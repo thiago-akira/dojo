@@ -5344,6 +5344,12 @@ function _reuLocalHtml(r) {
     ? '<a href="' + escAttr(r.local_ou_link) + '" target="_blank" rel="noopener" class="lnk">🔗 Link da reunião</a>'
     : '📍 ' + esc(r.local_ou_link);
 }
+let _reuExp = new Set();
+function reuToggle(rid, headEl) {
+  const card = headEl.closest(".reucard"); if (!card) return;
+  if (_reuExp.has(rid)) { _reuExp.delete(rid); card.classList.remove("expanded"); }
+  else { _reuExp.add(rid); card.classList.add("expanded"); }
+}
 async function renderReunioes(canvas, hint) {
   const pid = curProjeto.id;
   hint.style.display = "block";
@@ -5352,28 +5358,51 @@ async function renderReunioes(canvas, hint) {
   const agendadas = all.filter(r => r.status === "agendada").sort((a, b) => a.data_hora.localeCompare(b.data_hora));
   const realizadas = all.filter(r => r.status === "realizada");
 
-  const cardAgendada = r => '<div class="reucard">' +
-    '<div class="reu-head"><span class="reu-title">' + esc(r.titulo) + '</span><span class="reubadge agendada">⏳ agendada</span></div>' +
-    '<div class="reu-when">📅 ' + fmtDt(r.data_hora) + ' · ' + r.duracao_min + ' min</div>' +
-    (r.local_ou_link ? '<div class="reu-local">' + _reuLocalHtml(r) + '</div>' : '') +
-    (r.descricao ? '<div class="reu-desc">' + esc(r.descricao) + '</div>' : '') +
-    (canEdit ? '<div class="reu-actions"><button class="lnk" onclick="editarReuniao(\'' + r.id + '\')">editar</button><button class="lnk ok" onclick="realizarReuniao(\'' + r.id + '\')">marcar como realizada</button><button class="lnk del" onclick="delReuniao(\'' + r.id + '\')">excluir</button></div>' : '') +
-    '</div>';
+  const cardAgendada = r => {
+    const exp = _reuExp.has(r.id);
+    const online = r.local_ou_link && String(r.local_ou_link).startsWith("http");
+    const locChip = r.local_ou_link ? '<span class="reu-chip">' + (online ? "💻 online" : "📍 presencial") + '</span>' : '';
+    return '<div class="reucard collapsible' + (exp ? ' expanded' : '') + '">' +
+      '<div class="reu-summary" onclick="reuToggle(\'' + r.id + '\',this)">' +
+      '<div class="reu-sum-main"><span class="reu-title">' + esc(r.titulo) + '</span><span class="reubadge agendada">⏳ agendada</span></div>' +
+      '<div class="reu-sum-meta">📅 ' + fmtDt(r.data_hora) + ' · ' + r.duracao_min + ' min' + (locChip ? ' ' + locChip : '') + '</div>' +
+      '<span class="reu-chevron">▾</span></div>' +
+      '<div class="reu-details">' +
+      (r.local_ou_link ? '<div class="reu-local">' + _reuLocalHtml(r) + '</div>' : '') +
+      (r.descricao ? '<div class="reu-desc">' + esc(r.descricao) + '</div>' : '<div class="reu-desc muted-note" style="text-transform:none;letter-spacing:0">Sem pauta cadastrada.</div>') +
+      (canEdit ? '<div class="reu-actions"><button class="lnk" onclick="editarReuniao(\'' + r.id + '\')">editar</button><button class="lnk ok" onclick="realizarReuniao(\'' + r.id + '\')">marcar como realizada</button><button class="lnk del" onclick="delReuniao(\'' + r.id + '\')">excluir</button></div>' : '') +
+      '</div></div>';
+  };
 
   const cardRealizada = r => {
     const d = r.dados || {};
+    const exp = _reuExp.has(r.id);
     const tarefas = (d.tarefas || []).map(t => '<li>' + esc(t.texto) + (t.responsavel ? ' <span class="reu-resp">— ' + esc(t.responsavel) + '</span>' : '') + '</li>').join("");
     const prints = (d.prints || []).map(u => '<a href="' + escAttr(u) + '" target="_blank" rel="noopener"><img src="' + escAttr(u) + '" class="reu-print" loading="lazy"></a>').join("");
-    return '<div class="reucard">' +
-      '<div class="reu-head"><span class="reu-title">' + esc(r.titulo) + '</span><span class="reubadge realizada">✓ realizada</span></div>' +
-      '<div class="reu-when">📅 ' + fmtDt(r.data_hora) + '</div>' +
+    const nTar = (d.tarefas || []).length, nPr = (d.prints || []).length;
+    const chips = [
+      d.gravacao_url ? "🎥 gravação" : "",
+      (d.transcricao || d.transcricao_url) ? "📄 transcrição" : "",
+      nTar ? "✅ " + nTar + " tarefa" + (nTar > 1 ? "s" : "") : "",
+      nPr ? "🖼 " + nPr : ""
+    ].filter(Boolean).map(ch => '<span class="reu-chip">' + ch + '</span>').join("");
+    const resumoTxt = d.resumo || r.notas || "";
+    const preview = resumoTxt ? '<div class="reu-sum-prev">' + esc(resumoTxt.slice(0, 130)) + (resumoTxt.length > 130 ? "…" : "") + '</div>' : '';
+    return '<div class="reucard collapsible' + (exp ? ' expanded' : '') + '">' +
+      '<div class="reu-summary" onclick="reuToggle(\'' + r.id + '\',this)">' +
+      '<div class="reu-sum-main"><span class="reu-title">' + esc(r.titulo) + '</span><span class="reubadge realizada">✓ realizada</span></div>' +
+      '<div class="reu-sum-meta">📅 ' + fmtDt(r.data_hora) + (chips ? ' ' + chips : '') + '</div>' +
+      preview +
+      '<span class="reu-chevron">▾</span></div>' +
+      '<div class="reu-details">' +
       (d.gravacao_url ? '<div class="reu-local"><a href="' + escAttr(d.gravacao_url) + '" target="_blank" rel="noopener" class="lnk">🎥 Gravação</a></div>' : '') +
       (d.resumo ? '<div class="reu-notas"><b>📝 Resumo:</b> ' + esc(d.resumo) + '</div>' : (r.notas ? '<div class="reu-notas"><b>📋 Ata:</b> ' + esc(r.notas) + '</div>' : '')) +
       (tarefas ? '<div class="reu-tarefas"><b>✅ Tarefas:</b><ul>' + tarefas + '</ul></div>' : '') +
       (prints ? '<div class="reu-prints">' + prints + '</div>' : '') +
       (d.transcricao ? '<details class="reu-transc"><summary>📄 Transcrição</summary><div>' + esc(d.transcricao) + '</div></details>' : (d.transcricao_url ? '<div class="reu-local"><a href="' + escAttr(d.transcricao_url) + '" target="_blank" rel="noopener" class="lnk">📄 Transcrição (arquivo)</a></div>' : '')) +
+      (!d.resumo && !r.notas && !tarefas && !prints && !d.transcricao && !d.transcricao_url && !d.gravacao_url ? '<div class="reu-desc muted-note" style="text-transform:none;letter-spacing:0">Sem registro detalhado ainda.</div>' : '') +
       (canEdit ? '<div class="reu-actions"><button class="lnk" onclick="registrarReuniaoRealizada(\'' + r.id + '\')">✏ editar registro</button><button class="lnk del" onclick="delReuniao(\'' + r.id + '\')">excluir</button></div>' : '') +
-      '</div>';
+      '</div></div>';
   };
 
   hint.innerHTML = '<div class="page"><div class="page-head"><h2>📅 Reuniões</h2>' +
