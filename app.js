@@ -5141,30 +5141,46 @@ function lerPerms(m) {
   return o;
 }
 
+function avatarHtml(p, size) {
+  size = size || 34;
+  if (p.avatar_url) {
+    return '<img class="team-av" src="' + escAttr(p.avatar_url) + '" style="width:' + size + 'px;height:' + size + 'px;object-fit:cover" alt="">';
+  }
+  const ini = (p.nome || p.email || "?").split(/\s+/).map(w => w[0] || "").slice(0, 2).join("").toUpperCase();
+  return '<span class="team-av" style="width:' + size + 'px;height:' + size + 'px;font-size:' + Math.round(size * 0.37) + 'px">' + esc(ini) + '</span>';
+}
+
 async function renderParticipantes(canvas, hint) {
   const pid = curProjeto.id;
   hint.style.display = "block";
   const podeGerenciar = canEdit || perm("pode_adicionar_pessoas");
-  const { data: ms } = await sb.from("membros").select("*, pessoas(nome,email)").eq("projeto_id", pid).order("created_at");
+  const { data: ms } = await sb.from("membros").select("*, pessoas(nome,email,avatar_url,perfil)").eq("projeto_id", pid).order("created_at");
   const rows = (ms || []).map(m => {
     const p = m.pessoas || {};
+    const cargo = (p.perfil && p.perfil.cargo) || "";
     if (!podeGerenciar) {
-      // visão do cliente: só quem está na equipe (nome + papel), sem ações nem config
-      const ini = (p.nome || p.email || "?").split(/\s+/).map(w => w[0] || "").slice(0, 2).join("").toUpperCase();
-      return '<div class="grow-row"><div class="gr-main"><span class="gr-name">' +
-        '<span class="team-av" style="display:inline-grid;width:26px;height:26px;font-size:11px;vertical-align:middle;margin-right:8px">' + esc(ini) + '</span>' +
-        esc(p.nome || p.email || "—") + ' <span class="papel ' + m.papel + '">' + (m.papel === "gestor" ? "equipe" : "cliente") + '</span></span></div></div>';
+      return '<div class="grow-row"><div class="gr-main" style="gap:10px">' + avatarHtml(p, 34) +
+        '<span class="gr-name">' + esc(p.nome || p.email || "—") +
+        (cargo ? ' <span class="muted-note" style="font-weight:600;text-transform:none;letter-spacing:0;font-size:12px">· ' + esc(cargo) + '</span>' : '') +
+        ' <span class="papel ' + m.papel + '">' + (m.papel === "gestor" ? "equipe" : "cliente") + '</span></span></div></div>';
     }
     const perms = [
       m.pode_adicionar_pessoas && "adiciona pessoas", m.pode_enviar_mensagens && "mensagens",
       m.pode_marcar_reunioes && "reuniões", m.pode_ver_documentos && "documentos"
     ].filter(Boolean).map(x => '<span class="permchip">' + x + '</span>').join("");
-    return '<div class="grow-row"><div class="gr-main">' +
-      '<span class="gr-name">' + esc(p.nome || p.email || "—") + ' <span class="papel ' + m.papel + '">' + m.papel + '</span></span>' +
-      '<div class="gr-actions"><button class="lnk" onclick="editarMembro(\'' + m.id + '\')">permissões</button>' +
-      '<button class="lnk del" onclick="removerMembro(\'' + m.id + '\')">remover</button></div></div>' +
+    return '<div class="grow-row"><div class="gr-main" style="gap:10px">' + avatarHtml(p, 38) +
+      '<div style="flex:1;min-width:0">' +
+      '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
+      '<span class="gr-name">' + esc(p.nome || p.email || "—") + '</span>' +
+      '<span class="papel ' + m.papel + '">' + m.papel + '</span>' +
+      (cargo ? '<span class="muted-note" style="font-size:11.5px;font-weight:600;text-transform:none;letter-spacing:0">' + esc(cargo) + '</span>' : '') +
+      '</div>' +
       '<div class="ano-prev">' + esc(p.email || "") + '</div>' +
-      (perms ? '<div class="perms">' + perms + '</div>' : "") + '</div>';
+      (perms ? '<div class="perms" style="margin-top:4px">' + perms + '</div>' : "") +
+      '</div>' +
+      '<div class="gr-actions"><button class="lnk" onclick="editarMembro(\'' + m.id + '\')">✏ editar</button>' +
+      '<button class="lnk del" onclick="removerMembro(\'' + m.id + '\')">remover</button></div>' +
+      '</div></div>';
   }).join("") || '<p class="muted-note">' + (podeGerenciar ? "Nenhum participante ainda. Adicione alguém para liberar o portal do cliente." : "Ninguém na equipe ainda.") + '</p>';
   hint.innerHTML = '<div class="page"><div class="page-head"><h2>👥 ' + (podeGerenciar ? "Participantes" : "Equipe") + '</h2>' +
     (podeGerenciar ? '<button class="btn primary" onclick="adicionarParticipante()">＋ Adicionar</button>' : '') + '</div>' + rows +
@@ -5225,15 +5241,61 @@ function adicionarParticipante() {
 }
 
 async function editarMembro(id) {
-  const { data: m } = await sb.from("membros").select("*, pessoas(nome,email)").eq("id", id).single();
-  openModal('<h3>Permissões — ' + esc((m.pessoas && (m.pessoas.nome || m.pessoas.email)) || "") + '</h3>' +
-    papelSelect(m.papel) + permChecks(m) + actions("Salvar"),
+  const { data: m } = await sb.from("membros").select("*, pessoas(nome,email,avatar_url,perfil)").eq("id", id).single();
+  if (!m) { toast("Membro não encontrado."); return; }
+  const p = m.pessoas || {};
+  const cargo = (p.perfil && p.perfil.cargo) || "";
+  const urlAtual = p.avatar_url && !p.avatar_url.startsWith("data:") ? p.avatar_url : "";
+
+  openModal(
+    '<h3>✏ Editar participante</h3>' +
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' +
+    '<div id="mbFotoPreview" style="flex:none">' + avatarHtml(p, 52) + '</div>' +
+    '<div style="flex:1;min-width:0">' +
+    '<div class="muted-note" style="font-size:11px;margin-bottom:4px">Foto do perfil</div>' +
+    '<div style="display:flex;gap:6px">' +
+    '<input id="mbFotoUrl" placeholder="Cole o link da foto…" value="' + escAttr(urlAtual) + '" style="flex:1;font-size:12.5px">' +
+    '<label class="btn sm" style="cursor:pointer;white-space:nowrap;align-self:flex-start">📁 Enviar<input type="file" id="mbFotoUp" accept="image/*" style="display:none"></label>' +
+    '</div></div></div>' +
+    field("Nome", "nome", p.nome || "") +
+    field("Cargo / função", "cargo", cargo) +
+    papelSelect(m.papel) + permChecks(m) +
+    '<div class="auth-err" id="mbErr"></div>' +
+    actions("Salvar"),
     mo => {
+      let fotoData = null;
+      const preview = mo.querySelector("#mbFotoPreview");
+      const updatePreview = url => {
+        if (url) preview.innerHTML = '<img src="' + escAttr(url) + '" style="width:52px;height:52px;border-radius:50%;object-fit:cover" alt="">';
+        else preview.innerHTML = avatarHtml(p, 52);
+      };
+      mo.querySelector("#mbFotoUrl").oninput = e => {
+        const v = e.target.value.trim();
+        fotoData = null;
+        updatePreview(v || null);
+      };
+      mo.querySelector("#mbFotoUp").onchange = e => {
+        const f = e.target.files[0]; if (!f) return;
+        if (f.size > 400000) { toast("Imagem grande demais (máx ~400KB). Use um link."); return; }
+        const r = new FileReader();
+        r.onload = () => { fotoData = r.result; updatePreview(r.result); mo.querySelector("#mbFotoUrl").value = ""; };
+        r.readAsDataURL(f);
+      };
       mo.querySelector("[data-x]").onclick = closeModal;
       mo.querySelector("[data-ok]").onclick = async () => {
-        const rec = Object.assign({ papel: mo.querySelector('[data-k="papel"]').value }, lerPerms(mo));
-        const { error } = await sb.from("membros").update(rec).eq("id", id);
-        if (error) { toast("Erro: " + error.message); return; }
+        const errEl = mo.querySelector("#mbErr");
+        const nome = (mo.querySelector('[data-k="nome"]').value || "").trim();
+        if (!nome) { errEl.textContent = "Nome é obrigatório."; return; }
+        const novoCargo = (mo.querySelector('[data-k="cargo"]').value || "").trim();
+        const avatarUrl = fotoData || mo.querySelector("#mbFotoUrl").value.trim() || p.avatar_url || null;
+        const novoPerf = Object.assign({}, p.perfil || {}, { cargo: novoCargo });
+        errEl.textContent = "Salvando…";
+        const [r1, r2] = await Promise.all([
+          sb.from("pessoas").update({ nome, avatar_url: avatarUrl, perfil: novoPerf }).eq("id", m.pessoa_id),
+          sb.from("membros").update(Object.assign({ papel: mo.querySelector('[data-k="papel"]').value }, lerPerms(mo))).eq("id", id)
+        ]);
+        if (r1.error) { errEl.textContent = "Erro: " + r1.error.message; return; }
+        if (r2.error) { errEl.textContent = "Erro: " + r2.error.message; return; }
         closeModal(); route();
       };
     });
