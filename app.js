@@ -4221,7 +4221,7 @@ function applyBrand() {
   if (view === "painel" && curProjeto) {
     const pr = Math.max(0, Math.min(100, curProjeto.progresso || 0));
     pe.style.display = "";
-    pe.innerHTML = '<div class="evo' + (canEdit ? " evo-edit" : "") + '"' + (canEdit ? ' onclick="editarProjeto()" title="Editar evolução"' : ' title="Evolução do projeto"') + '>' +
+    pe.innerHTML = '<div class="evo evo-edit"' + (canEdit ? ' onclick="editarProjeto()" title="Editar evolução"' : ' onclick="abrirEvolucaoInfo()" title="Como esta evolução é calculada"') + '>' +
       '<div class="evo-bar"><i style="width:' + pr + '%"></i></div>' +
       '<div class="evo-meta"><span class="evo-lbl">Tarefas</span><span class="evo-val">' + pr + '%</span></div></div>';
     updateEntregasMeter();
@@ -4229,6 +4229,65 @@ function applyBrand() {
     pe.style.display = "none"; pe.innerHTML = "";
     const em = $("#entregasMeter"); if (em) { em.style.display = "none"; em.innerHTML = ""; }
   }
+}
+/* Explica ao cliente de onde vem a barra "Tarefas" e onde estão as fontes neste projeto */
+async function abrirEvolucaoInfo() {
+  if (!curProjeto) return;
+  const tipos = {
+    kanban: { emoji: "🗂", nome: "Kanban / Quadro", done: 0, total: 0, abas: [] },
+    proximos_passos: { emoji: "➡️", nome: "Próximos passos", done: 0, total: 0, abas: [] },
+    riscos: { emoji: "⚠️", nome: "Riscos & bloqueios", done: 0, total: 0, abas: [] }
+  };
+  (state.spaces || []).forEach(s => {
+    if (s.visibility === "interno" && !actingAdmin()) return; // não revela abas internas
+    (s.tiles || []).forEach(t => {
+      if (t.type === "kanban") {
+        let usado = false;
+        (t.props.columns || []).forEach(col => {
+          const dcol = /feito|conclu|done|pronto/i.test(col.nome || "");
+          (col.cards || []).forEach(card => { tipos.kanban.total++; usado = true; if (itemFeito(t.id, card.id, dcol)) tipos.kanban.done++; });
+        });
+        if ((t.props.columns || []).length) usado = true;
+        if (usado && tipos.kanban.abas.indexOf(s.name) < 0) tipos.kanban.abas.push(s.name);
+      } else if (t.type === "proximos_passos" || t.type === "riscos") {
+        const ref = tipos[t.type];
+        (t.props.items || []).forEach(it => { ref.total++; if (itemFeito(t.id, it.id, it.done)) ref.done++; });
+        if ((t.props.items || []).length && ref.abas.indexOf(s.name) < 0) ref.abas.push(s.name);
+      }
+    });
+  });
+  const [apsR, qzR] = await Promise.all([
+    sb.from("aprovacoes").select("status").eq("projeto_id", curProjeto.id),
+    sb.from("questionarios").select("status").eq("projeto_id", curProjeto.id)
+  ]);
+  const apT = (apsR.data || []).length, apD = (apsR.data || []).filter(a => a.status === "aprovado").length;
+  const qT = (qzR.data || []).length, qD = (qzR.data || []).filter(q => q.status && q.status !== "aberto").length;
+
+  const linhaLayout = (ref) => {
+    const onde = ref.abas.length
+      ? 'na aba <b>' + ref.abas.map(esc).join("</b>, <b>") + '</b> do Painel'
+      : '<span class="muted-note" style="text-transform:none;letter-spacing:0">não usado neste projeto</span>';
+    const cont = ref.total ? '<span class="evi-cont">' + ref.done + '/' + ref.total + '</span>' : '';
+    return '<div class="evi-row"><span class="evi-emoji">' + ref.emoji + '</span><div class="evi-b"><div class="evi-nome">' + esc(ref.nome) + ' ' + cont + '</div><div class="evi-onde">📍 ' + onde + '</div></div></div>';
+  };
+  const linhaMenu = (emoji, nome, menu, done, total) => {
+    const cont = total ? '<span class="evi-cont">' + done + '/' + total + '</span>' : '';
+    return '<div class="evi-row"><span class="evi-emoji">' + emoji + '</span><div class="evi-b"><div class="evi-nome">' + esc(nome) + ' ' + cont + '</div><div class="evi-onde">📍 no menu <b>' + esc(menu) + '</b>' + (total ? '' : ' <span class="muted-note" style="text-transform:none;letter-spacing:0">— sem itens ainda</span>') + '</div></div></div>';
+  };
+
+  const pr = Math.max(0, Math.min(100, curProjeto.progresso || 0));
+  openModal('<h3>📊 Como a evolução de Tarefas é calculada</h3>' +
+    '<p class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:13px;margin-top:-4px">A barra <b>Tarefas</b> (hoje em <b>' + pr + '%</b>) é automática: ela soma o que já foi concluído nas fontes abaixo e atualiza sozinha sempre que alguém marca um item, move um card no kanban ou decide uma aprovação. Qualquer participante pode marcar — fica registrado quem foi.</p>' +
+    '<div class="evi-list">' +
+    linhaLayout(tipos.kanban) +
+    linhaLayout(tipos.proximos_passos) +
+    linhaLayout(tipos.riscos) +
+    linhaMenu("✅", "Aprovações", menuLabel("aprovacoes"), apD, apT) +
+    linhaMenu("📝", "Questionários", menuLabel("questionarios"), qD, qT) +
+    '</div>' +
+    '<p class="muted-note" style="text-transform:none;letter-spacing:0;font-size:11.5px;margin-top:6px">Checklists, metas e entregas marcadas também entram na conta quando existem no projeto.</p>' +
+    '<div class="modal-actions"><span class="grow"></span><button class="btn primary" data-x>Entendi</button></div>',
+    m => { m.querySelector("[data-x]").onclick = closeModal; });
 }
 function paintTools() {
   const inPainel = view === "painel" && (projTab === "painel" || projTab === "admin");
