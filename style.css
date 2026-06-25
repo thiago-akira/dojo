@@ -895,6 +895,8 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 .papel{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;border-radius:5px;padding:1px 6px;margin-left:4px}
 .papel.gestor{color:var(--accent-2);border:1px solid var(--accent-2)}
 .papel.cliente{color:var(--muted);border:1px solid var(--line-strong)}
+.papel.admin{color:var(--accent);border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.grow-row.admin-row{border-color:color-mix(in srgb,var(--accent) 35%,var(--line))}
 .perms{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
 .permchip{font-size:10.5px;font-weight:700;color:var(--muted);background:var(--surface-solid);border:1px solid var(--line);border-radius:5px;padding:2px 7px}
 .ckgroup{display:flex;flex-direction:column;gap:7px;margin-top:4px}
@@ -1121,3 +1123,20 @@ body.edit .kb-card{cursor:grab}
 .permalink-inp{flex:1;min-width:0;border:0;background:transparent;color:var(--accent);font-family:var(--font-mono);font-size:12.5px;font-weight:600;padding:8px 10px 8px 2px}
 .permalink-inp:focus{outline:none}
 .permalink-row:focus-within{border-color:var(--accent)}
+
+/* ===== Atribuir responsável (kanban + próximos passos) ===== */
+.resp-pick{max-width:380px;width:90vw}
+.resp-list{display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow:auto;margin:6px 0 12px}
+.resp-opt{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:var(--surface-solid);border:1px solid var(--line);border-radius:9px;padding:7px 9px;cursor:pointer;color:var(--text);transition:border-color .12s,background .12s}
+.resp-opt:hover{border-color:var(--accent)}
+.resp-opt.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.resp-opt-nome{flex:1;min-width:0;font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.resp-chip{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700}
+.kb-assignee{display:inline-flex;align-items:center;gap:4px;padding:1px 6px 1px 2px}
+.kb-assignee .team-av{width:18px!important;height:18px!important;font-size:8px!important}
+.kb-assignee-nome{font-weight:700}
+.step-resp-wrap{display:flex;gap:4px;flex:1;min-width:0}
+.step-meta-row>.step-sub{flex:1;min-width:0}
+.step-resp-btn{flex:none;border:1px solid var(--line);background:var(--surface-solid);border-radius:7px;width:30px;cursor:pointer;font-size:13px;color:var(--text)}
+.step-resp-btn:hover{border-color:var(--accent)}
+.step-resp-av{width:16px;height:16px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:5px}

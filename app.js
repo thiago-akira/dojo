@@ -752,6 +752,7 @@ const WIDGETS = {
           if (card.prazo) badges.push('<span class="kb-badge kb-prazo">🕑 ' + esc(card.prazo) + '</span>');
           if (totalChk) badges.push('<span class="kb-badge' + (done === totalChk ? ' done' : '') + '">☑ ' + done + '/' + totalChk + '</span>');
           if (card.desc) badges.push('<span class="kb-badge">≡</span>');
+          if (card.responsavel) badges.push('<span class="kb-badge kb-assignee" title="Responsável: ' + escAttr(card.responsavel.nome) + '">' + avatarHtml(card.responsavel, 18) + '<span class="kb-assignee-nome">' + esc(card.responsavel.nome.split(/\s+/)[0]) + '</span></span>');
           return '<div class="kb-card"' + (canEdit ? ' draggable="true" ondragstart="kanbanCardDragStart(event,\'' + t.id + '\',\'' + col.id + '\',\'' + card.id + '\')"' : '') +
             ' onclick="kanbanOpenCard(\'' + t.id + '\',\'' + col.id + '\',\'' + card.id + '\')"' +
             ' data-item="' + escAttr(itemKey(card.titulo || "")) + '" data-itemlabel="' + escAttr(card.titulo || "") + '">' +
@@ -937,7 +938,10 @@ const WIDGETS = {
               '<div class="step-fields">' +
               '<input class="step-inp step-main" value="' + escAttr(it.texto || "") + '" placeholder="O que precisa ser feito?" oninput="passoSave(\'' + t.id + '\',' + i + ',\'texto\',this.value)">' +
               '<div class="step-meta-row">' +
+              '<div class="step-resp-wrap">' +
               '<input class="step-inp step-sub" value="' + escAttr(it.responsavel || "") + '" placeholder="Responsável" oninput="passoSave(\'' + t.id + '\',' + i + ',\'responsavel\',this.value)">' +
+              '<button class="step-resp-btn" type="button" title="Escolher da lista de participantes" onclick="passoPickResp(\'' + t.id + '\',' + i + ')">👤</button>' +
+              '</div>' +
               '<input class="step-inp step-sub" value="' + escAttr(it.prazo || "") + '" placeholder="Pra quando" oninput="passoSave(\'' + t.id + '\',' + i + ',\'prazo\',this.value)">' +
               '</div>' +
               '<textarea class="step-inp step-det" rows="1" placeholder="Detalhes (opcional)" oninput="this.style.height=\'auto\';this.style.height=this.scrollHeight+\'px\';passoSave(\'' + t.id + '\',' + i + ',\'detalhes\',this.value)">' + esc(it.detalhes || "") + '</textarea>' +
@@ -945,11 +949,12 @@ const WIDGETS = {
               '<button class="lnk del" onclick="passoDel(\'' + t.id + '\',' + i + ')" title="Remover">✕</button>' +
               '</div>';
           }
+          const av = it.responsavel_av ? '<img class="step-resp-av" src="' + escAttr(it.responsavel_av) + '" alt="">' : '';
           const meta = [it.responsavel, it.prazo].filter(Boolean).join(" · ");
           return '<div class="step-row' + (it.done ? " done" : "") + '" data-item="' + escAttr(itemKey(it.texto || "")) + '" data-itemlabel="' + escAttr(it.texto || "") + '">' +
             '<input type="checkbox" class="step-chk"' + (it.done ? " checked" : "") + ' disabled>' +
             '<div class="step-body"><div class="step-txt">' + esc(it.texto || "") + '</div>' +
-            (meta ? '<div class="step-meta">' + esc(meta) + '</div>' : '') +
+            (meta ? '<div class="step-meta">' + av + esc(meta) + '</div>' : '') +
             (it.detalhes ? '<div class="step-det-txt">' + esc(it.detalhes) + '</div>' : '') + '</div></div>';
         }).join("");
       c.innerHTML = head + '<div class="w-body"><div class="steps">' + body + '</div></div>';
@@ -1072,6 +1077,54 @@ function entregaTilesList() {
 function marcosFonteChange(sel) {
   const man = document.getElementById("marcosManual");
   if (man) man.style.display = sel.value === "manual" ? "block" : "none";
+}
+
+/* — Participantes do projeto (admin master + membros) — usado por atribuição de tarefas — */
+async function carregarParticipantes() {
+  if (!curProjeto) return [];
+  const out = [], seen = new Set();
+  const [adminsRes, msRes] = await Promise.all([
+    sb.from("pessoas").select("id,nome,email,avatar_url").eq("is_admin", true),
+    sb.from("membros").select("pessoa_id, papel, pessoas(nome,email,avatar_url)").eq("projeto_id", curProjeto.id).order("created_at")
+  ]);
+  (adminsRes.data || []).forEach(a => {
+    if (seen.has(a.id)) return; seen.add(a.id);
+    out.push({ pessoa_id: a.id, nome: a.nome || a.email || "—", avatar_url: a.avatar_url || "", papel: "admin" });
+  });
+  (msRes.data || []).forEach(m => {
+    if (seen.has(m.pessoa_id)) return; seen.add(m.pessoa_id);
+    const p = m.pessoas || {};
+    out.push({ pessoa_id: m.pessoa_id, nome: p.nome || p.email || "—", avatar_url: p.avatar_url || "", papel: m.papel });
+  });
+  return out;
+}
+function papelLabel(papel) { return papel === "admin" ? "admin master" : (papel === "gestor" ? "equipe" : "cliente"); }
+
+/* Seletor de responsável (camada própria, empilha sobre o modal aberto). Resolve:
+   objeto participante (atribuir) · null (remover) · undefined (cancelar) */
+async function escolherResponsavel(atualId) {
+  const parts = await carregarParticipantes();
+  return new Promise(resolve => {
+    const scrim = document.createElement("div"); scrim.className = "dlg-scrim";
+    const box = document.createElement("div"); box.className = "dlg-box resp-pick";
+    const rows = parts.map(p =>
+      '<button class="resp-opt' + (p.pessoa_id === atualId ? " on" : "") + '" data-id="' + p.pessoa_id + '">' +
+      avatarHtml(p, 30) + '<span class="resp-opt-nome">' + esc(p.nome) + '</span>' +
+      '<span class="papel ' + p.papel + '">' + papelLabel(p.papel) + '</span></button>').join("") ||
+      '<p class="muted-note" style="padding:6px 2px">Nenhum participante. Adicione na aba <b>Participantes</b>.</p>';
+    box.innerHTML = '<div class="dlg-title">Atribuir responsável</div>' +
+      '<div class="resp-list">' + rows + '</div>' +
+      '<div class="dlg-actions"><button class="btn" data-x>Cancelar</button>' +
+      (atualId ? '<button class="btn" data-none>Sem responsável</button>' : '') + '</div>';
+    document.body.append(scrim, box);
+    const done = v => { scrim.remove(); box.remove(); document.removeEventListener("keydown", onKey); resolve(v); };
+    const onKey = e => { if (e.key === "Escape") done(undefined); };
+    document.addEventListener("keydown", onKey);
+    scrim.onclick = () => done(undefined);
+    box.querySelector("[data-x]").onclick = () => done(undefined);
+    const noneBtn = box.querySelector("[data-none]"); if (noneBtn) noneBtn.onclick = () => done(null);
+    box.querySelectorAll(".resp-opt").forEach(b => b.onclick = () => done(parts.find(x => x.pessoa_id === b.dataset.id) || null));
+  });
 }
 
 /* — Widget Equipe: config (manual + participantes) e clique na pessoa — */
@@ -1392,7 +1445,18 @@ function passoAdd(tid) {
 function passoSave(tid, i, key, val) {
   const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
   const it = (t.props.items || [])[i]; if (!it) return;
-  it[key] = val; save();
+  it[key] = val;
+  if (key === "responsavel") { it.responsavel_id = null; it.responsavel_av = ""; } // texto livre desvincula do participante
+  save();
+}
+async function passoPickResp(tid, i) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const it = (t.props.items || [])[i]; if (!it) return;
+  const sel = await escolherResponsavel(it.responsavel_id);
+  if (sel === undefined) return; // cancelou
+  if (sel) { it.responsavel = sel.nome; it.responsavel_id = sel.pessoa_id; it.responsavel_av = sel.avatar_url; }
+  else { it.responsavel = ""; it.responsavel_id = null; it.responsavel_av = ""; }
+  save(); route();
 }
 function passoToggle(tid, i) {
   const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
@@ -1525,6 +1589,11 @@ function kanbanCardModalHtml(tid, colId, cardId) {
     '<label>Prazo</label>' +
     (ro ? '<div>' + esc(card.prazo || "—") + '</div>'
         : '<input class="kbm-inp" value="' + escAttr(card.prazo || "") + '" placeholder="Ex.: 30/06 ou Sexta" oninput="kanbanCardSave(\'' + tid + '\',\'' + colId + '\',\'' + cardId + '\',\'prazo\',this.value)">') +
+    '<label>Responsável</label>' +
+    (ro
+        ? '<div>' + (card.responsavel ? '<span class="resp-chip">' + avatarHtml(card.responsavel, 22) + '<span>' + esc(card.responsavel.nome) + '</span></span>' : '—') + '</div>'
+        : '<div class="kbm-resp">' + (card.responsavel ? '<span class="resp-chip">' + avatarHtml(card.responsavel, 22) + '<span>' + esc(card.responsavel.nome) + '</span></span>' : '<span class="muted-note" style="font-size:12.5px">Ninguém atribuído</span>') +
+          '<button class="btn sm" onclick="kanbanPickResp(\'' + tid + '\',\'' + colId + '\',\'' + cardId + '\')">' + (card.responsavel ? "Trocar" : "👤 Atribuir") + '</button></div>') +
     '<label>Descrição</label>' +
     (ro ? '<div class="kbm-desc-ro">' + esc(card.desc || "—") + '</div>'
         : '<textarea class="kbm-inp kbm-desc" placeholder="Detalhes, contexto, links…" oninput="kanbanCardSave(\'' + tid + '\',\'' + colId + '\',\'' + cardId + '\',\'desc\',this.value)">' + esc(card.desc || "") + '</textarea>') +
@@ -1553,6 +1622,14 @@ function kanbanCardSave(tid, colId, cardId, key, val) {
   const card = _kbCard(t, colId, cardId); if (!card) return;
   card[key] = val; save();
   if (key === "titulo" || key === "prazo") route();
+}
+async function kanbanPickResp(tid, colId, cardId) {
+  const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
+  const card = _kbCard(t, colId, cardId); if (!card) return;
+  const sel = await escolherResponsavel(card.responsavel && card.responsavel.pessoa_id);
+  if (sel === undefined) return; // cancelou
+  card.responsavel = sel ? { pessoa_id: sel.pessoa_id, nome: sel.nome, avatar_url: sel.avatar_url } : null;
+  save(); kanbanReopenCard(tid, colId, cardId); route();
 }
 function kanbanCardDel(tid, colId, cardId) {
   const t = space().tiles.find(x => x.id === tid); if (!t || !canEdit) return;
@@ -5150,12 +5227,43 @@ function avatarHtml(p, size) {
   return '<span class="team-av" style="width:' + size + 'px;height:' + size + 'px;font-size:' + Math.round(size * 0.37) + 'px">' + esc(ini) + '</span>';
 }
 
+/* Linha de um admin master: sempre topo, badge fixo, só editável por outro admin master. */
+function adminRowHtml(a, podeGerenciar) {
+  const cargo = (a.perfil && a.perfil.cargo) || "";
+  const badge = '<span class="papel admin" title="Nível máximo — não pode ser removido">admin master</span>';
+  if (!podeGerenciar) {
+    return '<div class="grow-row admin-row"><div class="gr-main" style="gap:10px">' + avatarHtml(a, 34) +
+      '<span class="gr-name">' + esc(a.nome || a.email || "—") +
+      (cargo ? ' <span class="muted-note" style="font-weight:600;text-transform:none;letter-spacing:0;font-size:12px">· ' + esc(cargo) + '</span>' : '') +
+      ' ' + badge + '</span></div></div>';
+  }
+  // Editar só liberado para outro admin master; nunca há "remover".
+  const acoes = actingAdmin()
+    ? '<div class="gr-actions"><button class="lnk" onclick="editarAdminPerfil(\'' + a.id + '\')">✏ editar</button></div>'
+    : '<div class="gr-actions"><span class="muted-note" style="font-size:11px">protegido</span></div>';
+  return '<div class="grow-row admin-row"><div class="gr-main" style="gap:10px">' + avatarHtml(a, 38) +
+    '<div style="flex:1;min-width:0">' +
+    '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
+    '<span class="gr-name">' + esc(a.nome || a.email || "—") + '</span>' + badge +
+    (cargo ? '<span class="muted-note" style="font-size:11.5px;font-weight:600;text-transform:none;letter-spacing:0">' + esc(cargo) + '</span>' : '') +
+    '</div>' +
+    '<div class="ano-prev">' + esc(a.email || "") + '</div>' +
+    '</div>' + acoes + '</div></div>';
+}
+
 async function renderParticipantes(canvas, hint) {
   const pid = curProjeto.id;
   hint.style.display = "block";
   const podeGerenciar = canEdit || perm("pode_adicionar_pessoas");
-  const { data: ms } = await sb.from("membros").select("*, pessoas(nome,email,avatar_url,perfil)").eq("projeto_id", pid).order("created_at");
-  const rows = (ms || []).map(m => {
+  const [adminsRes, msRes] = await Promise.all([
+    sb.from("pessoas").select("id,nome,email,avatar_url,perfil").eq("is_admin", true),
+    sb.from("membros").select("*, pessoas(nome,email,avatar_url,perfil)").eq("projeto_id", pid).order("created_at")
+  ]);
+  const admins = adminsRes.data || [];
+  const adminIds = new Set(admins.map(a => a.id));
+  const ms = (msRes.data || []).filter(m => !adminIds.has(m.pessoa_id));
+  const adminRows = admins.map(a => adminRowHtml(a, podeGerenciar)).join("");
+  const memberRows = ms.map(m => {
     const p = m.pessoas || {};
     const cargo = (p.perfil && p.perfil.cargo) || "";
     if (!podeGerenciar) {
@@ -5181,7 +5289,9 @@ async function renderParticipantes(canvas, hint) {
       '<div class="gr-actions"><button class="lnk" onclick="editarMembro(\'' + m.id + '\')">✏ editar</button>' +
       '<button class="lnk del" onclick="removerMembro(\'' + m.id + '\')">remover</button></div>' +
       '</div></div>';
-  }).join("") || '<p class="muted-note">' + (podeGerenciar ? "Nenhum participante ainda. Adicione alguém para liberar o portal do cliente." : "Ninguém na equipe ainda.") + '</p>';
+  }).join("");
+  const rows = adminRows + memberRows ||
+    '<p class="muted-note">' + (podeGerenciar ? "Nenhum participante ainda. Adicione alguém para liberar o portal do cliente." : "Ninguém na equipe ainda.") + '</p>';
   hint.innerHTML = '<div class="page"><div class="page-head"><h2>👥 ' + (podeGerenciar ? "Participantes" : "Equipe") + '</h2>' +
     (podeGerenciar ? '<button class="btn primary" onclick="adicionarParticipante()">＋ Adicionar</button>' : '') + '</div>' + rows +
     (podeGerenciar ? '<div id="adesaoBox" style="margin-top:22px"></div>' : '') + '</div>';
@@ -5301,6 +5411,59 @@ async function editarMembro(id) {
     });
 }
 async function removerMembro(id) { if (!(await confirmDialog("Remover este participante do projeto?"))) return; await sb.from("membros").delete().eq("id", id); route(); }
+
+/* Editar perfil do admin master — só outro admin master (RLS já bloqueia o resto). Sem papel/permissões e sem remover. */
+async function editarAdminPerfil(pessoaId) {
+  if (!actingAdmin()) { toast("Apenas um admin master pode editar este perfil."); return; }
+  const { data: p } = await sb.from("pessoas").select("id,nome,email,avatar_url,perfil,is_admin").eq("id", pessoaId).single();
+  if (!p || !p.is_admin) { toast("Perfil não encontrado."); return; }
+  const cargo = (p.perfil && p.perfil.cargo) || "";
+  const urlAtual = p.avatar_url && !p.avatar_url.startsWith("data:") ? p.avatar_url : "";
+  openModal(
+    '<h3>✏ Editar admin master</h3>' +
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' +
+    '<div id="adFotoPreview" style="flex:none">' + avatarHtml(p, 52) + '</div>' +
+    '<div style="flex:1;min-width:0">' +
+    '<div class="muted-note" style="font-size:11px;margin-bottom:4px">Foto do perfil</div>' +
+    '<div style="display:flex;gap:6px">' +
+    '<input id="adFotoUrl" placeholder="Cole o link da foto…" value="' + escAttr(urlAtual) + '" style="flex:1;font-size:12.5px">' +
+    '<label class="btn sm" style="cursor:pointer;white-space:nowrap;align-self:flex-start">📁 Enviar<input type="file" id="adFotoUp" accept="image/*" style="display:none"></label>' +
+    '</div></div></div>' +
+    field("Nome", "nome", p.nome || "") +
+    field("Cargo / função", "cargo", cargo) +
+    '<p class="muted-note" style="font-size:11.5px;margin-top:4px">Nível <b>admin master</b> é automático e não pode ser alterado aqui.</p>' +
+    '<div class="auth-err" id="adErr"></div>' +
+    actions("Salvar"),
+    mo => {
+      let fotoData = null;
+      const preview = mo.querySelector("#adFotoPreview");
+      const updatePreview = url => {
+        if (url) preview.innerHTML = '<img src="' + escAttr(url) + '" style="width:52px;height:52px;border-radius:50%;object-fit:cover" alt="">';
+        else preview.innerHTML = avatarHtml(p, 52);
+      };
+      mo.querySelector("#adFotoUrl").oninput = e => { fotoData = null; updatePreview(e.target.value.trim() || null); };
+      mo.querySelector("#adFotoUp").onchange = e => {
+        const f = e.target.files[0]; if (!f) return;
+        if (f.size > 400000) { toast("Imagem grande demais (máx ~400KB). Use um link."); return; }
+        const r = new FileReader();
+        r.onload = () => { fotoData = r.result; updatePreview(r.result); mo.querySelector("#adFotoUrl").value = ""; };
+        r.readAsDataURL(f);
+      };
+      mo.querySelector("[data-x]").onclick = closeModal;
+      mo.querySelector("[data-ok]").onclick = async () => {
+        const errEl = mo.querySelector("#adErr");
+        const nome = (mo.querySelector('[data-k="nome"]').value || "").trim();
+        if (!nome) { errEl.textContent = "Nome é obrigatório."; return; }
+        const novoCargo = (mo.querySelector('[data-k="cargo"]').value || "").trim();
+        const avatarUrl = fotoData || mo.querySelector("#adFotoUrl").value.trim() || p.avatar_url || null;
+        const novoPerf = Object.assign({}, p.perfil || {}, { cargo: novoCargo });
+        errEl.textContent = "Salvando…";
+        const { error } = await sb.from("pessoas").update({ nome, avatar_url: avatarUrl, perfil: novoPerf }).eq("id", pessoaId);
+        if (error) { errEl.textContent = "Erro: " + error.message; return; }
+        closeModal(); route();
+      };
+    });
+}
 
 /* — Configurar cliente (identidade + contato + dados) — */
 function editarCliente() {
