@@ -4749,24 +4749,72 @@ function visSelect(cur) {
 }
 function actions(ok) { return '<div class="modal-actions"><span class="grow"></span><button class="btn" data-x>Cancelar</button><button class="btn primary" data-ok>' + esc(ok) + '</button></div>'; }
 
+/* ===== Materiais: formato, tamanho, data, downloads ===== */
+function fileFormat(d) {
+  const ext = ((d.nome || "").match(/\.([a-z0-9]{1,6})$/i) || [])[1];
+  if (ext) return ext.toUpperCase();
+  const t = (d.tipo || "").toLowerCase();
+  if (t.includes("pdf")) return "PDF";
+  if (t.startsWith("image/")) return (t.split("/")[1] || "IMG").toUpperCase();
+  if (d.url && !d.storage_path) return "LINK";
+  if (t) return t.split("/").pop().toUpperCase().slice(0, 5);
+  return "ARQ";
+}
+function fmtTamanho(b) {
+  b = Number(b) || 0; if (!b) return "";
+  if (b < 1024) return b + " B";
+  if (b < 1048576) return Math.round(b / 1024) + " KB";
+  return (b / 1048576).toFixed(1) + " MB";
+}
+function fmtData(iso) {
+  if (!iso) return ""; const d = new Date(iso);
+  return String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0") + "/" + d.getFullYear();
+}
+function docMeta(d) {
+  const parts = ['<span class="doc-fmt">' + esc(fileFormat(d)) + '</span>'];
+  const tam = fmtTamanho(d.tamanho); if (tam) parts.push(esc(tam));
+  parts.push("enviado " + fmtData(d.created_at));
+  return '<div class="doc-meta">' + parts.join(" · ") + '</div>';
+}
+let _dlMap = {};
+function verDownloads(docId, nome) {
+  const dl = _dlMap[docId];
+  const pessoas = (dl && dl.pessoas) || [];
+  const rows = pessoas.length
+    ? '<div class="hist-list">' + pessoas.map(p => '<div class="hist-item"><span class="hist-dot on"></span><div class="hist-b"><div class="hist-l">' + esc(p.nome) + '</div><div class="hist-t">baixou ' + (p.em ? fmtRel(p.em) : "") + '</div></div></div>').join("") + '</div>'
+    : '<p class="muted-note">Ninguém baixou ainda.</p>';
+  openModal('<h3>⬇ Quem baixou</h3><p class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;margin-top:-4px">' + esc(nome || "") + '</p>' + rows +
+    '<div class="modal-actions"><span class="grow"></span><button class="btn primary" data-x>Fechar</button></div>',
+    m => { m.querySelector("[data-x]").onclick = closeModal; });
+}
+async function abrirDocUrl(url, docId) {
+  if (docId) sb.rpc("registrar_download", { p_documento: docId });
+  window.open(url, "_blank", "noopener");
+}
+
 async function renderGestao(canvas, hint) {
   const pid = curProjeto.id;
   hint.style.display = "block";
   hint.innerHTML = '<div class="page"><p class="muted-note">Carregando…</p></div>';
-  const [docs, anos, chs] = await Promise.all([
+  const [docs, anos, chs, dlRes] = await Promise.all([
     sb.from("documentos").select("*").eq("projeto_id", pid).order("created_at", { ascending: false }),
     sb.from("anotacoes").select("*").eq("projeto_id", pid).order("updated_at", { ascending: false }),
-    sb.from("checklists").select("*, checklist_itens(*)").eq("projeto_id", pid).order("ordem")
+    sb.from("checklists").select("*, checklist_itens(*)").eq("projeto_id", pid).order("ordem"),
+    sb.rpc("downloads_projeto", { p_projeto: pid })
   ]);
+  _dlMap = (dlRes && dlRes.data) || {};
 
-  const docsHtml = (docs.data || []).map(d =>
-    '<div class="grow-row"><div class="gr-main"><span class="gr-name">📄 ' + esc(d.nome) + '</span>' + visChip(d.visibilidade) + '</div>' +
-    '<div class="gr-actions">' +
-    (d.storage_path ? '<button class="lnk" onclick="baixarDoc(\'' + escAttr(d.storage_path) + '\')">baixar</button>' :
-      (d.url ? '<a class="lnk" href="' + escAttr(d.url) + '" target="_blank" rel="noopener">abrir</a>' : "")) +
-    '<button class="lnk" onclick="toggleVis(\'documentos\',\'' + d.id + '\',\'' + d.visibilidade + '\')">' + (d.visibilidade === "compartilhado" ? "tornar interno" : "compartilhar") + '</button>' +
-    '<button class="lnk del" onclick="delDoc(\'' + d.id + '\',\'' + escAttr(d.storage_path || "") + '\')">excluir</button></div></div>'
-  ).join("") || '<p class="muted-note">Nenhum documento ainda.</p>';
+  const docsHtml = (docs.data || []).map(d => {
+    const n = (_dlMap[d.id] && _dlMap[d.id].n) || 0;
+    return '<div class="grow-row"><div class="gr-main"><span class="gr-name">📄 ' + esc(d.nome) + '</span>' + visChip(d.visibilidade) + '</div>' +
+      docMeta(d) +
+      '<div class="gr-actions">' +
+      (d.storage_path ? '<button class="lnk" onclick="baixarDoc(\'' + escAttr(d.storage_path) + '\',\'' + d.id + '\')">baixar</button>' :
+        (d.url ? '<button class="lnk" onclick="abrirDocUrl(\'' + escAttr(escJs(d.url)) + '\',\'' + d.id + '\')">abrir</button>' : "")) +
+      '<button class="lnk doc-dl" onclick="verDownloads(\'' + d.id + '\',\'' + escAttr(escJs(d.nome)) + '\')" title="Quem baixou">⬇ ' + n + '</button>' +
+      '<button class="lnk" onclick="toggleVis(\'documentos\',\'' + d.id + '\',\'' + d.visibilidade + '\')">' + (d.visibilidade === "compartilhado" ? "tornar interno" : "compartilhar") + '</button>' +
+      '<button class="lnk del" onclick="delDoc(\'' + d.id + '\',\'' + escAttr(d.storage_path || "") + '\')">excluir</button></div></div>';
+  }).join("") || '<p class="muted-note">Nenhum documento ainda.</p>';
 
   const anosHtml = (anos.data || []).map(a =>
     '<div class="grow-row ano" onclick="editarAnotacao(\'' + a.id + '\')"><div class="gr-main"><span class="gr-name">📝 ' + esc(a.titulo || "(sem título)") + '</span>' + visChip(a.visibilidade) + '</div>' +
@@ -4824,7 +4872,8 @@ function novoDocumento() {
       };
     });
 }
-async function baixarDoc(path) {
+async function baixarDoc(path, docId) {
+  if (docId) sb.rpc("registrar_download", { p_documento: docId });
   const { data, error } = await sb.storage.from("documentos").createSignedUrl(path, 3600);
   if (error) { toast("Erro: " + error.message); return; }
   window.open(data.signedUrl, "_blank");
@@ -5173,8 +5222,9 @@ async function renderMateriais(canvas, hint) {
   const docsHtml = !perm("pode_ver_documentos")
     ? '<p class="muted-note perm-aviso">Acesso a documentos não habilitado neste projeto.</p>'
     : (docs.data || []).map(d =>
-        '<div class="grow-row"><div class="gr-main"><span class="gr-name">📄 ' + esc(d.nome) + '</span>' +
-        '<div class="gr-actions">' + (d.storage_path ? '<button class="lnk" onclick="baixarDoc(\'' + escAttr(d.storage_path) + '\')">baixar</button>' : (d.url ? '<a class="lnk" href="' + escAttr(d.url) + '" target="_blank" rel="noopener">abrir</a>' : "")) + '</div></div></div>'
+        '<div class="grow-row"><div class="gr-main"><span class="gr-name">📄 ' + esc(d.nome) + '</span></div>' +
+        docMeta(d) +
+        '<div class="gr-actions">' + (d.storage_path ? '<button class="lnk" onclick="baixarDoc(\'' + escAttr(d.storage_path) + '\',\'' + d.id + '\')">baixar</button>' : (d.url ? '<button class="lnk" onclick="abrirDocUrl(\'' + escAttr(escJs(d.url)) + '\',\'' + d.id + '\')">abrir</button>' : "")) + '</div></div>'
       ).join("") || '<p class="muted-note">Nada compartilhado aqui.</p>';
   const anosHtml = (anos.data || []).map(a =>
     '<div class="grow-row"><div class="gr-main"><span class="gr-name">📝 ' + esc(a.titulo || "(sem título)") + '</span></div>' +
