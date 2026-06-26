@@ -759,7 +759,7 @@ const WIDGETS = {
           if (card.responsavel) badges.push('<span class="kb-badge kb-assignee" title="Responsável: ' + escAttr(card.responsavel.nome) + '">' + avatarHtml(card.responsavel, 18) + '<span class="kb-assignee-nome">' + esc(card.responsavel.nome.split(/\s+/)[0]) + '</span></span>');
           if (quem) badges.push('<span class="kb-badge kb-by" title="Feito por ' + escAttr(quem) + '">✓ ' + esc(quem.split(/\s+/)[0]) + '</span>');
           const ctl = '<div class="kb-card-ctl">' +
-            '<input type="checkbox" class="kb-done-chk"' + (cardDone ? ' checked' : '') + ' onclick="event.stopPropagation()" onchange="event.stopPropagation();toggleMarcItem(\'' + t.id + '\',\'' + card.id + '\',this.checked)" title="Marcar como feito">' +
+            '<input type="checkbox" class="kb-done-chk"' + (cardDone ? ' checked' : '') + ' onclick="event.stopPropagation()" onchange="event.stopPropagation();toggleMarcItem(\'' + t.id + '\',\'' + card.id + '\',this.checked,\'' + escAttr(escJs((card.titulo || "").slice(0, 80))) + '\')" title="Marcar como feito">' +
             '<span class="kb-mv">' +
             (ci > 0 ? '<button onclick="event.stopPropagation();kanbanMoverCard(\'' + t.id + '\',\'' + col.id + '\',\'' + card.id + '\',-1)" title="Subir">↑</button>' : '') +
             (ci < cards.length - 1 ? '<button onclick="event.stopPropagation();kanbanMoverCard(\'' + t.id + '\',\'' + col.id + '\',\'' + card.id + '\',1)" title="Descer">↓</button>' : '') +
@@ -899,7 +899,7 @@ const WIDGETS = {
             (canEdit ? '<button class="mk-btn" title="Definir responsável" onclick="event.stopPropagation();definirRespItem(\'' + t.id + '\',\'' + iid + '\')">resp</button>' : '') +
             '<button class="mk-btn" title="Histórico" onclick="event.stopPropagation();verHistoricoItem(\'' + t.id + '\',\'' + iid + '\',\'' + lblJs + '\')">🕘</button>' +
             '</div>';
-          const chk = '<input type="checkbox" class="risk-chk"' + (isDone ? ' checked' : '') + ' onchange="toggleMarcItem(\'' + t.id + '\',\'' + iid + '\',this.checked)" title="Marcar como concluído">';
+          const chk = '<input type="checkbox" class="risk-chk"' + (isDone ? ' checked' : '') + ' onchange="toggleMarcItem(\'' + t.id + '\',\'' + iid + '\',this.checked,\'' + lblJs + '\')" title="Marcar como concluído">';
           if (canEdit) {
             return '<div class="risk-row ' + sev + ' risk-row-edit' + (isDone ? ' done' : '') + '" draggable="true"' +
               ' ondragstart="riscoDragStart(event,\'' + t.id + '\',' + i + ')"' +
@@ -970,7 +970,7 @@ const WIDGETS = {
           const quem = isDone && m && m.marcado_por_nome ? m.marcado_por_nome : "";
           const lblJs = escAttr(escJs((it.texto || "").slice(0, 80)));
           const histBtn = '<button class="mk-btn" title="Histórico de marcações" onclick="event.stopPropagation();verHistoricoItem(\'' + t.id + '\',\'' + iid + '\',\'' + lblJs + '\')">🕘</button>';
-          const chk = '<input type="checkbox" class="step-chk"' + (isDone ? ' checked' : '') + ' onchange="toggleMarcItem(\'' + t.id + '\',\'' + iid + '\',this.checked)" title="Marcar como feito">';
+          const chk = '<input type="checkbox" class="step-chk"' + (isDone ? ' checked' : '') + ' onchange="toggleMarcItem(\'' + t.id + '\',\'' + iid + '\',this.checked,\'' + lblJs + '\')" title="Marcar como feito">';
           if (canEdit) {
             return '<div class="step-row step-edit' + (isDone ? ' done' : '') + '">' + chk +
               '<div class="step-fields">' +
@@ -1200,9 +1200,9 @@ function itemFeito(widgetId, itemId, legacyDone) {
   const m = marcOf(widgetId, itemId);
   return m ? !!m.feito : !!legacyDone;
 }
-async function toggleMarcItem(widgetId, itemId, novoFeito) {
+async function toggleMarcItem(widgetId, itemId, novoFeito, label) {
   if (!curProjeto) return;
-  const { data, error } = await sb.rpc("marcar_item", { p_projeto: curProjeto.id, p_widget: widgetId, p_item: itemId, p_feito: novoFeito });
+  const { data, error } = await sb.rpc("marcar_item", { p_projeto: curProjeto.id, p_widget: widgetId, p_item: itemId, p_feito: novoFeito, p_label: (label || "").slice(0, 120) });
   if (error) { toast("Erro: " + error.message); return; }
   const k = widgetId + "|" + itemId;
   _marc[k] = Object.assign({}, _marc[k], { widget_id: widgetId, item_ref: itemId, feito: novoFeito, marcado_por_nome: (data && data.por) || (me && me.nome) || "", marcado_em: (data && data.em) || new Date().toISOString() });
@@ -1717,7 +1717,8 @@ async function kanbanPersistMove(t, widgetId, cardId, toColId, toIndex) {
   await recomputeProgressoRPC();
 }
 async function kanbanToggleDone(tid, colId, cardId, checked) {
-  await toggleMarcItem(tid, cardId, checked); // grava marcação + recompute + route (re-renderiza o quadro)
+  const t = space().tiles.find(x => x.id === tid); const card = t && _kbCard(t, colId, cardId);
+  await toggleMarcItem(tid, cardId, checked, card ? card.titulo : ""); // grava marcação + recompute + route
   const m = $("#modal"); if (m && m.style.display !== "none") kanbanReopenCard(tid, colId, cardId);
 }
 function kanbanOpenCard(tid, colId, cardId) {
@@ -4537,7 +4538,7 @@ async function onSession(session) {
   me = pessoa || { id: session.user.id, email: session.user.email, nome: session.user.email };
   isAdmin = !!(pessoa && pessoa.is_admin);
   if (isAdmin) {
-    subscribeAcessosRealtime(); updateBell();
+    subscribeAcessosRealtime(); subscribeNotifRealtime(); updateBell();
     // Verifica URL primeiro — se há deep link (projeto/cliente), abre direto sem renderizar o console antes
     // (evita race condition: renderConsole async sobrescrevia o projeto já carregado)
     await applyUrlRoute();
@@ -4583,8 +4584,9 @@ function unsubscribeAcessosRealtime() { if (_acessosChannel) { sb.removeChannel(
 const NOTIF_ICON = { mensagem: "💬", aprovacao: "✅", reuniao: "📅", questionario: "📝", material: "📎", etapa: "✔" };
 
 /* Despacha por papel: admin vê acessos; cliente/equipe vê novidades */
-function updateBell() { return isAdmin ? updateBellAdmin() : updateBellCliente(); }
-function toggleBell() { return isAdmin ? toggleBellAdmin() : toggleBellCliente(); }
+/* Sino = "Novidades" (notificações) para todos, inclusive admin. Acessos seguem na aba Participantes. */
+function updateBell() { return updateBellCliente(); }
+function toggleBell() { return toggleBellCliente(); }
 function _bellPanel(headHtml, listHtml) {
   const panel = document.createElement("div");
   panel.id = "bellPanel"; panel.className = "bell-panel";
