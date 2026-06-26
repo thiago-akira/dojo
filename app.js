@@ -393,7 +393,7 @@ const WIDGETS = {
         let usouAtual = false;
         items = (found.tile.props.items || []).map(e => {
           let status;
-          if (e.done) status = "feito";
+          if (itemFeito(found.tile.id, e.id, e.done)) status = "feito";
           else if (!usouAtual) { status = "atual"; usouAtual = true; }
           else status = "futuro";
           const datas = [];
@@ -1013,7 +1013,8 @@ const WIDGETS = {
     render(t, c) {
       const p = t.props;
       const items = p.items || [];
-      const doneN = items.filter(x => x.done).length;
+      const entFeito = it => itemFeito(t.id, it.id, it.done);
+      const doneN = items.filter(entFeito).length;
       const pct = items.length ? Math.round(doneN / items.length * 100) : 0;
       const titleEl = canEdit
         ? '<span class="w-title risk-title-editable" contenteditable="true" spellcheck="false" onblur="entregaTitleSave(\'' + t.id + '\',this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}">' + esc(p.title || "Entregas do projeto") + '</span>'
@@ -1023,28 +1024,34 @@ const WIDGETS = {
       const body = items.length === 0
         ? '<p class="muted-note">Nenhuma entrega cadastrada. Use ＋ para adicionar.</p>'
         : items.map((it, i) => {
+          const iid = it.id || ("en" + i);
+          const isDone = entFeito(it);
+          const m = marcOf(t.id, iid);
+          const quem = isDone && m && m.marcado_por_nome ? m.marcado_por_nome : "";
+          const lblJs = escAttr(escJs((it.nome || "").slice(0, 80)));
+          const chk = '<input type="checkbox" class="entrega-chk"' + (isDone ? ' checked' : '') + ' onchange="toggleMarcItem(\'' + t.id + '\',\'' + iid + '\',this.checked,\'' + lblJs + '\',\'Entrega concluída\',\'entrega\')" title="Marcar como entregue">';
+          const histBtn = '<button class="mk-btn" title="Histórico" onclick="event.stopPropagation();verHistoricoItem(\'' + t.id + '\',\'' + iid + '\',\'' + lblJs + '\')">🕘</button>';
           if (canEdit) {
-            return '<div class="entrega-row entrega-edit' + (it.done ? ' done' : '') + '">' +
-              '<input type="checkbox" class="entrega-chk"' + (it.done ? ' checked' : '') + ' onchange="entregaToggle(\'' + t.id + '\',' + i + ')" title="Marcar como entregue">' +
+            return '<div class="entrega-row entrega-edit' + (isDone ? ' done' : '') + '">' + chk +
               '<div class="entrega-fields">' +
               '<input class="entrega-inp entrega-nome" value="' + escAttr(it.nome || "") + '" placeholder="Nome da entrega" oninput="entregaSave(\'' + t.id + '\',' + i + ',\'nome\',this.value)">' +
               '<textarea class="entrega-inp entrega-desc" rows="1" placeholder="Descrição / escopo" oninput="this.style.height=\'auto\';this.style.height=this.scrollHeight+\'px\';entregaSave(\'' + t.id + '\',' + i + ',\'desc\',this.value)">' + esc(it.desc || "") + '</textarea>' +
               '<div class="entrega-datas">' +
               '<label class="entrega-data">Previsto <input class="entrega-inp" value="' + escAttr(it.previsto || "") + '" placeholder="dd/mm" oninput="entregaSave(\'' + t.id + '\',' + i + ',\'previsto\',this.value)"></label>' +
               '<label class="entrega-data">Realizado <input class="entrega-inp" value="' + escAttr(it.realizado || "") + '" placeholder="dd/mm" oninput="entregaSave(\'' + t.id + '\',' + i + ',\'realizado\',this.value)"></label>' +
-              '</div></div>' +
+              '</div>' + (quem ? '<div class="step-by">✓ por ' + esc(quem) + '</div>' : '') + '</div>' + histBtn +
               '<button class="lnk del" onclick="entregaDel(\'' + t.id + '\',' + i + ')" title="Remover">✕</button>' +
               '</div>';
           }
           const datas = [];
           if (it.previsto) datas.push('Previsto ' + esc(it.previsto));
           if (it.realizado) datas.push('Realizado ' + esc(it.realizado));
-          return '<div class="entrega-row' + (it.done ? " done" : "") + '" data-item="' + escAttr(itemKey(it.nome || "")) + '" data-itemlabel="' + escAttr(it.nome || "") + '">' +
-            '<input type="checkbox" class="entrega-chk"' + (it.done ? " checked" : "") + ' disabled>' +
+          return '<div class="entrega-row' + (isDone ? " done" : "") + '" data-item="' + escAttr(itemKey(it.nome || "")) + '" data-itemlabel="' + escAttr(it.nome || "") + '">' + chk +
             '<div class="entrega-body"><div class="entrega-nome-txt">' + esc(it.nome || "") + '</div>' +
             (it.desc ? '<div class="entrega-desc-txt">' + esc(it.desc) + '</div>' : '') +
             (datas.length ? '<div class="entrega-datas-txt">' + datas.join(" · ") + '</div>' : '') +
-            '</div></div>';
+            (quem ? '<div class="step-by">✓ por ' + esc(quem) + '</div>' : '') +
+            '</div>' + histBtn + '</div>';
         }).join("");
       c.innerHTML = head + '<div class="w-body"><div class="entregas">' + body + '</div></div>';
       if (canEdit) requestAnimationFrame(() => {
@@ -1200,9 +1207,12 @@ function itemFeito(widgetId, itemId, legacyDone) {
   const m = marcOf(widgetId, itemId);
   return m ? !!m.feito : !!legacyDone;
 }
-async function toggleMarcItem(widgetId, itemId, novoFeito, label) {
+async function toggleMarcItem(widgetId, itemId, novoFeito, label, titulo, tipo) {
   if (!curProjeto) return;
-  const { data, error } = await sb.rpc("marcar_item", { p_projeto: curProjeto.id, p_widget: widgetId, p_item: itemId, p_feito: novoFeito, p_label: (label || "").slice(0, 120) });
+  const body = { p_projeto: curProjeto.id, p_widget: widgetId, p_item: itemId, p_feito: novoFeito, p_label: (label || "").slice(0, 120) };
+  if (titulo) body.p_titulo = titulo;
+  if (tipo) body.p_tipo = tipo;
+  const { data, error } = await sb.rpc("marcar_item", body);
   if (error) { toast("Erro: " + error.message); return; }
   const k = widgetId + "|" + itemId;
   _marc[k] = Object.assign({}, _marc[k], { widget_id: widgetId, item_ref: itemId, feito: novoFeito, marcado_por_nome: (data && data.por) || (me && me.nome) || "", marcado_em: (data && data.em) || new Date().toISOString() });
@@ -1855,10 +1865,10 @@ function entregaDel(tid, i) {
 
 /* ===== Medidor de Entregas no topo ===== */
 function collectEntregas() {
-  // Agrega todas as entregas dos widgets "entregas" do painel atualmente visível
+  // Agrega todas as entregas dos widgets "entregas" do painel atualmente visível (done via overlay)
   const out = [];
   visibleSpaces().forEach(sp => (sp.tiles || []).forEach(t => {
-    if (t.type === "entregas") (t.props.items || []).forEach(it => out.push(it));
+    if (t.type === "entregas") (t.props.items || []).forEach(it => out.push(Object.assign({}, it, { _feito: itemFeito(t.id, it.id, it.done) })));
   }));
   return out;
 }
@@ -1867,7 +1877,7 @@ function updateEntregasMeter() {
   const all = collectEntregas();
   const inPainel = (typeof view !== "undefined" ? view : "") === "painel";
   if (!inPainel || all.length === 0) { el.style.display = "none"; el.innerHTML = ""; return; }
-  const doneN = all.filter(x => x.done).length;
+  const doneN = all.filter(x => x._feito).length;
   const pct = Math.round(doneN / all.length * 100);
   const R = 13, C = 2 * Math.PI * R, off = C * (1 - pct / 100);
   el.style.display = "";
@@ -1882,18 +1892,18 @@ function abrirEntregasResumo() {
   const groups = [];
   visibleSpaces().forEach(sp => (sp.tiles || []).forEach(t => {
     if (t.type === "entregas") {
-      const items = t.props.items || [];
+      const items = (t.props.items || []).map(it => Object.assign({}, it, { _feito: itemFeito(t.id, it.id, it.done) }));
       if (items.length) groups.push({ titulo: t.props.title || "Entregas", items });
     }
   }));
   const all = groups.flatMap(g => g.items);
-  const doneN = all.filter(x => x.done).length;
+  const doneN = all.filter(x => x._feito).length;
   const pct = all.length ? Math.round(doneN / all.length * 100) : 0;
   const body = groups.map(g =>
     '<div class="ent-resumo-grp"><h4>' + esc(g.titulo) + '</h4>' +
     g.items.map(it =>
-      '<div class="ent-resumo-row' + (it.done ? " done" : "") + '">' +
-      '<span class="ent-resumo-chk">' + (it.done ? "✅" : "⬜") + '</span>' +
+      '<div class="ent-resumo-row' + (it._feito ? " done" : "") + '">' +
+      '<span class="ent-resumo-chk">' + (it._feito ? "✅" : "⬜") + '</span>' +
       '<span class="ent-resumo-nome">' + esc(it.nome || "—") + '</span>' +
       '<span class="ent-resumo-datas">' +
       (it.previsto ? 'Previsto ' + esc(it.previsto) : '') +
@@ -4581,7 +4591,7 @@ function subscribeAcessosRealtime() {
 }
 function unsubscribeAcessosRealtime() { if (_acessosChannel) { sb.removeChannel(_acessosChannel); _acessosChannel = null; } }
 
-const NOTIF_ICON = { mensagem: "💬", aprovacao: "✅", reuniao: "📅", questionario: "📝", material: "📎", etapa: "✔" };
+const NOTIF_ICON = { mensagem: "💬", aprovacao: "✅", reuniao: "📅", questionario: "📝", material: "📎", etapa: "✔", entrega: "📦", aviso: "📣" };
 
 /* Despacha por papel: admin vê acessos; cliente/equipe vê novidades */
 /* Sino = "Novidades" (notificações) para todos, inclusive admin. Acessos seguem na aba Participantes. */
