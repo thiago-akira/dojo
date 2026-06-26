@@ -827,6 +827,19 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 .msg-priv{color:var(--accent-2)}
 .msg-bubble{display:inline-block;text-align:left;background:#eef1f7;color:#222838;border:1px solid #e0e4ee;border-radius:13px;padding:9px 13px;font-size:14px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
 .msg.mine .msg-bubble{background:#fde9c9;color:#3a2a08;border-color:#f6dca8}
+/* Citação (responder), ações e edição */
+.msg-quote{border-left:3px solid var(--accent-2);background:rgba(0,0,0,.06);border-radius:5px;padding:4px 8px;margin-bottom:5px;font-size:12.5px;line-height:1.35;opacity:.85}
+.msg-quote-who{display:block;font-weight:800;font-size:11px;color:var(--accent-2);margin-bottom:1px}
+.msg-edit-tag{font-size:10.5px;font-style:italic;opacity:.6;margin-left:6px}
+.msg-edit-tag[onclick]{cursor:pointer;text-decoration:underline}
+.msg-acts{display:flex;gap:4px;margin-top:3px;opacity:0;transition:opacity .12s}
+.msg.mine .msg-acts{justify-content:flex-end}
+.msg:hover .msg-acts{opacity:1}
+.msg-act{border:1px solid var(--line);background:var(--surface-solid);border-radius:6px;width:24px;height:22px;font-size:12px;line-height:1;cursor:pointer;color:var(--muted);padding:0}
+.msg-act:hover{border-color:var(--accent);color:var(--text)}
+.msg-act.del:hover{border-color:var(--danger);color:var(--danger)}
+.composer-reply{display:flex;align-items:center;gap:8px;background:var(--surface-solid);border:1px solid var(--line);border-left:3px solid var(--accent-2);border-radius:8px;padding:6px 10px;margin-bottom:5px}
+.composer-reply-q{flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .composer{display:flex;gap:8px;align-items:flex-end;padding-top:10px;border-top:1px solid var(--line);position:relative;z-index:3;background:var(--surface)}
 .composer select,.composer textarea,.composer-send *{position:relative;z-index:1}
 .composer select{width:auto;min-width:170px;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px;color:var(--text);font-family:inherit;font-size:13px}

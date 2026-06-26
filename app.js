@@ -4910,6 +4910,12 @@ async function renderMensagens(canvas, hint) {
       : { data: [] }
   ]);
   const participantes = (mbs.data || []).filter(x => x.pessoa_id !== me.id);
+  const msgById = {}; (msgs.data || []).forEach(m => { msgById[m.id] = m; });
+  const quoteOf = q => {
+    const qwho = (q.autor && (q.autor.nome || q.autor.email)) || "—";
+    const qtxt = (q.corpo || (q.anexo_nome ? "📎 " + q.anexo_nome : "")).slice(0, 90);
+    return '<span class="msg-quote-who">' + esc(qwho) + '</span>' + esc(qtxt) + (((q.corpo || "").length > 90) ? "…" : "");
+  };
 
   // Timeline unificada: mensagens do chat + comentários de widgets, ordenados por data
   const timeline = [
@@ -4925,8 +4931,15 @@ async function renderMensagens(canvas, hint) {
       const anexo = mm.anexo_storage_path
         ? '<div class="msg-anexo"><button class="lnk" onclick="baixarChatAnexo(\'' + escAttr(mm.anexo_storage_path) + '\')">📎 ' + esc(mm.anexo_nome || "Arquivo") + '</button></div>'
         : "";
-      return '<div class="msg' + (mine ? " mine" : "") + '"><div class="msg-meta">' + esc(who) + priv + '</div>' +
-        '<div class="msg-bubble">' + (mm.corpo ? esc(mm.corpo) : "") + anexo + '</div></div>';
+      const quote = (mm.responde_a && msgById[mm.responde_a]) ? '<div class="msg-quote">' + quoteOf(msgById[mm.responde_a]) + '</div>' : "";
+      const editado = mm.editado_em ? '<span class="msg-edit-tag"' + (isAdmin ? ' onclick="verHistoricoMsg(\'' + mm.id + '\')" title="Ver histórico de edições"' : ' title="Editada"') + '>editado</span>' : "";
+      const acts = '<div class="msg-acts">' +
+        '<button class="msg-act" title="Responder" onclick="responderMsg(\'' + mm.id + '\')">↩</button>' +
+        (mine ? '<button class="msg-act" title="Editar" onclick="editarMsg(\'' + mm.id + '\')">✏</button>' : '') +
+        (isAdmin ? '<button class="msg-act del" title="Excluir" onclick="excluirMsg(\'' + mm.id + '\')">🗑</button>' : '') +
+        '</div>';
+      return '<div class="msg' + (mine ? " mine" : "") + '" data-mid="' + mm.id + '"><div class="msg-meta">' + esc(who) + priv + '</div>' +
+        '<div class="msg-bubble">' + quote + (mm.corpo ? esc(mm.corpo) : "") + anexo + editado + '</div>' + acts + '</div>';
     }
     // Comentário de widget
     const cm = item.data;
@@ -4941,10 +4954,13 @@ async function renderMensagens(canvas, hint) {
 
   const opts = '<option value="">📢 Todos os participantes</option>' +
     participantes.map(p => '<option value="' + p.pessoa_id + '">' + esc((p.pessoas && (p.pessoas.nome || p.pessoas.email)) || p.pessoa_id) + (p.papel === "gestor" ? " (gestor)" : "") + '</option>').join("");
+  const replyPrev = (_msgRespondeA && msgById[_msgRespondeA])
+    ? '<div class="composer-reply"><div class="composer-reply-q">↩ ' + quoteOf(msgById[_msgRespondeA]) + '</div><button class="msg-act" title="Cancelar resposta" onclick="cancelarResposta()">✕</button></div>'
+    : (_msgRespondeA = null, "");
   const composerHtml = perm("pode_enviar_mensagens")
     ? '<div class="composer">' +
       '<select id="msgTo">' + opts + '</select>' +
-      '<div class="composer-body">' +
+      '<div class="composer-body">' + replyPrev +
       '<textarea id="msgBody" placeholder="Escreva uma mensagem… (Enter envia · Shift+Enter pula linha)" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();enviarMsg();}"></textarea>' +
       '<div id="msgAnexoPrev" class="msg-anexo-prev" style="display:none"></div>' +
       '</div>' +
@@ -4969,6 +4985,48 @@ function onMsgFile(input) {
   }
 }
 
+let _msgRespondeA = null;
+function responderMsg(id) { _msgRespondeA = id; route(); setTimeout(() => { const b = document.getElementById("msgBody"); if (b) b.focus(); }, 150); }
+function cancelarResposta() { _msgRespondeA = null; route(); }
+async function editarMsg(id) {
+  const { data: mm } = await sb.from("mensagens").select("corpo").eq("id", id).maybeSingle();
+  if (!mm) { toast("Mensagem não encontrada."); return; }
+  openModal('<h3>✏ Editar mensagem</h3>' +
+    '<textarea id="edMsgBody" style="min-height:90px">' + esc(mm.corpo || "") + '</textarea>' +
+    '<p class="muted-note" style="font-size:11.5px;text-transform:none;letter-spacing:0;margin-top:4px">A versão anterior fica no histórico (visível ao admin).</p>' +
+    '<div class="auth-err" id="edMsgErr"></div>' + actions("Salvar"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const corpo = (m.querySelector("#edMsgBody").value || "").trim();
+        const errEl = m.querySelector("#edMsgErr");
+        if (!corpo) { errEl.textContent = "A mensagem não pode ficar vazia."; return; }
+        const { error } = await sb.rpc("editar_mensagem", { p_id: id, p_corpo: corpo });
+        if (error) { errEl.textContent = "Erro: " + error.message; return; }
+        closeModal(); route();
+      };
+    });
+}
+async function excluirMsg(id) {
+  if (!(await confirmDialog("Excluir esta mensagem? Não pode ser desfeito."))) return;
+  const { error } = await sb.from("mensagens").delete().eq("id", id);
+  if (error) { toast("Erro: " + error.message); return; }
+  route();
+}
+async function verHistoricoMsg(id) {
+  if (!isAdmin) return;
+  const { data: mm } = await sb.from("mensagens").select("corpo, editado_em, historico, autor:pessoas!autor_id(nome,email)").eq("id", id).maybeSingle();
+  if (!mm) return;
+  const hist = mm.historico || [];
+  const versao = (corpo, em, lbl) => '<div class="hist-item"><div class="hist-b"><div class="hist-l" style="white-space:pre-wrap;font-weight:600">' + esc(corpo || "(vazio)") + '</div><div class="hist-t">' + esc(lbl) + (em ? " · " + fmtRel(em) : "") + '</div></div></div>';
+  const anteriores = hist.length
+    ? hist.slice().reverse().map(h => versao(h.corpo, h.em, "versão anterior")).join("")
+    : '<p class="muted-note">Sem edições registradas.</p>';
+  openModal('<h3>🕘 Histórico de edição</h3>' +
+    '<div class="hist-list">' + versao(mm.corpo, mm.editado_em, "versão atual") + anteriores + '</div>' +
+    '<div class="modal-actions"><span class="grow"></span><button class="btn primary" data-x>Fechar</button></div>',
+    m => { m.querySelector("[data-x]").onclick = closeModal; });
+}
 async function enviarMsg() {
   const body = document.getElementById("msgBody");
   const corpo = (body.value || "").trim();
@@ -4985,9 +5043,10 @@ async function enviarMsg() {
   const to = document.getElementById("msgTo").value || null;
   const { error } = await sb.from("mensagens").insert({
     projeto_id: curProjeto.id, autor_id: me.id, destinatario_id: to,
-    corpo: corpo || "", anexo_storage_path, anexo_nome
+    corpo: corpo || "", anexo_storage_path, anexo_nome, responde_a: _msgRespondeA || null
   });
   if (error) { toast("Erro: " + error.message); return; }
+  _msgRespondeA = null;
   route();
   setTimeout(() => { const b = document.getElementById("msgBody"); if (b) b.focus(); }, 350);
 }
