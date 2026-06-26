@@ -4243,21 +4243,32 @@ function toast(message, kind) {
 function applyBrand() {
   // Marca do Dojo fixa (a cor agora vem do tema do usuário, não do cliente)
   $("#brandMark").textContent = "◯";
-  $("#brandTitle").innerHTML = 'Dojo <span class="brand-thin">Akira</span>';
   $("#roleBadge").textContent = me ? (previewCliente ? "PRÉVIA CLIENTE" : (isAdmin ? "ADMIN" : "CLIENTE")) : "";
   $("#roleBadge").classList.toggle("preview", previewCliente);
 
   // Identidade do cliente (logo ou nome) — item 5/7
   const cb = $("#clientBrand"), c = curCliente;
+  let clientNome = "";
   if (c && (view === "cliente" || view === "painel") && !(c.is_interno)) {
+    clientNome = c.empresa || c.nome || "";
     const logo = c.marca && c.marca.logoUrl;
     cb.style.display = "";
     cb.innerHTML = logo
-      ? '<img src="' + escAttr(logo) + '" alt="' + escAttr(c.empresa || c.nome) + '">'
-      : '<span class="cb-name">' + esc(c.empresa || c.nome) + '</span>';
+      ? '<img src="' + escAttr(logo) + '" alt="' + escAttr(clientNome) + '">'
+      : '<span class="cb-name">' + esc(clientNome) + '</span>';
   } else if (c && c.is_interno && (view === "painel")) {
-    cb.style.display = ""; cb.innerHTML = '<span class="cb-name">' + esc(c.empresa || "Meus Projetos") + '</span>';
+    clientNome = c.empresa || "Meus Projetos";
+    cb.style.display = ""; cb.innerHTML = '<span class="cb-name">' + esc(clientNome) + '</span>';
   } else { cb.style.display = "none"; cb.innerHTML = ""; }
+
+  // No mobile: oculta "Dojo Akira" e mostra o nome do cliente na mesma fonte (mantém o ◯)
+  if (clientNome) {
+    $("#brandTitle").innerHTML = '<span class="brand-dojo">Dojo <span class="brand-thin">Akira</span></span><span class="brand-cliente">' + esc(clientNome) + '</span>';
+    $("#brandTitle").classList.add("has-client");
+  } else {
+    $("#brandTitle").innerHTML = 'Dojo <span class="brand-thin">Akira</span>';
+    $("#brandTitle").classList.remove("has-client");
+  }
 
   // Evolução do projeto (% + barra) — item 7
   const pe = $("#projEvo");

@@ -74,7 +74,14 @@ body{padding-top:53px}
 
 /* topbar responsiva: esconde secundários em telas estreitas */
 @media (max-width:920px){ .role-badge{display:none !important} }
-@media (max-width:760px){ .client-brand{display:none !important} .brand .title{font-size:15px} }
+.brand-cliente{display:none}
+@media (max-width:760px){
+  .client-brand{display:none !important}
+  .brand .title{font-size:15px}
+  /* mobile: esconde "Dojo Akira" e mostra o nome do cliente (mesma fonte do título) */
+  .title.has-client .brand-dojo{display:none}
+  .title.has-client .brand-cliente{display:inline}
+}
 /* Mobile: corpo travado; topbar e subnav deslizam sozinhos */
 @media (max-width:900px){
   body{overflow-x:clip}
