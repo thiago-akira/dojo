@@ -4651,7 +4651,8 @@ async function updateBellCliente() {
 async function toggleBellCliente() {
   const existing = document.getElementById("bellPanel");
   if (existing) { existing.remove(); document.removeEventListener("click", _closeBellOutside, true); return; }
-  const panel = _bellPanel("Novidades", '<p class="muted-note" style="padding:14px">Carregando…</p>');
+  const head = "Novidades" + (isAdmin && curProjeto ? '<button class="btn sm primary bell-aviso-btn" onclick="abrirNovoAviso()">📣 Enviar aviso</button>' : "");
+  const panel = _bellPanel(head, '<p class="muted-note" style="padding:14px">Carregando…</p>');
   const { data } = await sb.from("notificacoes").select("*").eq("pessoa_id", me.id).order("created_at", { ascending: false }).limit(30);
   const list = data || [];
   const inner = list.length
@@ -4660,6 +4661,35 @@ async function toggleBellCliente() {
   const pl = panel.querySelector(".bell-list"); if (pl) pl.innerHTML = inner;
   await sb.from("notificacoes").update({ lida: true }).eq("pessoa_id", me.id).eq("lida", false);
   updateBellCliente();
+}
+/* Admin: enviar aviso customizado pelo sino (todos os participantes ou uma pessoa) */
+async function abrirNovoAviso() {
+  if (!isAdmin || !curProjeto) return;
+  const bp = document.getElementById("bellPanel"); if (bp) { bp.remove(); document.removeEventListener("click", _closeBellOutside, true); }
+  const parts = (await carregarParticipantes()).filter(p => p.papel !== "admin");
+  const opts = '<option value="">📣 Todos os participantes</option>' +
+    parts.map(p => '<option value="' + p.pessoa_id + '">' + esc(p.nome) + (p.papel === "gestor" ? " (equipe)" : "") + '</option>').join("");
+  openModal('<h3>📣 Enviar aviso</h3>' +
+    '<p class="muted-note" style="font-size:12px;text-transform:none;letter-spacing:0;font-weight:600;margin-top:-4px">Aparece no sino (e como balão) dos participantes deste projeto.</p>' +
+    '<label>Para</label><select data-k="para">' + opts + '</select>' +
+    field("Título", "titulo", "") +
+    '<label>Mensagem (opcional)</label><textarea data-k="corpo" placeholder="Detalhes do aviso…"></textarea>' +
+    '<div class="auth-err" id="avErr"></div>' + actions("Enviar aviso"),
+    m => {
+      m.querySelector("[data-x]").onclick = closeModal;
+      m.querySelector("[data-ok]").onclick = async () => {
+        const titulo = (m.querySelector('[data-k="titulo"]').value || "").trim();
+        const errEl = m.querySelector("#avErr");
+        if (!titulo) { errEl.textContent = "Informe um título."; return; }
+        const para = m.querySelector('[data-k="para"]').value || null;
+        const corpo = (m.querySelector('[data-k="corpo"]').value || "").trim();
+        errEl.textContent = "Enviando…";
+        const { data, error } = await sb.rpc("enviar_aviso", { p_projeto: curProjeto.id, p_pessoa: para, p_titulo: titulo, p_corpo: corpo });
+        if (error) { errEl.textContent = "Erro: " + error.message; return; }
+        closeModal();
+        toast("Aviso enviado" + (typeof data === "number" ? " para " + data + " pessoa" + (data === 1 ? "" : "s") : "") + ".");
+      };
+    });
 }
 
 /* Caixa de aviso (toast) que some ao fechar */
