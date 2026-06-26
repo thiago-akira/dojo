@@ -3758,12 +3758,16 @@ function renderPainel(canvas, hint) {
     const content = document.createElement("div"); content.className = "content";
     try { W.render(t, content); } catch (e) { content.textContent = "Erro no widget."; }
     card.appendChild(content);
+    if (isMobileCanvas() && mobileHalfOf(t)) tile.classList.add("mobile-half");
     if (editMode) {
       const bar = document.createElement("div"); bar.className = "tbar";
-      bar.innerHTML = '<span class="tgrip" title="Arrastar para mover">⠿</span><button title="Configurar">⚙</button><button title="Duplicar / Mover para aba">⧉</button><button title="Excluir">✕</button>';
-      bar.children[1].onclick = e => { e.stopPropagation(); widgetSettings(t); };
-      bar.children[2].onclick = e => { e.stopPropagation(); abrirMenuWidget(e, t); };
-      bar.children[3].onclick = e => { e.stopPropagation(); removeTile(t.id); };
+      bar.innerHTML = '<span class="tgrip" title="Arrastar para mover">⠿</span>' +
+        (isMobileCanvas() ? '<button class="tb-half" title="' + (mobileHalfOf(t) ? "Voltar à largura total" : "Reduzir para metade da largura") + '">' + (mobileHalfOf(t) ? "◧" : "▭") + '</button>' : '') +
+        '<button class="tb-cfg" title="Configurar">⚙</button><button class="tb-dup" title="Duplicar / Mover para aba">⧉</button><button class="tb-del" title="Excluir">✕</button>';
+      bar.querySelector(".tb-cfg").onclick = e => { e.stopPropagation(); widgetSettings(t); };
+      bar.querySelector(".tb-dup").onclick = e => { e.stopPropagation(); abrirMenuWidget(e, t); };
+      bar.querySelector(".tb-del").onclick = e => { e.stopPropagation(); removeTile(t.id); };
+      const hb = bar.querySelector(".tb-half"); if (hb) hb.onclick = e => { e.stopPropagation(); toggleMobileHalf(t); };
       card.appendChild(bar);
       const h = document.createElement("div"); h.className = "thandle"; card.appendChild(h);
       enableDrag(tile, card, t); enableResize(tile, h, t);
@@ -3810,6 +3814,19 @@ async function removeTile(id) {
 
 function isMobileCanvas() {
   return deviceView === "mobile" || window.innerWidth <= 768;
+}
+/* Largura no mobile: por padrão full (2 colunas); pode reduzir para metade (1 coluna) */
+function mobileHalfOf(t) {
+  const sp = space();
+  return !!(sp && sp._layouts && sp._layouts.mobile && sp._layouts.mobile[t.id] && sp._layouts.mobile[t.id].half);
+}
+function toggleMobileHalf(t) {
+  const sp = space();
+  if (!sp._layouts) sp._layouts = {};
+  if (!sp._layouts.mobile) sp._layouts.mobile = {};
+  if (!sp._layouts.mobile[t.id]) { const p = tilePos(t); sp._layouts.mobile[t.id] = { x: 0, y: p.y, w: p.w, h: p.h }; }
+  sp._layouts.mobile[t.id].half = !sp._layouts.mobile[t.id].half;
+  save(); pushHist("Largura mobile do widget"); route();
 }
 // Retorna o tamanho da SUB-célula (1/SUB de célula lógica) para snap fino de 0,5
 function cellSize() { const c = $("#canvas"); const gap = 14; const N = COLS * SUB; const w = (c.clientWidth - gap * (N - 1)) / N; return { w, h: 17, gap }; }

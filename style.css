@@ -134,13 +134,15 @@ body{padding-top:53px}
 .canvas-wrap.dev-tablet{max-width:768px}
 .canvas-wrap.dev-mobile{max-width:390px}
 .canvas-wrap.dev-tablet .canvas{--cols:48}
-/* preview mobile: coluna única para visualizar ordem real */
-.canvas-wrap.dev-mobile .canvas{grid-template-columns:1fr !important;grid-auto-rows:var(--row)}
-.canvas-wrap.dev-mobile .tile{grid-column:1/-1 !important;grid-row:auto / span var(--gh,8) !important}
-/* mobile real: coluna única */
+/* preview mobile: 2 colunas; widget ocupa as duas por padrão, ou metade se marcado */
+.canvas-wrap.dev-mobile .canvas{grid-template-columns:repeat(2,1fr) !important;grid-auto-rows:var(--row);grid-auto-flow:row dense}
+.canvas-wrap.dev-mobile .tile{grid-column:1 / -1 !important;grid-row:auto / span var(--gh,8) !important}
+.canvas-wrap.dev-mobile .tile.mobile-half{grid-column:span 1 !important}
+/* mobile real: 2 colunas */
 @media (max-width:768px){
-  .canvas{grid-template-columns:1fr !important;grid-auto-rows:var(--row)}
-  .tile{grid-column:1/-1 !important;grid-row:auto / span var(--gh,8) !important}
+  .canvas{grid-template-columns:repeat(2,1fr) !important;grid-auto-rows:var(--row);grid-auto-flow:row dense}
+  .tile{grid-column:1 / -1 !important;grid-row:auto / span var(--gh,8) !important}
+  .tile.mobile-half{grid-column:span 1 !important}
 }
 
 /* ===== Tile / card ===== */
