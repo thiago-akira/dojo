@@ -4679,7 +4679,7 @@ async function updateBellCliente() {
 async function toggleBellCliente() {
   const existing = document.getElementById("bellPanel");
   if (existing) { existing.remove(); document.removeEventListener("click", _closeBellOutside, true); return; }
-  const head = "Novidades" + (isAdmin && curProjeto ? '<button class="btn sm primary bell-aviso-btn" onclick="abrirNovoAviso()">📣 Enviar aviso</button>' : "");
+  const head = "Novidades" + (isAdmin && curProjeto ? '<span class="bell-head-acts"><button class="btn sm bell-aviso-btn" onclick="abrirHistoricoAvisos()">🕘 Histórico</button><button class="btn sm primary bell-aviso-btn" onclick="abrirNovoAviso()">📣 Enviar aviso</button></span>' : "");
   const panel = _bellPanel(head, '<p class="muted-note" style="padding:14px">Carregando…</p>');
   const { data } = await sb.from("notificacoes").select("*").eq("pessoa_id", me.id).order("created_at", { ascending: false }).limit(30);
   const list = data || [];
@@ -4687,7 +4687,7 @@ async function toggleBellCliente() {
     ? list.map(n => '<div class="bell-item' + (n.lida ? "" : " novo") + '"><span class="bell-dot"></span><div class="bell-body"><div class="bell-who">' + (NOTIF_ICON[n.tipo] || "🔔") + ' ' + esc(n.titulo) + '</div>' + (n.corpo ? '<div class="bell-when">' + esc(n.corpo) + '</div>' : '') + '<div class="bell-when">' + fmtRel(n.created_at) + '</div></div></div>').join("")
     : '<p class="muted-note" style="padding:14px;text-align:center">Nenhuma novidade ainda.</p>';
   const pl = panel.querySelector(".bell-list"); if (pl) pl.innerHTML = inner;
-  await sb.from("notificacoes").update({ lida: true }).eq("pessoa_id", me.id).eq("lida", false);
+  await sb.from("notificacoes").update({ lida: true, lida_em: new Date().toISOString() }).eq("pessoa_id", me.id).eq("lida", false);
   updateBellCliente();
 }
 /* Admin: enviar aviso customizado pelo sino (todos os participantes ou uma pessoa) */
@@ -4715,9 +4715,36 @@ async function abrirNovoAviso() {
         const { data, error } = await sb.rpc("enviar_aviso", { p_projeto: curProjeto.id, p_pessoa: para, p_titulo: titulo, p_corpo: corpo });
         if (error) { errEl.textContent = "Erro: " + error.message; return; }
         closeModal();
-        toast("Aviso enviado" + (typeof data === "number" ? " para " + data + " pessoa" + (data === 1 ? "" : "s") : "") + ".");
+        toast("Aviso enviado" + (typeof data === "number" ? " para " + data + " pessoa" + (data === 1 ? "" : "s") : "") + ". Você recebeu uma cópia de teste.");
       };
     });
+}
+/* Admin: histórico de avisos enviados (data/hora, quem recebeu, quem viu) */
+async function abrirHistoricoAvisos() {
+  if (!isAdmin || !curProjeto) return;
+  const bp = document.getElementById("bellPanel"); if (bp) { bp.remove(); document.removeEventListener("click", _closeBellOutside, true); }
+  openModal('<h3>🕘 Histórico de avisos</h3><div id="histAvBody"><p class="muted-note">Carregando…</p></div>' +
+    '<div class="modal-actions"><span class="grow"></span><button class="btn primary" data-x>Fechar</button></div>',
+    m => { m.querySelector("[data-x]").onclick = closeModal; });
+  const { data, error } = await sb.rpc("historico_avisos", { p_projeto: curProjeto.id });
+  const body = document.getElementById("histAvBody"); if (!body) return;
+  if (error) { body.innerHTML = '<p class="muted-note">Erro: ' + esc(error.message) + '</p>'; return; }
+  const list = data || [];
+  if (!list.length) { body.innerHTML = '<p class="muted-note">Nenhum aviso enviado ainda. Use 📣 Enviar aviso no sino.</p>'; return; }
+  body.innerHTML = '<div class="av-hist">' + list.map(a => {
+    const recs = a.recebidos || [];
+    const vistos = recs.filter(r => r.visto).length;
+    const quando = a.em ? new Date(a.em).toLocaleString("pt-BR") : "";
+    const linhas = recs.map(r => '<div class="av-rec"><span class="av-rec-nome">' + esc(r.nome) + '</span>' +
+      (r.visto ? '<span class="av-rec-visto">✓ viu' + (r.visto_em ? " · " + fmtRel(r.visto_em) : "") + '</span>' : '<span class="av-rec-naovisto">não viu</span>') + '</div>').join("") ||
+      '<p class="muted-note" style="padding:4px 2px">Sem destinatários.</p>';
+    return '<div class="av-item"><div class="av-head" onclick="this.closest(\'.av-item\').classList.toggle(\'open\')">' +
+      '<div class="av-h-main"><span class="av-tit">📣 ' + esc(a.titulo) + '</span><span class="av-stat">' + vistos + '/' + recs.length + ' viram</span></div>' +
+      '<div class="av-sub">' + esc(quando) + ' · para <b>' + esc(a.para) + '</b></div>' +
+      (a.corpo ? '<div class="av-corpo">' + esc(a.corpo) + '</div>' : '') +
+      '<span class="av-chevron">▾</span></div>' +
+      '<div class="av-recs">' + linhas + '</div></div>';
+  }).join("") + '</div>';
 }
 
 /* Caixa de aviso (toast) que some ao fechar */
