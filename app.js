@@ -1708,22 +1708,72 @@ function amRenderWidget(t, c) {
       : '<p class="muted-note">Monitor ainda não configurado.</p>';
     return;
   }
-  amLoad(box, domain);
+  amLoad(box, domain, t.id);
 }
-async function amLoad(box, domain) {
+const _amUI = {};
+function amUI(id) { return _amUI[id] || (_amUI[id] = { days: 7, prob: false }); }
+async function amLoad(box, domain, tileId) {
   if (!curProjeto) { box.innerHTML = '<p class="muted-note">Abra um projeto para ver os dados.</p>'; return; }
   const { data, error } = await sb.from("acessibilidade_monitor")
     .select("coletado_em,status,nota,erros,qtd_a,qtd_aa,qtd_aaa")
     .eq("projeto_id", curProjeto.id).eq("domain", domain).eq("fonte", "ama")
-    .order("coletado_em", { ascending: false }).limit(30);
+    .order("coletado_em", { ascending: false }).limit(120);
   if (box.isConnected === false) return; // re-render durante o await → descarta escrita obsoleta
   if (error) { box.innerHTML = '<p class="muted-note">Não foi possível carregar (' + esc(error.message) + ').</p>'; return; }
   const rows = data || [];
   if (!rows.length) { box.innerHTML = '<div class="am-empty"><p class="muted-note">Aguardando a primeira coleta. A nota da AMA é registrada automaticamente todo dia às 7h.</p></div>'; return; }
-  box.innerHTML = amBuildHtml(rows);
+  const series = amDailySeries(rows);
+  const ui = amUI(tileId);
+  function paint() {
+    if (box.isConnected === false) return;
+    box.innerHTML = amBuildHtml(series, ui);
+    box.querySelectorAll("[data-days]").forEach(b => b.onclick = () => { ui.days = +b.dataset.days; paint(); });
+    const f = box.querySelector("[data-amfilter]"); if (f) f.onclick = () => { ui.prob = !ui.prob; paint(); };
+  }
+  paint();
 }
-function amBuildHtml(rows) {
-  const latest = rows[0];
+// 1 registro por dia (o mais recente); rows vem ordenado desc por coletado_em
+function amDailySeries(rows) {
+  const seen = new Set(), out = [];
+  for (const r of rows) {
+    const d = new Date(r.coletado_em);
+    const key = d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+    if (seen.has(key)) continue;
+    seen.add(key); out.push(r);
+  }
+  return out; // desc por dia
+}
+function amLvlSuffix(r) {
+  const p = [];
+  if (r.qtd_a) p.push("A" + r.qtd_a);
+  if (r.qtd_aa) p.push("AA" + r.qtd_aa);
+  if (r.qtd_aaa) p.push("AAA" + r.qtd_aaa);
+  return p.length ? " · " + p.join(" ") : "";
+}
+function amHistList(series, ui) {
+  let list = series.slice(0, ui.days);
+  if (ui.prob) list = list.filter(r => r.status === "indisponivel" || (r.nota != null && Number(r.nota) < 9.5) || (r.erros || 0) > 0);
+  if (!list.length) return '<div class="am-hist-empty">' + (ui.prob ? "Nenhum dia com problema no período. 🎉" : "Sem registros no período.") + '</div>';
+  return list.map(r => {
+    const indisp = r.status === "indisponivel";
+    const nota = r.nota == null ? null : Number(r.nota);
+    const erros = r.erros || 0;
+    const bad = !indisp && ((nota != null && nota < 9.5) || erros > 0);
+    const d = new Date(r.coletado_em);
+    const dd = String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0");
+    const notaTxt = indisp ? "—" : (nota != null ? nota.toFixed(1).replace(".", ",") : "—");
+    const errTxt = indisp ? "indisponível" : (erros > 0 ? (erros + " erro" + (erros > 1 ? "s" : "") + amLvlSuffix(r)) : "sem erros");
+    const cls = indisp ? "warn" : (bad ? "bad" : "ok");
+    const icon = indisp ? "⚠" : (bad ? "⚠" : "✓");
+    return '<div class="am-hist-row ' + cls + '">' +
+      '<span class="am-hist-date">' + dd + '</span>' +
+      '<span class="am-hist-nota">' + notaTxt + '</span>' +
+      '<span class="am-hist-err">' + icon + " " + esc(errTxt) + '</span>' +
+      '</div>';
+  }).join("");
+}
+function amBuildHtml(series, ui) {
+  const latest = series[0];
   const indisp = latest.status === "indisponivel";
   const nota = latest.nota == null ? null : Number(latest.nota);
   const erros = latest.erros || 0;
@@ -1741,7 +1791,20 @@ function amBuildHtml(rows) {
   const metaCls = alarm || indisp ? "am-meta bad" : "am-meta";
   const metaTxt = indisp ? "⚠ Coleta indisponível" : (erros > 0 ? ("⚠ " + erros + " erro" + (erros > 1 ? "s" : "")) : "✓ sem erros");
   h += '<div class="' + metaCls + '">' + metaTxt + ' · ' + amFmtDate(latest.coletado_em) + '</div>';
-  h += amSpark(rows.slice().reverse());
+  h += amSpark(series.slice().reverse());
+
+  // Histórico diário (últimos 7/30 dias, com filtro de problemas)
+  h += '<div class="am-hist">' +
+    '<div class="am-hist-head">' +
+      '<span class="am-hist-title">Histórico diário</span>' +
+      '<div class="am-hist-ctrls">' +
+        '<button class="am-chip' + (ui.days === 7 ? " on" : "") + '" data-days="7">7 dias</button>' +
+        '<button class="am-chip' + (ui.days === 30 ? " on" : "") + '" data-days="30">30 dias</button>' +
+        '<button class="am-chip' + (ui.prob ? " on" : "") + '" data-amfilter title="Só dias com nota baixa ou erros">⚠ só problemas</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="am-hist-list">' + amHistList(series, ui) + '</div>' +
+  '</div>';
   return h;
 }
 function amSpark(rowsAsc) {
