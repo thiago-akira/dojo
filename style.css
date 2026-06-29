@@ -766,6 +766,34 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 .nb-trash-d{font-size:11px;color:var(--faint)}
 .nb-trash-acts{display:flex;gap:10px;flex:none}
 
+/* ===== Widget Links de Referência ===== */
+.lr{display:flex;flex-direction:column;height:100%;min-height:0}
+.lr-table{flex:1;min-height:0;overflow-y:auto;padding:0 4px}
+.lr-row{display:grid;grid-template-columns:24px 1fr 1fr 1fr 1.5fr 28px;align-items:center;gap:4px;border-bottom:1px solid var(--line);padding:2px 0}
+.lr-row:not(.lr-head):hover{background:var(--surface-solid)}
+.lr-head{position:sticky;top:0;z-index:2;background:var(--surface);border-bottom:1px solid var(--line-strong);padding:6px 0}
+.lr-h{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);padding:0 6px}
+.lr-grip{display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:14px;cursor:grab;user-select:none;touch-action:none}
+.lr-grip:hover{color:var(--muted)}
+.lr-cell{min-width:0;display:flex;align-items:center;gap:4px}
+.lr-inp{width:100%;min-width:0;background:none;border:1px solid transparent;border-radius:6px;color:var(--text);font:inherit;font-size:12.5px;padding:6px 6px;outline:none}
+.lr-inp:hover:not(:disabled){border-color:var(--line)}
+.lr-inp:focus{border-color:var(--accent);background:var(--surface-solid)}
+.lr-inp:disabled{color:var(--muted);cursor:default}
+.lr-inp::placeholder{color:var(--faint)}
+.lr-open{flex:none;width:24px;height:24px;border:1px solid var(--line);background:var(--surface-solid);color:var(--accent-2);border-radius:6px;cursor:pointer;font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center}
+.lr-open:hover{border-color:var(--accent-2)}
+.lr-del{flex:none;width:24px;height:24px;border:0;background:none;color:var(--faint);cursor:pointer;font-size:12px;border-radius:6px;opacity:0}
+.lr-row:hover .lr-del{opacity:1}
+.lr-del:hover{color:var(--danger);background:var(--surface)}
+.lr-dragging{opacity:.45}
+.lr-drop-mark{box-shadow:inset 0 2px 0 var(--accent)}
+.lr-drop-end{box-shadow:inset 0 -2px 0 var(--accent)}
+.lr-empty{padding:18px 12px;color:var(--faint);font-size:12px;text-align:center}
+.lr-foot{flex:none;padding:8px 10px;border-top:1px solid var(--line)}
+.lr-add{background:none;border:0;color:var(--accent);cursor:pointer;font:inherit;font-size:13px;font-weight:600;padding:2px 0}
+.lr-add:hover{text-decoration:underline}
+
 /* ===== Modal genérico ===== */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40}
 .panel-modal{position:fixed;z-index:41;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,94vw);max-height:88vh;overflow:auto;

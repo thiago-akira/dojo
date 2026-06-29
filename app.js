@@ -1106,7 +1106,14 @@ const WIDGETS = {
   notas2: {
     emoji: "🗒", name: "Notas", desc: "Bloco de notas estilo Apple Notes: notas de texto e listas, marcadores coloridos, busca e lembretes.",
     w: 6, h: 5, defaults: { notes: [], trash: [], labels: [], active: "" },
-    render(t, c) { nbRenderWidget(t, c); }
+    render(t, c) { nbRenderWidget(t, c); },
+    form() { return '<p class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:13px">Crie e edite as notas <b>direto no widget</b>: ✎ para nova nota, ⋯ para listas, marcadores, importar/exportar e lixeira.</p>'; }
+  },
+  linkref: {
+    emoji: "🔖", name: "Links de Referência", desc: "Tabela editável para catalogar links com ideia, fonte e motivo. Reordene arrastando.",
+    w: 7, h: 4, defaults: { rows: [] },
+    render(t, c) { lrRenderWidget(t, c); },
+    form() { return '<p class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:13px">Edite a tabela <b>direto no widget</b>: ＋ Adicionar link, arraste pela alça ⠿ para reordenar, botão direito numa linha para copiar/duplicar/excluir.</p>'; }
   }
 };
 function field(label, k, v) { return '<label>' + esc(label) + '</label><input data-k="' + k + '" value="' + escAttr(v) + '">'; }
@@ -1502,6 +1509,117 @@ function nbRenderWidget(t, c) {
   }
 
   buildList(); buildEditor();
+}
+
+/* ====================================================================
+   Widget "Links de Referência" — tabela inline editável (grid), com
+   reordenação por drag-and-drop (pointer events) e menu de contexto.
+   Dados no props do tile: { rows:[{id,ideia,fonte,motivo,link}] }.
+   ==================================================================== */
+function lrPopup(x, y, items) {
+  document.querySelectorAll(".nb-pop").forEach(e => e.remove());
+  const pop = document.createElement("div"); pop.className = "nb-pop";
+  items.forEach(it => {
+    if (it.sep) { const s = document.createElement("div"); s.className = "nb-pop-sep"; pop.appendChild(s); return; }
+    const b = document.createElement("button"); b.className = "nb-pop-item" + (it.danger ? " danger" : ""); b.textContent = it.label;
+    b.onclick = e => { e.stopPropagation(); pop.remove(); if (it.on) it.on(); };
+    pop.appendChild(b);
+  });
+  document.body.appendChild(pop);
+  let left = x, top = y; const pw = pop.offsetWidth, ph = pop.offsetHeight;
+  if (left + pw > window.innerWidth - 8) left = window.innerWidth - 8 - pw;
+  if (top + ph > window.innerHeight - 8) top = window.innerHeight - 8 - ph;
+  pop.style.left = Math.max(8, left) + "px"; pop.style.top = Math.max(8, top) + "px";
+  setTimeout(() => { const close = e => { if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener("pointerdown", close, true); } }; document.addEventListener("pointerdown", close, true); }, 0);
+}
+
+function lrRenderWidget(t, c) {
+  const p = t.props; p.rows = p.rows || [];
+  const ed = !!(typeof canEditReal !== "undefined" && canEditReal && !previewCliente);
+  const save0 = () => { if (ed) save(); };
+
+  c.innerHTML = "";
+  const root = document.createElement("div"); root.className = "lr"; c.appendChild(root);
+  const head = document.createElement("div"); head.className = "w-head"; head.innerHTML = '<span class="w-title">Links de Referência</span>'; root.appendChild(head);
+  const table = document.createElement("div"); table.className = "lr-table"; root.appendChild(table);
+  const hdr = document.createElement("div"); hdr.className = "lr-row lr-head";
+  hdr.innerHTML = '<div class="lr-h"></div><div class="lr-h">Ideia</div><div class="lr-h">Fonte</div><div class="lr-h">Motivo</div><div class="lr-h">Link</div><div class="lr-h"></div>';
+  table.appendChild(hdr);
+  if (ed) { const foot = document.createElement("div"); foot.className = "lr-foot"; const add = document.createElement("button"); add.className = "lr-add"; add.textContent = "＋ Adicionar link"; add.onclick = addRow; foot.appendChild(add); root.appendChild(foot); }
+
+  function rowEls() { return Array.prototype.slice.call(table.querySelectorAll(".lr-row:not(.lr-head)")); }
+  function drawRows() {
+    rowEls().forEach(e => e.remove());
+    const em0 = table.querySelector(".lr-empty"); if (em0) em0.remove();
+    if (!p.rows.length) { const em = document.createElement("div"); em.className = "lr-empty"; em.textContent = ed ? "Nenhum link ainda. Use ＋ Adicionar link." : "Nenhum link."; table.appendChild(em); return; }
+    p.rows.forEach((r, idx) => table.appendChild(buildRow(r, idx)));
+  }
+  function buildRow(r, idx) {
+    const row = document.createElement("div"); row.className = "lr-row"; row.dataset.idx = idx;
+    const grip = document.createElement("div"); grip.className = "lr-grip"; grip.textContent = "⠿";
+    if (ed) { grip.title = "Arraste para reordenar"; attachDrag(grip, row, idx); } else grip.style.opacity = ".3";
+    row.appendChild(grip);
+    const mkInput = (key, ph2, cls) => {
+      const cell = document.createElement("div"); cell.className = "lr-cell" + (cls ? " " + cls : "");
+      const i = document.createElement("input"); i.className = "lr-inp"; i.value = r[key] || ""; i.placeholder = ph2; i.disabled = !ed;
+      cell.appendChild(i); return { cell: cell, input: i };
+    };
+    const a = mkInput("ideia", "Ideia"); a.input.addEventListener("change", () => { r.ideia = a.input.value; save0(); }); row.appendChild(a.cell);
+    const b = mkInput("fonte", "Fonte"); b.input.addEventListener("change", () => { r.fonte = b.input.value; save0(); }); row.appendChild(b.cell);
+    const d = mkInput("motivo", "Motivo"); d.input.addEventListener("change", () => { r.motivo = d.input.value; save0(); }); row.appendChild(d.cell);
+    const lk = mkInput("link", "https://…", "lr-link-cell");
+    lk.input.addEventListener("change", () => { r.link = lk.input.value; save0(); row.replaceWith(buildRow(r, idx)); });
+    if ((r.link || "").trim()) { const op = document.createElement("button"); op.className = "lr-open"; op.textContent = "↗"; op.title = "Abrir em nova aba"; op.onclick = () => window.open(r.link, "_blank", "noopener"); lk.cell.appendChild(op); }
+    row.appendChild(lk.cell);
+    const del = document.createElement("button"); del.className = "lr-del"; del.textContent = "✕";
+    if (ed) { del.title = "Excluir"; del.onclick = () => removeRow(idx); } else del.style.visibility = "hidden";
+    row.appendChild(del);
+
+    const openMenu = (x, y) => {
+      const items = [{ label: "Copiar", on: () => copyRow(r) }];
+      if (ed) { items.push({ label: "Duplicar", on: () => dupRow(idx) }); items.push({ sep: true }); items.push({ label: "Excluir", danger: true, on: () => removeRow(idx) }); }
+      lrPopup(x, y, items);
+    };
+    row.addEventListener("contextmenu", e => { e.preventDefault(); openMenu(e.clientX, e.clientY); });
+    let lpTimer = null, lpXY = null;
+    const clrLp = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
+    row.addEventListener("pointerdown", e => { if (e.pointerType !== "touch") return; if (e.target.closest(".lr-grip,.lr-open,.lr-del")) return; lpXY = { x: e.clientX, y: e.clientY }; lpTimer = setTimeout(() => openMenu(lpXY.x, lpXY.y), 500); });
+    row.addEventListener("pointerup", clrLp);
+    row.addEventListener("pointercancel", clrLp);
+    row.addEventListener("pointermove", e => { if (lpXY && Math.hypot(e.clientX - lpXY.x, e.clientY - lpXY.y) > 8) clrLp(); });
+    return row;
+  }
+
+  function attachDrag(grip, row, idx) {
+    grip.style.cursor = "grab";
+    grip.addEventListener("pointerdown", e => {
+      e.preventDefault(); try { grip.setPointerCapture(e.pointerId); } catch (err) {}
+      row.classList.add("lr-dragging"); document.body.style.userSelect = "none"; grip.style.cursor = "grabbing";
+      let target = idx;
+      const clearMarks = () => table.querySelectorAll(".lr-drop-mark,.lr-drop-end").forEach(el => el.classList.remove("lr-drop-mark", "lr-drop-end"));
+      const onMove = ev => {
+        const rows = rowEls(); clearMarks(); target = rows.length;
+        for (let i = 0; i < rows.length; i++) { const rc = rows[i].getBoundingClientRect(); if (ev.clientY < rc.top + rc.height / 2) { target = i; break; } }
+        if (target >= rows.length) { if (rows.length) rows[rows.length - 1].classList.add("lr-drop-end"); }
+        else rows[target].classList.add("lr-drop-mark");
+      };
+      const onUp = () => {
+        document.removeEventListener("pointermove", onMove); document.removeEventListener("pointerup", onUp);
+        document.body.style.userSelect = ""; grip.style.cursor = "grab"; clearMarks();
+        let to = target;
+        if (to !== idx && to !== idx + 1) { const m = p.rows.splice(idx, 1)[0]; if (to > idx) to--; p.rows.splice(to, 0, m); save0(); }
+        drawRows();
+      };
+      document.addEventListener("pointermove", onMove); document.addEventListener("pointerup", onUp);
+    });
+  }
+
+  function addRow() { const r = { id: uid(), ideia: "", fonte: "", motivo: "", link: "" }; p.rows.push(r); save0(); drawRows(); const rows = rowEls(); const last = rows[rows.length - 1]; if (last) { last.scrollIntoView({ block: "nearest" }); const i = last.querySelector("input"); if (i) i.focus(); } }
+  async function removeRow(idx) { if (!(await confirmDialog("Excluir este link?"))) return; p.rows.splice(idx, 1); save0(); drawRows(); }
+  function dupRow(idx) { const r = p.rows[idx]; if (!r) return; const copy = Object.assign({}, r, { id: uid() }); p.rows.splice(idx + 1, 0, copy); save0(); drawRows(); }
+  function copyRow(r) { const txt = [r.ideia, r.fonte, r.motivo, r.link].map(s => (s || "").trim()).filter(Boolean).join(" · "); if (!txt) { toast("Linha vazia."); return; } navigator.clipboard.writeText(txt).then(() => toast("Copiado!")).catch(() => toast("Erro ao copiar.")); }
+
+  drawRows();
 }
 
 /* — Vínculo Linha do tempo ↔ Entregas — */
