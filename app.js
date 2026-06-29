@@ -1569,17 +1569,10 @@ function lrRenderWidget(t, c) {
     const d = mkInput("motivo", "Motivo"); d.input.addEventListener("change", () => { r.motivo = d.input.value; save0(); }); row.appendChild(d.cell);
     const linkCell = document.createElement("div"); linkCell.className = "lr-cell lr-link-cell";
     const linkVal = (r.link || "").trim();
-    if (ed) {
-      // No modo edição: link completo, editável; ↗ ao lado quando preenchido.
-      const li = document.createElement("input"); li.className = "lr-inp"; li.value = r.link || ""; li.placeholder = "https://…";
-      li.addEventListener("change", () => { r.link = li.value; save0(); row.replaceWith(buildRow(r, idx)); });
-      linkCell.appendChild(li);
-      if (linkVal) { const op = document.createElement("button"); op.className = "lr-open"; op.textContent = "↗"; op.title = "Abrir em nova aba"; op.onclick = () => window.open(r.link, "_blank", "noopener"); linkCell.appendChild(op); }
-    } else if (linkVal) {
-      // Fora do modo edição: só um botão de link para abrir.
-      const op = document.createElement("button"); op.className = "lr-openbtn"; op.innerHTML = "🔗 Abrir"; op.title = r.link; op.onclick = () => window.open(r.link, "_blank", "noopener");
-      linkCell.appendChild(op);
-    }
+    const li = document.createElement("input"); li.className = "lr-inp"; li.value = r.link || ""; li.placeholder = "https://…"; li.disabled = !ed;
+    if (ed) { li.addEventListener("change", () => { r.link = li.value; save0(); row.replaceWith(buildRow(r, idx)); }); }
+    linkCell.appendChild(li);
+    if (linkVal) { const op = document.createElement("button"); op.className = "lr-open"; op.textContent = "↗"; op.title = "Abrir em nova aba"; op.onclick = () => window.open(r.link || li.value, "_blank", "noopener"); linkCell.appendChild(op); }
     row.appendChild(linkCell);
     const del = document.createElement("button"); del.className = "lr-del"; del.textContent = "✕";
     if (ed) { del.title = "Excluir"; del.onclick = () => removeRow(idx); } else del.style.visibility = "hidden";
