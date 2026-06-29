@@ -1,0 +1,13 @@
+{
+  "name": "dojo-collector-acessibilidade",
+  "private": true,
+  "type": "module",
+  "description": "Coletor diário da nota de acessibilidade da AMA/UNIFESP. Roda no GitHub Actions, NÃO faz parte do site (Vercel ignora esta pasta).",
+  "scripts": {
+    "coletar": "node coletar.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "playwright": "^1.48.0"
+  }
+}

@@ -1,0 +1,45 @@
+name: Coleta Acessibilidade (AMA)
+
+on:
+  schedule:
+    - cron: "0 10 * * *" # 10:00 UTC = 07:00 BRT (todo dia)
+  workflow_dispatch:
+    inputs:
+      domain:
+        description: "Coletar só este domínio (opcional, p/ teste). Deixe vazio para coletar todos."
+        required: false
+        default: ""
+
+# Evita rodadas sobrepostas (cada coleta pode levar minutos por site)
+concurrency:
+  group: coleta-acessibilidade
+  cancel-in-progress: false
+
+jobs:
+  coletar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Instalar dependências
+        working-directory: collector
+        run: npm install
+
+      - name: Instalar navegador (Chromium)
+        working-directory: collector
+        run: npx playwright install --with-deps chromium
+
+      - name: Coletar
+        working-directory: collector
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ONLY_DOMAIN: ${{ github.event.inputs.domain }}
+        run: node coletar.mjs
