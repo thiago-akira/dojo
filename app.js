@@ -3439,10 +3439,13 @@ function histReset() { histStack = [{ s: _snap(), label: "Estado ao abrir", ts: 
 function pushHist(label) {
   if (_histLock || !canEdit) return;
   histStack = histStack.slice(0, histIdx + 1);
-  histStack.push({ s: _snap(), label: label || "Alteração", ts: Date.now() });
+  const ts = Date.now();
+  histStack.push({ s: _snap(), label: label || "Alteração", ts });
   if (histStack.length > 400) histStack.shift();
   histIdx = histStack.length - 1;
   updateHistButtons();
+  // Persiste label no localStorage para sobreviver recargas/deploys
+  if (curProjeto) { try { const k = "dojo_hist_log_" + curProjeto.id; const a = JSON.parse(localStorage.getItem(k) || "[]"); a.push({ label: label || "Alteração", ts }); if (a.length > 500) a.splice(0, a.length - 500); localStorage.setItem(k, JSON.stringify(a)); } catch(e) {} }
 }
 function _restoreHist(i) {
   if (i < 0 || i >= histStack.length) return;
@@ -3490,10 +3493,18 @@ async function abrirHistorico(aba) {
       setAba(aba);
     });
 }
+function limparHistLog() {
+  if (!curProjeto) return;
+  try { localStorage.removeItem("dojo_hist_log_" + curProjeto.id); } catch(e) {}
+  abrirHistorico("hist");
+  toast("Histórico guardado apagado.");
+}
 function renderHistBody(aba, box) {
   if (aba === "hist") {
     const items = histStack.map((h, i) => '<div class="hist-item' + (i === histIdx ? " on" : "") + '" onclick="_restoreHist(' + i + ');abrirHistorico(\'hist\')"><span class="hist-dot"></span><div class="hist-b"><div class="hist-l">' + esc(h.label) + '</div><div class="hist-t">' + fmtRel(h.ts) + (i === histIdx ? ' · atual' : '') + '</div></div></div>').reverse().join("");
-    box.innerHTML = '<div class="hist-list">' + (items || '<p class="muted-note">Sem alterações nesta sessão.</p>') + '</div>';
+    let olderHtml = "";
+    if (curProjeto) { try { const k = "dojo_hist_log_" + curProjeto.id; const saved = JSON.parse(localStorage.getItem(k) || "[]"); const sessionStart = histStack.length ? histStack[0].ts : Date.now(); const older = saved.filter(e => e.ts < sessionStart).reverse(); if (older.length) olderHtml = '<div class="hist-section">Sessões anteriores</div>' + older.map(h => '<div class="hist-item faded"><span class="hist-dot"></span><div class="hist-b"><div class="hist-l">' + esc(h.label) + '</div><div class="hist-t">' + fmtRel(h.ts) + '</div></div></div>').join("") + '<div style="text-align:center;margin-top:8px"><button class="lnk" onclick="limparHistLog()">limpar histórico guardado</button></div>'; } catch(e) {} }
+    box.innerHTML = '<div class="hist-list">' + (items || '<p class="muted-note">Sem alterações nesta sessão.</p>') + olderHtml + '</div>';
   } else if (aba === "lixeira") {
     const tr = state.trash || [];
     box.innerHTML = '<div class="hist-list">' + (tr.length ? tr.map((d, i) => {
@@ -4050,8 +4061,8 @@ async function computeAutoEvolucao() {
   (qz.data || []).forEach(q => { total++; if (q.status && q.status !== "aberto") done++; });
   // Entregas (projetos.dados.entregas): marcadas como entregue
   ((curProjeto.dados && curProjeto.dados.entregas) || []).forEach(e => { total++; if (e.entregue) done++; });
-  // Fontes nos widgets do layout
-  (state.spaces || []).forEach(s => (s.tiles || []).forEach(t => {
+  // Fontes nos widgets do layout (excluindo abas internas/admin)
+  (state.spaces || []).filter(s => s.visibility !== "interno").forEach(s => (s.tiles || []).forEach(t => {
     if (t.type === "kanban") {
       if (t.props.columns) {
         t.props.columns.forEach(col => { const dcol = /feito|conclu|done|pronto/i.test(col.nome || ""); (col.cards || []).forEach(() => { total++; if (dcol) done++; }); });

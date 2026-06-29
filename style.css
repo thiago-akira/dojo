@@ -686,6 +686,8 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 .hist-l{font-size:13.5px;font-weight:700}
 .hist-t{font-size:11.5px;color:var(--faint);font-weight:600}
 .lix-acts{display:flex;gap:10px;flex:none}
+.hist-section{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);padding:10px 4px 4px;border-top:1px solid var(--line);margin-top:6px}
+.hist-item.faded{opacity:.55}
 
 /* ===== Modal genérico ===== */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40}
