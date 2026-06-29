@@ -818,6 +818,12 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 .am-meta.bad{color:var(--danger)}
 .am-spark{width:100%;height:42px;display:block}
 .am-empty{display:flex;align-items:center;justify-content:center;height:100%;text-align:center;padding:10px}
+.am-axe{border-top:1px solid var(--line);padding-top:9px;margin-top:2px}
+.am-axe-h{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin-bottom:5px}
+.am-axe-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.am-axe-tot{font-size:13px;font-weight:800;color:var(--ok)}
+.am-axe-tot.bad{color:var(--danger)}
+.am-axe-lvls{font-size:11.5px;font-weight:600;color:var(--muted)}
 
 /* ===== Modal genérico ===== */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40}

@@ -1712,36 +1712,60 @@ function amRenderWidget(t, c) {
 }
 async function amLoad(box, domain) {
   if (!curProjeto) { box.innerHTML = '<p class="muted-note">Abra um projeto para ver os dados.</p>'; return; }
-  const { data, error } = await sb.from("acessibilidade_monitor")
-    .select("coletado_em,status,nota,erros,qtd_a,qtd_aa,qtd_aaa")
-    .eq("projeto_id", curProjeto.id).eq("domain", domain).eq("fonte", "ama")
-    .order("coletado_em", { ascending: false }).limit(30);
+  const [amaRes, axeRes] = await Promise.all([
+    sb.from("acessibilidade_monitor").select("coletado_em,status,nota,erros,qtd_a,qtd_aa,qtd_aaa")
+      .eq("projeto_id", curProjeto.id).eq("domain", domain).eq("fonte", "ama")
+      .order("coletado_em", { ascending: false }).limit(30),
+    sb.from("acessibilidade_monitor").select("coletado_em,status,erros,qtd_a,qtd_aa,qtd_aaa")
+      .eq("projeto_id", curProjeto.id).eq("domain", domain).eq("fonte", "axe")
+      .order("coletado_em", { ascending: false }).limit(1)
+  ]);
   if (box.isConnected === false) return; // re-render durante o await → descarta escrita obsoleta
-  if (error) { box.innerHTML = '<p class="muted-note">Não foi possível carregar (' + esc(error.message) + ').</p>'; return; }
-  const rows = data || [];
-  if (!rows.length) { box.innerHTML = '<div class="am-empty"><p class="muted-note">Aguardando a primeira coleta. A nota da AMA é registrada automaticamente todo dia às 7h.</p></div>'; return; }
-  box.innerHTML = amBuildHtml(rows);
+  if (amaRes.error) { box.innerHTML = '<p class="muted-note">Não foi possível carregar (' + esc(amaRes.error.message) + ').</p>'; return; }
+  const rows = amaRes.data || [];
+  const axe = (axeRes.data || [])[0] || null;
+  if (!rows.length && !axe) { box.innerHTML = '<div class="am-empty"><p class="muted-note">Aguardando a primeira coleta. A nota é registrada automaticamente todo dia às 7h.</p></div>'; return; }
+  box.innerHTML = amBuildHtml(rows, axe);
 }
-function amBuildHtml(rows) {
-  const latest = rows[0];
-  const indisp = latest.status === "indisponivel";
-  const nota = latest.nota == null ? null : Number(latest.nota);
-  const erros = latest.erros || 0;
-  const alarm = !indisp && ((nota != null && nota < 9.5) || erros > 0);
-  const cls = indisp ? "am-warn" : (alarm ? "am-red" : "am-ok");
+function amBuildHtml(rows, axe) {
+  let h = "";
+  if (rows.length) {
+    const latest = rows[0];
+    const indisp = latest.status === "indisponivel";
+    const nota = latest.nota == null ? null : Number(latest.nota);
+    const erros = latest.erros || 0;
+    const alarm = !indisp && ((nota != null && nota < 9.5) || erros > 0);
+    const cls = indisp ? "am-warn" : (alarm ? "am-red" : "am-ok");
 
-  let h = '<div class="am-top">';
-  h += '<div class="am-score ' + cls + '">' +
-    '<div class="am-num">' + (indisp ? "—" : (nota != null ? nota.toFixed(1).replace(".", ",") : "—")) + '</div>' +
-    '<div class="am-lbl">' + (indisp ? "indisponível" : "nota AMA") + '</div></div>';
-  const cnt = (lbl, v) => '<div class="am-cnt' + ((v || 0) > 0 ? " bad" : "") + '"><span class="am-cnt-n">' + (v == null ? "–" : (v || 0)) + '</span><span class="am-cnt-l">' + lbl + '</span></div>';
-  h += '<div class="am-cnts">' + cnt("A", latest.qtd_a) + cnt("AA", latest.qtd_aa) + cnt("AAA", latest.qtd_aaa) + '</div>';
-  h += '</div>';
+    h += '<div class="am-top">';
+    h += '<div class="am-score ' + cls + '">' +
+      '<div class="am-num">' + (indisp ? "—" : (nota != null ? nota.toFixed(1).replace(".", ",") : "—")) + '</div>' +
+      '<div class="am-lbl">' + (indisp ? "indisponível" : "nota AMA") + '</div></div>';
+    const cnt = (lbl, v) => '<div class="am-cnt' + ((v || 0) > 0 ? " bad" : "") + '"><span class="am-cnt-n">' + (v == null ? "–" : (v || 0)) + '</span><span class="am-cnt-l">' + lbl + '</span></div>';
+    h += '<div class="am-cnts">' + cnt("A", latest.qtd_a) + cnt("AA", latest.qtd_aa) + cnt("AAA", latest.qtd_aaa) + '</div>';
+    h += '</div>';
 
-  const metaCls = alarm || indisp ? "am-meta bad" : "am-meta";
-  const metaTxt = indisp ? "⚠ Coleta indisponível" : (erros > 0 ? ("⚠ " + erros + " erro" + (erros > 1 ? "s" : "")) : "✓ sem erros");
-  h += '<div class="' + metaCls + '">' + metaTxt + ' · ' + amFmtDate(latest.coletado_em) + '</div>';
-  h += amSpark(rows.slice().reverse());
+    const metaCls = alarm || indisp ? "am-meta bad" : "am-meta";
+    const metaTxt = indisp ? "⚠ Coleta indisponível" : (erros > 0 ? ("⚠ " + erros + " erro" + (erros > 1 ? "s" : "")) : "✓ sem erros");
+    h += '<div class="' + metaCls + '">' + metaTxt + ' · ' + amFmtDate(latest.coletado_em) + '</div>';
+    h += amSpark(rows.slice().reverse());
+  } else {
+    h += '<p class="muted-note" style="margin:2px 0">Nota da AMA: aguardando coleta.</p>';
+  }
+
+  if (axe) {
+    const aErr = axe.status === "indisponivel";
+    const av = axe.erros || 0;
+    h += '<div class="am-axe">';
+    h += '<div class="am-axe-h">Diagnóstico técnico · axe' + (aErr ? ' — indisponível' : "") + '</div>';
+    if (!aErr) {
+      h += '<div class="am-axe-row">' +
+        '<span class="am-axe-tot' + (av > 0 ? " bad" : "") + '">' + av + ' violaç' + (av === 1 ? "ão" : "ões") + '</span>' +
+        '<span class="am-axe-lvls">A ' + (axe.qtd_a || 0) + ' · AA ' + (axe.qtd_aa || 0) + ' · AAA ' + (axe.qtd_aaa || 0) + '</span>' +
+        '</div>';
+    }
+    h += '</div>';
+  }
   return h;
 }
 function amSpark(rowsAsc) {

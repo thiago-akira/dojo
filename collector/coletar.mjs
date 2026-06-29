@@ -137,10 +137,12 @@ async function inserir(projetos, domain, agora, row) {
   console.log("Alvos (" + alvos.size + "): " + [...alvos.keys()].join(", "));
 
   const browser = await chromium.launch();
-  const page = await browser.newPage({
+  // @axe-core/playwright exige page vinda de um context explícito (não browser.newPage)
+  const context = await browser.newContext({
     viewport: { width: 1366, height: 900 },
     userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
   });
+  const page = await context.newPage();
   page.setDefaultTimeout(60000);
 
   let ok = 0, falhas = 0;
