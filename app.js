@@ -1110,7 +1110,7 @@ const WIDGETS = {
     form() { return '<p class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:13px">Crie e edite as notas <b>direto no widget</b>: ✎ para nova nota, ⋯ para listas, marcadores, importar/exportar e lixeira.</p>'; }
   },
   linkref: {
-    emoji: "🔖", name: "Links de Referência", desc: "Tabela editável para catalogar links com ideia, fonte e motivo. Reordene arrastando.",
+    emoji: "🔖", name: "Links de Referência", desc: "Tabela editável para catalogar links com ideia/fonte e motivo. Reordene arrastando.",
     w: 7, h: 4, defaults: { rows: [] },
     render(t, c) { lrRenderWidget(t, c); },
     form() { return '<p class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:13px">Edite a tabela <b>direto no widget</b>: ＋ Adicionar link, arraste pela alça ⠿ para reordenar, botão direito numa linha para copiar/duplicar/excluir.</p>'; }
@@ -1514,7 +1514,7 @@ function nbRenderWidget(t, c) {
 /* ====================================================================
    Widget "Links de Referência" — tabela inline editável (grid), com
    reordenação por drag-and-drop (pointer events) e menu de contexto.
-   Dados no props do tile: { rows:[{id,ideia,fonte,motivo,link}] }.
+   Dados no props do tile: { rows:[{id,ideia,motivo,link}] }.
    ==================================================================== */
 function lrPopup(x, y, items) {
   document.querySelectorAll(".nb-pop").forEach(e => e.remove());
@@ -1535,58 +1535,86 @@ function lrPopup(x, y, items) {
 
 function lrRenderWidget(t, c) {
   const p = t.props; p.rows = p.rows || [];
-  // Segue o modo edição: ligado = edita (link completo); desligado = só o botão de abrir.
+  // Segue o modo edição: ligado = campos editáveis; desligado = leitura (visão do cliente).
+  // O botão ↗ abre o link em qualquer um dos modos.
   const ed = !!canEdit;
   const save0 = () => { if (ed) save(); };
 
   c.innerHTML = "";
   const root = document.createElement("div"); root.className = "lr"; c.appendChild(root);
-  const head = document.createElement("div"); head.className = "w-head"; head.innerHTML = '<span class="w-title">Links de Referência</span>'; root.appendChild(head);
+
+  const head = document.createElement("div"); head.className = "w-head";
+  head.innerHTML = '<span class="w-title">Links de Referência</span>';
+  root.appendChild(head);
+
   const table = document.createElement("div"); table.className = "lr-table"; root.appendChild(table);
   const hdr = document.createElement("div"); hdr.className = "lr-row lr-head";
   hdr.innerHTML = '<div class="lr-h"></div><div class="lr-h">Ideia/Fonte</div><div class="lr-h">Motivo</div><div class="lr-h">Link</div><div class="lr-h"></div>';
   table.appendChild(hdr);
-  if (ed) { const foot = document.createElement("div"); foot.className = "lr-foot"; const add = document.createElement("button"); add.className = "lr-add"; add.textContent = "＋ Adicionar link"; add.onclick = addRow; foot.appendChild(add); root.appendChild(foot); }
+
+  if (ed) {
+    const foot = document.createElement("div"); foot.className = "lr-foot";
+    const add = document.createElement("button"); add.className = "lr-add"; add.textContent = "＋ Adicionar link";
+    add.onclick = addRow; foot.appendChild(add); root.appendChild(foot);
+  }
 
   function rowEls() { return Array.prototype.slice.call(table.querySelectorAll(".lr-row:not(.lr-head)")); }
+
   function drawRows() {
     rowEls().forEach(e => e.remove());
     const em0 = table.querySelector(".lr-empty"); if (em0) em0.remove();
-    if (!p.rows.length) { const em = document.createElement("div"); em.className = "lr-empty"; em.textContent = ed ? "Nenhum link ainda. Use ＋ Adicionar link." : "Nenhum link."; table.appendChild(em); return; }
+    if (!p.rows.length) {
+      const em = document.createElement("div"); em.className = "lr-empty";
+      em.textContent = ed ? "Nenhum link ainda. Use ＋ Adicionar link." : "Nenhum link.";
+      table.appendChild(em); return;
+    }
     p.rows.forEach((r, idx) => table.appendChild(buildRow(r, idx)));
   }
+
   function buildRow(r, idx) {
     const row = document.createElement("div"); row.className = "lr-row"; row.dataset.idx = idx;
+
     const grip = document.createElement("div"); grip.className = "lr-grip"; grip.textContent = "⠿";
     if (ed) { grip.title = "Arraste para reordenar"; attachDrag(grip, row, idx); } else grip.style.opacity = ".3";
     row.appendChild(grip);
-    const mkInput = (key, ph2, cls) => {
-      const cell = document.createElement("div"); cell.className = "lr-cell" + (cls ? " " + cls : "");
-      const i = document.createElement("input"); i.className = "lr-inp"; i.value = r[key] || ""; i.placeholder = ph2; i.disabled = !ed;
-      cell.appendChild(i); return { cell: cell, input: i };
+
+    const mkText = (key, ph) => {
+      const cell = document.createElement("div"); cell.className = "lr-cell";
+      const i = document.createElement("input"); i.className = "lr-inp"; i.value = r[key] || ""; i.placeholder = ph; i.disabled = !ed;
+      if (ed) i.addEventListener("change", () => { r[key] = i.value; save0(); });
+      cell.appendChild(i); row.appendChild(cell);
     };
-    const a = mkInput("ideia", "Ideia / Fonte"); a.input.addEventListener("change", () => { r.ideia = a.input.value; save0(); }); row.appendChild(a.cell);
-    const d = mkInput("motivo", "Motivo"); d.input.addEventListener("change", () => { r.motivo = d.input.value; save0(); }); row.appendChild(d.cell);
+    mkText("ideia", "Ideia / Fonte");
+    mkText("motivo", "Motivo");
+
     const linkCell = document.createElement("div"); linkCell.className = "lr-cell lr-link-cell";
-    const linkVal = (r.link || "").trim();
     const li = document.createElement("input"); li.className = "lr-inp"; li.value = r.link || ""; li.placeholder = "https://…"; li.disabled = !ed;
-    if (ed) { li.addEventListener("change", () => { r.link = li.value; save0(); row.replaceWith(buildRow(r, idx)); }); }
+    if (ed) li.addEventListener("change", () => { r.link = li.value; save0(); row.replaceWith(buildRow(r, idx)); });
     linkCell.appendChild(li);
-    if (linkVal) { const op = document.createElement("button"); op.className = "lr-open"; op.textContent = "↗"; op.title = "Abrir em nova aba"; op.onclick = () => window.open(r.link || li.value, "_blank", "noopener"); linkCell.appendChild(op); }
+    if ((r.link || "").trim()) {
+      const op = document.createElement("button"); op.className = "lr-open"; op.textContent = "↗"; op.title = "Abrir em nova aba";
+      op.onclick = () => window.open(r.link || li.value, "_blank", "noopener");
+      linkCell.appendChild(op);
+    }
     row.appendChild(linkCell);
+
     const del = document.createElement("button"); del.className = "lr-del"; del.textContent = "✕";
     if (ed) { del.title = "Excluir"; del.onclick = () => removeRow(idx); } else del.style.visibility = "hidden";
     row.appendChild(del);
 
     const openMenu = (x, y) => {
       const items = [{ label: "Copiar", on: () => copyRow(r) }];
-      if (ed) { items.push({ label: "Duplicar", on: () => dupRow(idx) }); items.push({ sep: true }); items.push({ label: "Excluir", danger: true, on: () => removeRow(idx) }); }
+      if (ed) items.push({ label: "Duplicar", on: () => dupRow(idx) }, { sep: true }, { label: "Excluir", danger: true, on: () => removeRow(idx) });
       lrPopup(x, y, items);
     };
     row.addEventListener("contextmenu", e => { e.preventDefault(); openMenu(e.clientX, e.clientY); });
     let lpTimer = null, lpXY = null;
     const clrLp = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
-    row.addEventListener("pointerdown", e => { if (e.pointerType !== "touch") return; if (e.target.closest(".lr-grip,.lr-open,.lr-del")) return; lpXY = { x: e.clientX, y: e.clientY }; lpTimer = setTimeout(() => openMenu(lpXY.x, lpXY.y), 500); });
+    row.addEventListener("pointerdown", e => {
+      if (e.pointerType !== "touch") return;
+      if (e.target.closest(".lr-grip,.lr-open,.lr-del,.lr-inp")) return;
+      lpXY = { x: e.clientX, y: e.clientY }; lpTimer = setTimeout(() => openMenu(lpXY.x, lpXY.y), 500);
+    });
     row.addEventListener("pointerup", clrLp);
     row.addEventListener("pointercancel", clrLp);
     row.addEventListener("pointermove", e => { if (lpXY && Math.hypot(e.clientX - lpXY.x, e.clientY - lpXY.y) > 8) clrLp(); });
@@ -1617,10 +1645,19 @@ function lrRenderWidget(t, c) {
     });
   }
 
-  function addRow() { const r = { id: uid(), ideia: "", fonte: "", motivo: "", link: "" }; p.rows.push(r); save0(); drawRows(); const rows = rowEls(); const last = rows[rows.length - 1]; if (last) { last.scrollIntoView({ block: "nearest" }); const i = last.querySelector("input"); if (i) i.focus(); } }
+  function addRow() {
+    const r = { id: uid(), ideia: "", motivo: "", link: "" };
+    p.rows.push(r); save0(); drawRows();
+    const rows = rowEls(); const last = rows[rows.length - 1];
+    if (last) { last.scrollIntoView({ block: "nearest" }); const i = last.querySelector("input"); if (i) i.focus(); }
+  }
   async function removeRow(idx) { if (!(await confirmDialog("Excluir este link?"))) return; p.rows.splice(idx, 1); save0(); drawRows(); }
-  function dupRow(idx) { const r = p.rows[idx]; if (!r) return; const copy = Object.assign({}, r, { id: uid() }); p.rows.splice(idx + 1, 0, copy); save0(); drawRows(); }
-  function copyRow(r) { const txt = [r.ideia, r.fonte, r.motivo, r.link].map(s => (s || "").trim()).filter(Boolean).join(" · "); if (!txt) { toast("Linha vazia."); return; } navigator.clipboard.writeText(txt).then(() => toast("Copiado!")).catch(() => toast("Erro ao copiar.")); }
+  function dupRow(idx) { const r = p.rows[idx]; if (!r) return; p.rows.splice(idx + 1, 0, Object.assign({}, r, { id: uid() })); save0(); drawRows(); }
+  function copyRow(r) {
+    const txt = [r.ideia, r.motivo, r.link].map(s => (s || "").trim()).filter(Boolean).join(" · ");
+    if (!txt) { toast("Linha vazia."); return; }
+    navigator.clipboard.writeText(txt).then(() => toast("Copiado!")).catch(() => toast("Erro ao copiar."));
+  }
 
   drawRows();
 }
