@@ -1102,9 +1102,407 @@ const WIDGETS = {
     form() {
       return '<p class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:13px">Use os botões dentro do widget para <b>editar as perguntas</b> e <b>ver as respostas</b>. As perguntas, mídias e respostas ficam salvas no banco (não aqui).</p>';
     }
+  },
+  notas2: {
+    emoji: "🗒", name: "Notas", desc: "Bloco de notas estilo Apple Notes: notas de texto e listas, marcadores coloridos, busca e lembretes.",
+    w: 6, h: 5, defaults: { notes: [], trash: [], labels: [], active: "" },
+    render(t, c) { nbRenderWidget(t, c); }
   }
 };
 function field(label, k, v) { return '<label>' + esc(label) + '</label><input data-k="' + k + '" value="' + escAttr(v) + '">'; }
+
+/* ====================================================================
+   Widget "Notas" (estilo Apple Notes) — dois painéis, notas de texto e
+   listas, marcadores coloridos, busca, lembretes, lixeira. Dados no
+   props do tile: { notes, trash, labels, active }. Admin edita sempre;
+   cliente vê em leitura. Tudo via closures (sem onclick global).
+   ==================================================================== */
+const NB_COLORS = ["#e0604a", "#e8a33d", "#e6c84a", "#3fa873", "#4aa6c7", "#5b8def", "#9b7ede", "#d671b0"];
+const _nbUI = {}; // estado transitório por tile (não persistido)
+function nbUI(id) { return _nbUI[id] || (_nbUI[id] = { q: "", active: null, pane: "list", filter: "all" }); }
+function nbid() { return "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function nbPlainLines(html) {
+  let s = String(html == null ? "" : html);
+  s = s.replace(/<(div|p|br|li|h[1-6])[^>]*>/gi, "\n").replace(/<\/(div|p|li|h[1-6])>/gi, "").replace(/<[^>]+>/g, "");
+  const ta = document.createElement("textarea"); ta.innerHTML = s; s = ta.value;
+  return s.split(/\n+/).map(x => x.trim()).filter(Boolean);
+}
+function nbTitle(n) {
+  if (!n) return "";
+  if (n.kind === "list") {
+    const t = (n.listTitle || "").trim(); if (t) return t;
+    const fi = (n.items || []).find(i => i.text && i.text.trim());
+    return fi ? fi.text.trim() : "Lista sem título";
+  }
+  return nbPlainLines(n.body)[0] || "Nova nota";
+}
+function nbPreview(n) {
+  if (!n) return "";
+  if (n.kind === "list") {
+    const items = n.items || []; if (!items.length) return "Lista vazia";
+    const fi = items.find(i => i.text && i.text.trim());
+    return fi ? fi.text.trim() : (items.length + (items.length === 1 ? " item" : " itens"));
+  }
+  return nbPlainLines(n.body)[1] || "Sem texto adicional";
+}
+function nbDate(ts) {
+  if (!ts) return "";
+  const d = new Date(ts), now = new Date();
+  const same = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (same(d, now)) return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  if (same(d, y)) return "Ontem";
+  if ((now - d) / 86400000 < 7) { let wd = d.toLocaleDateString("pt-BR", { weekday: "long" }).replace(/-feira$/, ""); return wd.charAt(0).toUpperCase() + wd.slice(1); }
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+}
+function nbSort(notes) {
+  return (notes || []).slice().sort((a, b) => { if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1; return (b.updatedAt || 0) - (a.updatedAt || 0); });
+}
+function nbOverdue(n) { return !!(n && n.remind && n.remind < Date.now() && !n.remindFired); }
+function nbNoteText(n) { // texto pesquisável
+  if (n.kind === "list") return ((n.listTitle || "") + " " + (n.items || []).map(i => i.text || "").join(" ")).toLowerCase();
+  return (nbTitle(n) + " " + nbPlainLines(n.body).join(" ")).toLowerCase();
+}
+
+function nbRenderWidget(t, c) {
+  const p = t.props;
+  p.notes = p.notes || []; p.trash = p.trash || []; p.labels = p.labels || [];
+  const ed = !!(typeof canEditReal !== "undefined" && canEditReal && !previewCliente);
+  const ui = nbUI(t.id);
+  if (ui.active == null) ui.active = p.active || (nbSort(p.notes)[0] || {}).id || null;
+
+  const labelById = id => p.labels.find(l => l.id === id);
+  const activeNote = () => p.notes.find(n => n.id === ui.active) || null;
+  const debounce = (fn, ms) => { let h; return function () { clearTimeout(h); h = setTimeout(fn, ms); }; };
+  const touch = n => { n.updatedAt = Date.now(); };
+  const persist = () => { if (ed) { p.active = ui.active; save(); } };
+
+  // ---------- estrutura base ----------
+  c.innerHTML = "";
+  const root = document.createElement("div");
+  root.className = "nb"; root.setAttribute("data-pane", ui.pane);
+  const listPane = document.createElement("div"); listPane.className = "nb-list";
+  const edPane = document.createElement("div"); edPane.className = "nb-editor";
+  root.appendChild(listPane); root.appendChild(edPane); c.appendChild(root);
+
+  // responsivo: largura < 520 → painéis em tela cheia alternada
+  const applyNarrow = w => root.classList.toggle("narrow", w < 520);
+  applyNarrow(c.clientWidth || 9999);
+  try { const ro = new ResizeObserver(es => { for (const e of es) applyNarrow(e.contentRect.width); }); ro.observe(c); } catch (e) {}
+
+  // ---------- painel esquerdo ----------
+  function buildList() {
+    listPane.innerHTML = "";
+    const top = document.createElement("div"); top.className = "nb-list-top";
+    const search = document.createElement("input"); search.className = "nb-search"; search.type = "search";
+    search.placeholder = "Buscar"; search.value = ui.q;
+    const refreshDeb = debounce(() => refreshItems(), 120);
+    search.addEventListener("input", () => { ui.q = search.value; refreshDeb(); });
+    top.appendChild(search);
+    if (ed) {
+      const bNew = document.createElement("button"); bNew.className = "nb-ic"; bNew.title = "Nova nota"; bNew.textContent = "✎";
+      bNew.onclick = () => newNote("text");
+      const bMore = document.createElement("button"); bMore.className = "nb-ic"; bMore.title = "Mais"; bMore.textContent = "⋯";
+      bMore.onclick = () => leftMenu(bMore);
+      top.appendChild(bNew); top.appendChild(bMore);
+    }
+    listPane.appendChild(top);
+
+    const chips = document.createElement("div"); chips.className = "nb-chips";
+    const mkChip = (id, name, color) => {
+      const ch = document.createElement("button");
+      ch.className = "nb-chip" + (ui.filter === id ? " on" : "");
+      ch.innerHTML = (color ? '<span class="nb-chip-dot" style="background:' + color + '"></span>' : "") + esc(name);
+      ch.onclick = () => { ui.filter = id; buildList(); };
+      return ch;
+    };
+    chips.appendChild(mkChip("all", "Todas", ""));
+    p.labels.forEach(l => chips.appendChild(mkChip(l.id, l.name, l.color)));
+    listPane.appendChild(chips);
+
+    const items = document.createElement("div"); items.className = "nb-items";
+    listPane.appendChild(items);
+    refreshItems();
+  }
+  function visibleNotes() {
+    let arr = nbSort(p.notes);
+    if (ui.filter !== "all") arr = arr.filter(n => (n.labels || []).indexOf(ui.filter) >= 0);
+    const q = (ui.q || "").trim().toLowerCase();
+    if (q) arr = arr.filter(n => nbNoteText(n).indexOf(q) >= 0);
+    return arr;
+  }
+  function refreshItems() {
+    const box = listPane.querySelector(".nb-items"); if (!box) return;
+    const arr = visibleNotes();
+    if (!arr.length) { box.innerHTML = '<div class="nb-empty-list">' + (ui.q ? "Nada encontrado." : "Sem notas ainda.") + "</div>"; return; }
+    box.innerHTML = arr.map(n => {
+      const dots = (n.labels || []).map(id => { const l = labelById(id); return l ? '<span class="nb-ldot" style="background:' + l.color + '"></span>' : ""; }).join("");
+      const rem = n.remind ? '<span class="nb-bell' + (nbOverdue(n) ? " due" : "") + '">🔔</span>' : "";
+      return '<div class="nb-item' + (n.id === ui.active ? " on" : "") + '" data-id="' + escAttr(n.id) + '">' +
+        '<div class="nb-item-row1">' + (n.pinned ? '<span class="nb-pin">📌</span>' : "") +
+        '<span class="nb-item-title">' + esc(nbTitle(n)) + "</span>" + rem + "</div>" +
+        '<div class="nb-item-row2"><span class="nb-item-prev">' + esc(nbPreview(n)) + "</span></div>" +
+        '<div class="nb-item-row3"><span class="nb-item-date">' + esc(nbDate(n.updatedAt)) + "</span>" +
+        (dots ? '<span class="nb-ldots">' + dots + "</span>" : "") + "</div></div>";
+    }).join("");
+    box.querySelectorAll(".nb-item").forEach(el => el.onclick = () => openNote(el.dataset.id));
+  }
+  function openNote(id) { ui.active = id; if (root.classList.contains("narrow")) { ui.pane = "editor"; root.setAttribute("data-pane", "editor"); } persist(); buildEditor(); refreshItems(); }
+
+  // ---------- painel direito (editor) ----------
+  function buildEditor() {
+    edPane.innerHTML = "";
+    const n = activeNote();
+    if (!n) {
+      const empty = document.createElement("div"); empty.className = "nb-editor-empty";
+      if (ed) {
+        empty.innerHTML = '<button class="nb-big" data-k="text">✎ Nova nota</button><button class="nb-big" data-k="list">☑️ Nova lista</button>';
+        empty.querySelectorAll(".nb-big").forEach(b => b.onclick = () => newNote(b.dataset.k));
+      } else { empty.innerHTML = '<p class="muted-note">Selecione uma nota.</p>'; }
+      edPane.appendChild(empty); return;
+    }
+    // barra superior
+    const bar = document.createElement("div"); bar.className = "nb-ed-bar";
+    if (root.classList.contains("narrow")) {
+      const back = document.createElement("button"); back.className = "nb-back"; back.textContent = "‹ Notas";
+      back.onclick = () => { ui.pane = "list"; root.setAttribute("data-pane", "list"); buildList(); };
+      bar.appendChild(back);
+    }
+    const meta = document.createElement("div"); meta.className = "nb-ed-meta";
+    meta.innerHTML = nbDate(n.updatedAt ? n.updatedAt : n.createdAt) +
+      (n.remind ? ' <span class="nb-bell' + (nbOverdue(n) ? " due" : "") + '">🔔 ' + nbDate(n.remind) + "</span>" : "");
+    bar.appendChild(meta);
+    const acts = document.createElement("div"); acts.className = "nb-ed-acts";
+    if (ed) {
+      const mk = (txt, title, fn, on) => { const b = document.createElement("button"); b.className = "nb-ic" + (on ? " on" : ""); b.title = title; b.textContent = txt; b.onclick = () => fn(b); acts.appendChild(b); return b; };
+      mk("🔔", "Lembrete", () => reminderModal(n));
+      mk("🏷", "Marcadores", b => labelMenu(n, b));
+      mk("📌", n.pinned ? "Desafixar" : "Fixar", () => { n.pinned = !n.pinned; touch(n); persist(); buildEditor(); refreshItems(); }, n.pinned);
+      mk("⋯", "Mais", b => noteMenu(n, b));
+    }
+    bar.appendChild(acts);
+    edPane.appendChild(bar);
+
+    const body = document.createElement("div"); body.className = "nb-ed-body";
+    if (n.kind === "list") buildListEditor(n, body); else buildTextEditor(n, body);
+    edPane.appendChild(body);
+  }
+
+  function buildTextEditor(n, body) {
+    const div = document.createElement("div");
+    div.className = "nb-text"; div.contentEditable = ed ? "true" : "false";
+    div.setAttribute("data-ph", "Escreva aqui…");
+    div.innerHTML = n.body || "";
+    const saveDeb = debounce(() => { persist(); refreshItems(); }, 350);
+    div.addEventListener("input", () => { n.body = div.innerHTML; touch(n); saveDeb(); });
+    div.addEventListener("keydown", e => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        const k = e.key.toLowerCase();
+        if (k === "b") { e.preventDefault(); document.execCommand("bold"); }
+        else if (k === "i") { e.preventDefault(); document.execCommand("italic"); }
+      }
+    });
+    div.addEventListener("paste", e => { e.preventDefault(); const txt = (e.clipboardData || window.clipboardData).getData("text/plain"); document.execCommand("insertText", false, txt); });
+    div.addEventListener("contextmenu", e => {
+      if (!ed) return; const sel = window.getSelection();
+      if (sel && String(sel).trim()) { e.preventDefault(); const rng = sel.getRangeAt(0); nbPopup2(e.clientX, e.clientY, [{ label: "🔗 Adicionar link", on: () => addLink(div, n, rng) }]); }
+    });
+    div.addEventListener("blur", () => { linkify(div); n.body = div.innerHTML; touch(n); persist(); });
+    div.addEventListener("click", e => { const a = e.target.closest("a"); if (a && (!ed || e.metaKey || e.ctrlKey)) { e.preventDefault(); window.open(a.href, "_blank", "noopener"); } });
+    body.appendChild(div);
+  }
+  function addLink(div, n, rng) {
+    const url = window.prompt("Endereço do link (https://…):", "https://"); if (!url) return;
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(rng);
+    document.execCommand("createLink", false, url);
+    div.querySelectorAll("a").forEach(a => { a.target = "_blank"; a.rel = "noopener"; });
+    n.body = div.innerHTML; touch(n); persist(); refreshItems();
+  }
+  function linkify(div) {
+    const re = /(https?:\/\/[^\s<]+)/g;
+    const walk = node => {
+      if (node.nodeType === 3 && node.nodeValue && re.test(node.nodeValue) && !(node.parentNode && node.parentNode.closest && node.parentNode.closest("a"))) {
+        const span = document.createElement("span"); span.innerHTML = node.nodeValue.replace(re, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+        node.parentNode.replaceChild(span, node);
+      } else if (node.nodeType === 1 && node.nodeName !== "A") { Array.from(node.childNodes).forEach(walk); }
+    };
+    Array.from(div.childNodes).forEach(walk);
+  }
+
+  function buildListEditor(n, body) {
+    n.items = n.items || [];
+    const titleInp = document.createElement("input");
+    titleInp.className = "nb-list-title"; titleInp.placeholder = "Título da lista"; titleInp.value = n.listTitle || ""; titleInp.disabled = !ed;
+    const saveDeb = debounce(() => { persist(); refreshItems(); }, 350);
+    titleInp.addEventListener("input", () => { n.listTitle = titleInp.value; touch(n); saveDeb(); });
+    body.appendChild(titleInp);
+    const wrap = document.createElement("div"); wrap.className = "nb-list-items"; body.appendChild(wrap);
+    const renderRows = () => {
+      wrap.innerHTML = "";
+      n.items.forEach((it, idx) => {
+        const row = document.createElement("div"); row.className = "nb-li" + (it.done ? " done" : "");
+        const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!it.done; cb.disabled = !ed;
+        cb.addEventListener("change", () => { it.done = cb.checked; touch(n); row.classList.toggle("done", it.done); persist(); refreshItems(); });
+        const tx = document.createElement("input"); tx.className = "nb-li-tx"; tx.value = it.text || ""; tx.placeholder = "Item"; tx.disabled = !ed;
+        tx.addEventListener("input", () => { it.text = tx.value; touch(n); saveDeb(); });
+        tx.addEventListener("keydown", e => {
+          if (e.key === "Enter") { e.preventDefault(); const ni = { id: nbid(), text: "", done: false }; n.items.splice(idx + 1, 0, ni); touch(n); persist(); renderRows(); const inp = wrap.querySelectorAll(".nb-li-tx")[idx + 1]; if (inp) inp.focus(); }
+          else if (e.key === "Backspace" && !tx.value && n.items.length > 1) { e.preventDefault(); n.items.splice(idx, 1); touch(n); persist(); renderRows(); const inp = wrap.querySelectorAll(".nb-li-tx")[Math.max(0, idx - 1)]; if (inp) { inp.focus(); const v = inp.value; inp.setSelectionRange(v.length, v.length); } refreshItems(); }
+        });
+        row.appendChild(cb); row.appendChild(tx);
+        if (ed) { const del = document.createElement("button"); del.className = "nb-li-del"; del.textContent = "✕"; del.title = "Remover"; del.onclick = () => { n.items.splice(idx, 1); if (!n.items.length) n.items.push({ id: nbid(), text: "", done: false }); touch(n); persist(); renderRows(); refreshItems(); }; row.appendChild(del); }
+        wrap.appendChild(row);
+      });
+      if (ed) { const add = document.createElement("button"); add.className = "nb-li-add"; add.textContent = "＋ Item"; add.onclick = () => { n.items.push({ id: nbid(), text: "", done: false }); touch(n); persist(); renderRows(); const inps = wrap.querySelectorAll(".nb-li-tx"); if (inps.length) inps[inps.length - 1].focus(); }; wrap.appendChild(add); }
+    };
+    renderRows();
+  }
+
+  // ---------- ações ----------
+  function newNote(kind) {
+    if (!ed) return; const now = Date.now();
+    const n = { id: nbid(), kind: kind, createdAt: now, updatedAt: now, pinned: false, labels: [], remind: null, remindFired: false };
+    if (kind === "list") { n.listTitle = ""; n.items = [{ id: nbid(), text: "", done: false }]; } else { n.body = ""; }
+    p.notes.unshift(n); ui.active = n.id; ui.filter = "all"; ui.q = "";
+    if (root.classList.contains("narrow")) { ui.pane = "editor"; root.setAttribute("data-pane", "editor"); }
+    pushHist(kind === "list" ? "Nova lista" : "Nova nota"); persist();
+    buildList(); buildEditor();
+    setTimeout(() => { const f = edPane.querySelector(n.kind === "list" ? ".nb-list-title" : ".nb-text"); if (f) f.focus(); }, 0);
+  }
+  function noteMenu(n, anchor) {
+    nbPopup(anchor, [
+      { label: "🔁 Converter para " + (n.kind === "list" ? "texto" : "lista"), on: () => convert(n) },
+      { label: "⧉ Duplicar", on: () => duplicate(n) },
+      { sep: true },
+      { label: "🗑 Excluir", danger: true, on: () => trashNote(n) }
+    ]);
+  }
+  function convert(n) {
+    if (n.kind === "list") { const txt = (n.items || []).map(i => (i.done ? "✓ " : "") + (i.text || "")).filter(s => s.trim()).join("<div></div>"); n.kind = "text"; n.body = txt; delete n.items; delete n.listTitle; }
+    else { const lines = nbPlainLines(n.body); n.kind = "list"; n.listTitle = ""; n.items = (lines.length ? lines : [""]).map(l => ({ id: nbid(), text: l, done: false })); delete n.body; }
+    touch(n); persist(); buildEditor(); refreshItems();
+  }
+  function duplicate(n) {
+    const copy = JSON.parse(JSON.stringify(n)); copy.id = nbid(); copy.createdAt = copy.updatedAt = Date.now(); copy.pinned = false;
+    if (copy.items) copy.items.forEach(i => i.id = nbid());
+    p.notes.unshift(copy); ui.active = copy.id; pushHist("Duplicou nota"); persist(); buildList(); buildEditor();
+  }
+  function trashNote(n) {
+    p.trash.unshift({ note: JSON.parse(JSON.stringify(n)), at: Date.now() });
+    p.notes = p.notes.filter(x => x.id !== n.id);
+    ui.active = (nbSort(p.notes)[0] || {}).id || null;
+    pushHist("Excluiu nota"); persist(); buildList(); buildEditor();
+  }
+
+  // ---------- lembrete ----------
+  function reminderModal(n) {
+    const cur = n.remind ? new Date(n.remind - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
+    openModal('<h3>🔔 Lembrete</h3>' +
+      '<label>Data e hora</label><input type="datetime-local" data-k="dt" value="' + escAttr(cur) + '">' +
+      '<div class="modal-actions">' + (n.remind ? '<button class="btn danger" data-rm>Remover</button>' : "") + '<span class="grow"></span><button class="btn" data-x>Cancelar</button><button class="btn primary" data-ok>Salvar</button></div>',
+      m => {
+        m.querySelector("[data-x]").onclick = closeModal;
+        const rm = m.querySelector("[data-rm]"); if (rm) rm.onclick = () => { n.remind = null; n.remindFired = false; touch(n); persist(); closeModal(); buildEditor(); refreshItems(); };
+        m.querySelector("[data-ok]").onclick = () => { const v = m.querySelector('[data-k="dt"]').value; if (!v) { toast("Escolha data e hora."); return; } n.remind = new Date(v).getTime(); n.remindFired = false; touch(n); persist(); closeModal(); buildEditor(); refreshItems(); toast("Lembrete definido."); };
+      });
+  }
+
+  // ---------- marcadores ----------
+  function labelMenu(n, anchor) {
+    const items = p.labels.map(l => ({
+      label: '<span class="nb-ldot" style="background:' + l.color + '"></span>' + esc(l.name) + ((n.labels || []).indexOf(l.id) >= 0 ? ' <span class="nb-check">✓</span>' : ""),
+      on: () => { n.labels = n.labels || []; const i = n.labels.indexOf(l.id); if (i >= 0) n.labels.splice(i, 1); else n.labels.push(l.id); touch(n); persist(); buildEditor(); refreshItems(); labelMenu(n, anchor); }
+    }));
+    items.push({ sep: true });
+    items.push({ label: "⚙ Gerenciar marcadores…", on: () => manageLabels() });
+    nbPopup(anchor, items);
+  }
+  function manageLabels() {
+    const rows = () => p.labels.map(l => '<div class="nb-lbl-row" data-id="' + escAttr(l.id) + '">' +
+      '<button class="nb-lbl-color" style="background:' + l.color + '"></button>' +
+      '<input class="nb-lbl-name" value="' + escAttr(l.name) + '">' +
+      '<button class="nb-lbl-del" title="Excluir">✕</button></div>').join("");
+    openModal('<h3>🏷 Marcadores</h3><div id="nbLbls">' + (p.labels.length ? rows() : '<p class="muted-note">Nenhum marcador ainda.</p>') + "</div>" +
+      '<button class="btn sm" id="nbAddLbl" style="margin-top:8px">＋ Novo marcador</button>' +
+      '<div class="modal-actions"><span class="grow"></span><button class="btn primary" data-x>Concluir</button></div>',
+      m => {
+        const wire = () => {
+          m.querySelectorAll(".nb-lbl-row").forEach(row => {
+            const id = row.dataset.id; const l = p.labels.find(x => x.id === id); if (!l) return;
+            row.querySelector(".nb-lbl-color").onclick = () => { const i = NB_COLORS.indexOf(l.color); l.color = NB_COLORS[(i + 1) % NB_COLORS.length]; row.querySelector(".nb-lbl-color").style.background = l.color; persist(); };
+            row.querySelector(".nb-lbl-name").oninput = e => { l.name = e.target.value; persist(); };
+            row.querySelector(".nb-lbl-del").onclick = () => { p.labels = p.labels.filter(x => x.id !== id); p.notes.forEach(n => { if (n.labels) n.labels = n.labels.filter(x => x !== id); }); if (ui.filter === id) ui.filter = "all"; persist(); m.querySelector("#nbLbls").innerHTML = p.labels.length ? rows() : '<p class="muted-note">Nenhum marcador ainda.</p>'; wire(); };
+          });
+        };
+        m.querySelector("[data-x]").onclick = () => { closeModal(); buildList(); buildEditor(); };
+        m.querySelector("#nbAddLbl").onclick = () => { p.labels.push({ id: nbid(), name: "Marcador", color: NB_COLORS[p.labels.length % NB_COLORS.length] }); persist(); m.querySelector("#nbLbls").innerHTML = rows(); wire(); };
+        wire();
+      });
+  }
+
+  // ---------- menu esquerdo (⋯) ----------
+  function leftMenu(anchor) {
+    nbPopup(anchor, [
+      { label: "☑️ Nova lista", on: () => newNote("list") },
+      { label: "🏷 Marcadores", on: () => manageLabels() },
+      { sep: true },
+      { label: "📥 Importar JSON", on: () => importJSON() },
+      { label: "📤 Exportar JSON", on: () => exportJSON() },
+      { sep: true },
+      { label: "🗑 Lixeira" + (p.trash.length ? " (" + p.trash.length + ")" : ""), on: () => trashModal() }
+    ]);
+  }
+  function exportJSON() {
+    const blob = new Blob([JSON.stringify(p.notes, null, 2)], { type: "application/json" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "notas.json"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  function importJSON() {
+    const inp = document.createElement("input"); inp.type = "file"; inp.accept = "application/json,.json";
+    inp.onchange = () => { const f = inp.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => {
+      try { const arr = JSON.parse(r.result); if (!Array.isArray(arr)) throw 0; const have = new Set(p.notes.map(n => n.id)); let add = 0; arr.forEach(n => { if (n && n.id && !have.has(n.id)) { p.notes.push(n); have.add(n.id); add++; } }); pushHist("Importou notas"); persist(); buildList(); buildEditor(); toast(add + " nota(s) importada(s)."); }
+      catch (e) { toast("Arquivo inválido."); }
+    }; r.readAsText(f); };
+    inp.click();
+  }
+  function trashModal() {
+    const rows = () => p.trash.length ? p.trash.map((d, i) => '<div class="nb-trash-row" data-i="' + i + '"><div class="nb-trash-b"><div class="nb-trash-t">' + esc(nbTitle(d.note)) + '</div><div class="nb-trash-d">' + esc(nbDate(d.at)) + '</div></div><div class="nb-trash-acts"><button class="lnk" data-restore>Restaurar</button><button class="lnk del" data-del>Apagar de vez</button></div></div>').join("") : '<p class="muted-note">Lixeira vazia.</p>';
+    openModal('<h3>🗑 Lixeira</h3><div id="nbTrash">' + rows() + "</div>" +
+      (p.trash.length ? '<button class="btn sm danger" id="nbEmpty" style="margin-top:8px">Esvaziar lixeira</button>' : "") +
+      '<div class="modal-actions"><span class="grow"></span><button class="btn primary" data-x>Fechar</button></div>',
+      m => {
+        const refresh = () => { m.querySelector("#nbTrash").innerHTML = rows(); wire(); const eb = m.querySelector("#nbEmpty"); if (eb && !p.trash.length) eb.style.display = "none"; };
+        const wire = () => m.querySelectorAll(".nb-trash-row").forEach(row => {
+          const i = +row.dataset.i;
+          row.querySelector("[data-restore]").onclick = () => { const d = p.trash[i]; if (!d) return; p.notes.unshift(d.note); p.trash.splice(i, 1); ui.active = d.note.id; pushHist("Restaurou nota"); persist(); refresh(); buildList(); buildEditor(); toast("Nota restaurada."); };
+          row.querySelector("[data-del]").onclick = async () => { if (!(await confirmDialog("Apagar esta nota definitivamente?"))) return; p.trash.splice(i, 1); persist(); refresh(); };
+        });
+        m.querySelector("[data-x]").onclick = closeModal;
+        const eb = m.querySelector("#nbEmpty"); if (eb) eb.onclick = async () => { if (!(await confirmDialog("Esvaziar a lixeira? Isso apaga tudo definitivamente."))) return; p.trash = []; persist(); refresh(); };
+        wire();
+      });
+  }
+
+  // ---------- popups ----------
+  function nbPopup(anchor, items) { const r = anchor.getBoundingClientRect(); nbPopup2(r.left, r.bottom + 4, items, anchor); }
+  function nbPopup2(x, y, items, anchor) {
+    document.querySelectorAll(".nb-pop").forEach(e => e.remove());
+    const pop = document.createElement("div"); pop.className = "nb-pop";
+    items.forEach(it => {
+      if (it.sep) { const s = document.createElement("div"); s.className = "nb-pop-sep"; pop.appendChild(s); return; }
+      const b = document.createElement("button"); b.className = "nb-pop-item" + (it.danger ? " danger" : ""); b.innerHTML = it.label;
+      b.onclick = e => { e.stopPropagation(); pop.remove(); if (it.on) it.on(); };
+      pop.appendChild(b);
+    });
+    document.body.appendChild(pop);
+    let left = x, top = y; const pw = pop.offsetWidth, ph = pop.offsetHeight;
+    if (left + pw > window.innerWidth - 8) left = window.innerWidth - 8 - pw;
+    if (top + ph > window.innerHeight - 8) top = Math.max(8, (anchor ? anchor.getBoundingClientRect().top : y) - 4 - ph);
+    pop.style.left = Math.max(8, left) + "px"; pop.style.top = Math.max(8, top) + "px";
+    setTimeout(() => { const close = e => { if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener("pointerdown", close, true); } }; document.addEventListener("pointerdown", close, true); }, 0);
+  }
+
+  buildList(); buildEditor();
+}
 
 /* — Vínculo Linha do tempo ↔ Entregas — */
 function findTileGlobal(id) {
