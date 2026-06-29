@@ -1535,7 +1535,8 @@ function lrPopup(x, y, items) {
 
 function lrRenderWidget(t, c) {
   const p = t.props; p.rows = p.rows || [];
-  const ed = !!(typeof canEditReal !== "undefined" && canEditReal && !previewCliente);
+  // Segue o modo edição: ligado = edita (link completo); desligado = só o botão de abrir.
+  const ed = !!canEdit;
   const save0 = () => { if (ed) save(); };
 
   c.innerHTML = "";
@@ -1543,7 +1544,7 @@ function lrRenderWidget(t, c) {
   const head = document.createElement("div"); head.className = "w-head"; head.innerHTML = '<span class="w-title">Links de Referência</span>'; root.appendChild(head);
   const table = document.createElement("div"); table.className = "lr-table"; root.appendChild(table);
   const hdr = document.createElement("div"); hdr.className = "lr-row lr-head";
-  hdr.innerHTML = '<div class="lr-h"></div><div class="lr-h">Ideia</div><div class="lr-h">Fonte</div><div class="lr-h">Motivo</div><div class="lr-h">Link</div><div class="lr-h"></div>';
+  hdr.innerHTML = '<div class="lr-h"></div><div class="lr-h">Ideia/Fonte</div><div class="lr-h">Motivo</div><div class="lr-h">Link</div><div class="lr-h"></div>';
   table.appendChild(hdr);
   if (ed) { const foot = document.createElement("div"); foot.className = "lr-foot"; const add = document.createElement("button"); add.className = "lr-add"; add.textContent = "＋ Adicionar link"; add.onclick = addRow; foot.appendChild(add); root.appendChild(foot); }
 
@@ -1564,13 +1565,22 @@ function lrRenderWidget(t, c) {
       const i = document.createElement("input"); i.className = "lr-inp"; i.value = r[key] || ""; i.placeholder = ph2; i.disabled = !ed;
       cell.appendChild(i); return { cell: cell, input: i };
     };
-    const a = mkInput("ideia", "Ideia"); a.input.addEventListener("change", () => { r.ideia = a.input.value; save0(); }); row.appendChild(a.cell);
-    const b = mkInput("fonte", "Fonte"); b.input.addEventListener("change", () => { r.fonte = b.input.value; save0(); }); row.appendChild(b.cell);
+    const a = mkInput("ideia", "Ideia / Fonte"); a.input.addEventListener("change", () => { r.ideia = a.input.value; save0(); }); row.appendChild(a.cell);
     const d = mkInput("motivo", "Motivo"); d.input.addEventListener("change", () => { r.motivo = d.input.value; save0(); }); row.appendChild(d.cell);
-    const lk = mkInput("link", "https://…", "lr-link-cell");
-    lk.input.addEventListener("change", () => { r.link = lk.input.value; save0(); row.replaceWith(buildRow(r, idx)); });
-    if ((r.link || "").trim()) { const op = document.createElement("button"); op.className = "lr-open"; op.textContent = "↗"; op.title = "Abrir em nova aba"; op.onclick = () => window.open(r.link, "_blank", "noopener"); lk.cell.appendChild(op); }
-    row.appendChild(lk.cell);
+    const linkCell = document.createElement("div"); linkCell.className = "lr-cell lr-link-cell";
+    const linkVal = (r.link || "").trim();
+    if (ed) {
+      // No modo edição: link completo, editável; ↗ ao lado quando preenchido.
+      const li = document.createElement("input"); li.className = "lr-inp"; li.value = r.link || ""; li.placeholder = "https://…";
+      li.addEventListener("change", () => { r.link = li.value; save0(); row.replaceWith(buildRow(r, idx)); });
+      linkCell.appendChild(li);
+      if (linkVal) { const op = document.createElement("button"); op.className = "lr-open"; op.textContent = "↗"; op.title = "Abrir em nova aba"; op.onclick = () => window.open(r.link, "_blank", "noopener"); linkCell.appendChild(op); }
+    } else if (linkVal) {
+      // Fora do modo edição: só um botão de link para abrir.
+      const op = document.createElement("button"); op.className = "lr-openbtn"; op.innerHTML = "🔗 Abrir"; op.title = r.link; op.onclick = () => window.open(r.link, "_blank", "noopener");
+      linkCell.appendChild(op);
+    }
+    row.appendChild(linkCell);
     const del = document.createElement("button"); del.className = "lr-del"; del.textContent = "✕";
     if (ed) { del.title = "Excluir"; del.onclick = () => removeRow(idx); } else del.style.visibility = "hidden";
     row.appendChild(del);
