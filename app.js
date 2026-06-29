@@ -1114,6 +1114,16 @@ const WIDGETS = {
     w: 7, h: 4, defaults: { rows: [] },
     render(t, c) { lrRenderWidget(t, c); },
     form() { return '<p class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:13px">Edite a tabela <b>direto no widget</b>: ＋ Adicionar link, arraste pela alça ⠿ para reordenar, botão direito numa linha para copiar/duplicar/excluir.</p>'; }
+  },
+  acessmon: {
+    emoji: "♿", name: "Acessibilidade (AMA)", desc: "Monitora a nota da AMA/UNIFESP do site, com erros por nível A/AA/AAA e histórico. Coleta diária.",
+    w: 4, h: 4, defaults: { domain: "", titulo: "" },
+    render(t, c) { amRenderWidget(t, c); },
+    form(p) {
+      return field("Título (opcional)", "titulo", p.titulo || "") +
+        field("Domínio do site", "domain", p.domain || "") +
+        '<p class="muted-note" style="text-transform:none;letter-spacing:0;font-weight:600;font-size:12px;margin-top:6px">Informe só o domínio, ex.: <b>visitesaopaulo.com</b> (sem https://). A nota é coletada da AMA 1×/dia e fica vermelha se a nota &lt; 9,5 ou se houver erros. <a href="https://amaweb.unifesp.br/avaliador/" target="_blank" rel="noopener">Abrir AMA ↗</a></p>';
+    }
   }
 };
 function field(label, k, v) { return '<label>' + esc(label) + '</label><input data-k="' + k + '" value="' + escAttr(v) + '">'; }
@@ -1660,6 +1670,95 @@ function lrRenderWidget(t, c) {
   }
 
   drawRows();
+}
+
+/* ====================================================================
+   Widget "Acessibilidade (AMA)" — mostra a nota oficial da AMA/UNIFESP
+   do site, erros por nível A/AA/AAA e o histórico (sparkline). Os dados
+   são gravados pelo coletor diário na tabela acessibilidade_monitor;
+   aqui o widget só lê. Vermelho quando nota < 9,5 ou houver erros.
+   Props do tile: { domain, titulo }.
+   ==================================================================== */
+function amCleanDomain(s) {
+  return (s || "").trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/^www\./i, "");
+}
+function amFmtDate(ts) {
+  const d = new Date(ts); const p = n => String(n).padStart(2, "0");
+  return p(d.getDate()) + "/" + p(d.getMonth() + 1) + "/" + d.getFullYear() + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+}
+function amRenderWidget(t, c) {
+  const p = t.props || {};
+  const domain = amCleanDomain(p.domain);
+  const amaUrl = "https://amaweb.unifesp.br/avaliador/results/" + (domain || "");
+  const canEd = !!(typeof canEditReal !== "undefined" && canEditReal && !previewCliente);
+
+  c.innerHTML =
+    '<div class="w-head am-head">' +
+      '<span class="w-title">' + esc(p.titulo || "Acessibilidade") + '</span>' +
+      (domain ? '<a class="am-link" href="' + escAttr(amaUrl) + '" target="_blank" rel="noopener" title="Abrir relatório na AMA">' + esc(domain) + ' ↗</a>' : "") +
+    '</div>' +
+    '<div class="w-body am-body" id="am-' + t.id + '"><p class="muted-note">Carregando…</p></div>';
+
+  const box = document.getElementById("am-" + t.id);
+  if (!domain) {
+    box.innerHTML = canEd
+      ? '<div class="am-empty"><p class="muted-note">Configure o <b>domínio do site</b> no ⚙ para começar a monitorar a nota da AMA.</p></div>'
+      : '<p class="muted-note">Monitor ainda não configurado.</p>';
+    return;
+  }
+  amLoad(t.id, domain);
+}
+async function amLoad(tileId, domain) {
+  const box = document.getElementById("am-" + tileId); if (!box) return;
+  if (!curProjeto) { box.innerHTML = '<p class="muted-note">Abra um projeto para ver os dados.</p>'; return; }
+  const { data, error } = await sb.from("acessibilidade_monitor")
+    .select("coletado_em,status,nota,erros,qtd_a,qtd_aa,qtd_aaa")
+    .eq("projeto_id", curProjeto.id).eq("domain", domain).eq("fonte", "ama")
+    .order("coletado_em", { ascending: false }).limit(30);
+  if (error) { box.innerHTML = '<p class="muted-note">Não foi possível carregar (' + esc(error.message) + ').</p>'; return; }
+  const rows = data || [];
+  if (!rows.length) { box.innerHTML = '<div class="am-empty"><p class="muted-note">Aguardando a primeira coleta. A nota da AMA é registrada automaticamente todo dia às 7h.</p></div>'; return; }
+  box.innerHTML = amBuildHtml(rows);
+}
+function amBuildHtml(rows) {
+  const latest = rows[0];
+  const indisp = latest.status === "indisponivel";
+  const nota = latest.nota == null ? null : Number(latest.nota);
+  const erros = latest.erros || 0;
+  const alarm = !indisp && ((nota != null && nota < 9.5) || erros > 0);
+  const cls = indisp ? "am-warn" : (alarm ? "am-red" : "am-ok");
+
+  let h = '<div class="am-top">';
+  h += '<div class="am-score ' + cls + '">' +
+    '<div class="am-num">' + (indisp ? "—" : (nota != null ? nota.toFixed(1).replace(".", ",") : "—")) + '</div>' +
+    '<div class="am-lbl">' + (indisp ? "indisponível" : "nota AMA") + '</div></div>';
+  const cnt = (lbl, v) => '<div class="am-cnt' + ((v || 0) > 0 ? " bad" : "") + '"><span class="am-cnt-n">' + (v == null ? "–" : (v || 0)) + '</span><span class="am-cnt-l">' + lbl + '</span></div>';
+  h += '<div class="am-cnts">' + cnt("A", latest.qtd_a) + cnt("AA", latest.qtd_aa) + cnt("AAA", latest.qtd_aaa) + '</div>';
+  h += '</div>';
+
+  const metaCls = alarm || indisp ? "am-meta bad" : "am-meta";
+  const metaTxt = indisp ? "⚠ Coleta indisponível" : (erros > 0 ? ("⚠ " + erros + " erro" + (erros > 1 ? "s" : "")) : "✓ sem erros");
+  h += '<div class="' + metaCls + '">' + metaTxt + ' · ' + amFmtDate(latest.coletado_em) + '</div>';
+  h += amSpark(rows.slice().reverse());
+  return h;
+}
+function amSpark(rowsAsc) {
+  const pts = rowsAsc.filter(r => r.status !== "indisponivel" && r.nota != null).map(r => Number(r.nota));
+  if (pts.length < 2) return "";
+  const W = 200, H = 42, pad = 4;
+  const min = Math.min(9, Math.floor(Math.min.apply(null, pts) * 10) / 10), max = 10;
+  const span = (max - min) || 1;
+  const x = i => pad + i * (W - 2 * pad) / (pts.length - 1);
+  const y = v => pad + (max - v) / span * (H - 2 * pad);
+  const d = pts.map((v, i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1)).join(" ");
+  const last = pts[pts.length - 1];
+  const col = last < 9.5 ? "var(--danger)" : "var(--ok)";
+  const thrY = y(9.5).toFixed(1);
+  return '<svg class="am-spark" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' +
+    (9.5 >= min ? '<line x1="0" x2="' + W + '" y1="' + thrY + '" y2="' + thrY + '" stroke="var(--line-strong)" stroke-dasharray="3 3" stroke-width="1"/>' : "") +
+    '<path d="' + d + '" fill="none" stroke="' + col + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>' +
+    '<circle cx="' + x(pts.length - 1).toFixed(1) + '" cy="' + y(last).toFixed(1) + '" r="2.8" fill="' + col + '"/>' +
+    '</svg>';
 }
 
 /* — Vínculo Linha do tempo ↔ Entregas — */

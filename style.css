@@ -794,6 +794,31 @@ html[data-theme="light"] .cmt-btn{background:rgba(255,255,255,.75)}
 .lr-add{background:none;border:0;color:var(--accent);cursor:pointer;font:inherit;font-size:13px;font-weight:600;padding:2px 0}
 .lr-add:hover{text-decoration:underline}
 
+/* ===== Widget Acessibilidade (AMA) ===== */
+.am-head{display:flex;align-items:baseline;gap:8px;justify-content:space-between}
+.am-link{font-size:11.5px;font-weight:600;color:var(--accent-2);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55%}
+.am-link:hover{text-decoration:underline}
+.am-body{display:flex;flex-direction:column;gap:12px;padding:6px 10px 10px;overflow:auto}
+.am-top{display:flex;align-items:center;gap:14px}
+.am-score{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:96px;padding:10px 8px;border-radius:14px;border:1px solid var(--line);background:var(--surface-solid)}
+.am-num{font-size:38px;font-weight:800;letter-spacing:-1.5px;line-height:1}
+.am-lbl{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin-top:3px}
+.am-score.am-ok{border-color:color-mix(in srgb,var(--ok) 45%,var(--line));background:color-mix(in srgb,var(--ok) 10%,var(--surface-solid))}
+.am-score.am-ok .am-num{color:var(--ok)}
+.am-score.am-red{border-color:color-mix(in srgb,var(--danger) 50%,var(--line));background:color-mix(in srgb,var(--danger) 12%,var(--surface-solid))}
+.am-score.am-red .am-num{color:var(--danger)}
+.am-score.am-warn .am-num{color:var(--muted)}
+.am-cnts{flex:1;display:flex;gap:8px}
+.am-cnt{flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;padding:8px 4px;border:1px solid var(--line);border-radius:10px;background:var(--surface-solid)}
+.am-cnt-n{font-size:19px;font-weight:800;line-height:1;color:var(--text)}
+.am-cnt-l{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--faint)}
+.am-cnt.bad{border-color:color-mix(in srgb,var(--danger) 50%,var(--line));background:color-mix(in srgb,var(--danger) 12%,var(--surface-solid))}
+.am-cnt.bad .am-cnt-n{color:var(--danger)}
+.am-meta{font-size:11.5px;font-weight:600;color:var(--muted)}
+.am-meta.bad{color:var(--danger)}
+.am-spark{width:100%;height:42px;display:block}
+.am-empty{display:flex;align-items:center;justify-content:center;height:100%;text-align:center;padding:10px}
+
 /* ===== Modal genérico ===== */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40}
 .panel-modal{position:fixed;z-index:41;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,94vw);max-height:88vh;overflow:auto;
