@@ -1535,9 +1535,9 @@ function lrPopup(x, y, items) {
 
 function lrRenderWidget(t, c) {
   const p = t.props; p.rows = p.rows || [];
-  // Segue o modo edição: ligado = campos editáveis; desligado = leitura (visão do cliente).
-  // O botão ↗ abre o link em qualquer um dos modos.
-  const ed = !!canEdit;
+  // Sempre editável para o admin (independe do modo edição); só vira leitura
+  // ao pré-visualizar como cliente. O botão ↗ abre o link em qualquer caso.
+  const ed = !!(typeof canEditReal !== "undefined" && canEditReal && !previewCliente);
   const save0 = () => { if (ed) save(); };
 
   c.innerHTML = "";
