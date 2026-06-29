@@ -1697,24 +1697,26 @@ function amRenderWidget(t, c) {
       '<span class="w-title">' + esc(p.titulo || "Acessibilidade") + '</span>' +
       (domain ? '<a class="am-link" href="' + escAttr(amaUrl) + '" target="_blank" rel="noopener" title="Abrir relatório na AMA">' + esc(domain) + ' ↗</a>' : "") +
     '</div>' +
-    '<div class="w-body am-body" id="am-' + t.id + '"><p class="muted-note">Carregando…</p></div>';
+    '<div class="w-body am-body"><p class="muted-note">Carregando…</p></div>';
 
-  const box = document.getElementById("am-" + t.id);
+  // Usa c.querySelector (não document.getElementById): no loop de render o
+  // content ainda está destacado do DOM, então getElementById acharia null.
+  const box = c.querySelector(".am-body");
   if (!domain) {
     box.innerHTML = canEd
       ? '<div class="am-empty"><p class="muted-note">Configure o <b>domínio do site</b> no ⚙ para começar a monitorar a nota da AMA.</p></div>'
       : '<p class="muted-note">Monitor ainda não configurado.</p>';
     return;
   }
-  amLoad(t.id, domain);
+  amLoad(box, domain);
 }
-async function amLoad(tileId, domain) {
-  const box = document.getElementById("am-" + tileId); if (!box) return;
+async function amLoad(box, domain) {
   if (!curProjeto) { box.innerHTML = '<p class="muted-note">Abra um projeto para ver os dados.</p>'; return; }
   const { data, error } = await sb.from("acessibilidade_monitor")
     .select("coletado_em,status,nota,erros,qtd_a,qtd_aa,qtd_aaa")
     .eq("projeto_id", curProjeto.id).eq("domain", domain).eq("fonte", "ama")
     .order("coletado_em", { ascending: false }).limit(30);
+  if (box.isConnected === false) return; // re-render durante o await → descarta escrita obsoleta
   if (error) { box.innerHTML = '<p class="muted-note">Não foi possível carregar (' + esc(error.message) + ').</p>'; return; }
   const rows = data || [];
   if (!rows.length) { box.innerHTML = '<div class="am-empty"><p class="muted-note">Aguardando a primeira coleta. A nota da AMA é registrada automaticamente todo dia às 7h.</p></div>'; return; }
