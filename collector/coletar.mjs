@@ -62,7 +62,14 @@ async function descobrirAlvos() {
 async function coletarSite(page, domain) {
   const url = "https://amaweb.unifesp.br/avaliador/results/" + domain;
   console.log("  → " + url);
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+  // AMA é de terceiros e às vezes demora: 'commit' resolve no 1º byte (não
+  // espera recursos) + retry. A espera real da análise fica no waitForSelector.
+  let lastErr = null;
+  for (let tent = 1; tent <= 2; tent++) {
+    try { await page.goto(url, { waitUntil: "commit", timeout: 120000 }); lastErr = null; break; }
+    catch (e) { lastErr = e; console.warn("  ⚠ goto tentativa " + tent + " falhou: " + e.message); }
+  }
+  if (lastErr) throw lastErr;
 
   // A análise renderiza o site inteiro e leva ~5 min; espera a tabela de resultados.
   await page.waitForSelector('table[aria-label="Resultados da avaliação de acessibilidade"]', { timeout: ESPERA_ANALISE_MS });
