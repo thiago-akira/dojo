@@ -19,7 +19,6 @@
    ==================================================================== */
 import { chromium } from "playwright";
 import { createClient } from "@supabase/supabase-js";
-import AxeBuilder from "@axe-core/playwright";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -105,28 +104,6 @@ async function coletarSite(page, domain) {
   }, CIRC);
 }
 
-/* Roda o axe-core no site real e conta violações por nível WCAG (A/AA/AAA).
-   Diagnóstico próprio — diz O QUE quebrou, complementando a nota da AMA. */
-async function coletarAxe(page, domain) {
-  const url = "https://" + domain;
-  console.log("  → axe em " + url);
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForLoadState("networkidle", { timeout: 30000 }).catch(() => {});
-  const results = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag2aaa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"])
-    .analyze();
-  const isA = t => /^wcag\d+a$/.test(t), isAA = t => /^wcag\d+aa$/.test(t), isAAA = t => /^wcag\d+aaa$/.test(t);
-  const nivel = v => { const tg = v.tags || []; if (tg.some(isA)) return "A"; if (tg.some(isAA)) return "AA"; if (tg.some(isAAA)) return "AAA"; return "outros"; };
-  let a = 0, aa = 0, aaa = 0;
-  const det = [];
-  for (const v of results.violations) {
-    const L = nivel(v);
-    if (L === "A") a++; else if (L === "AA") aa++; else if (L === "AAA") aaa++;
-    det.push({ id: v.id, impacto: v.impact, nivel: L, nos: (v.nodes || []).length, ajuda: v.help });
-  }
-  return { total: results.violations.length, a, aa, aaa, detalhes: det };
-}
-
 /* Grava uma linha por projeto que usa o domínio */
 async function inserir(projetos, domain, agora, row) {
   const inserts = projetos.map(pid => ({ projeto_id: pid, domain, coletado_em: agora, ...row }));
@@ -144,7 +121,6 @@ async function inserir(projetos, domain, agora, row) {
   console.log("Alvos (" + alvos.size + "): " + [...alvos.keys()].join(", "));
 
   const browser = await chromium.launch();
-  // @axe-core/playwright exige page vinda de um context explícito (não browser.newPage)
   const context = await browser.newContext({
     viewport: { width: 1366, height: 900 },
     userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
@@ -179,24 +155,6 @@ async function inserir(projetos, domain, agora, row) {
       falhas++;
     }
     await inserir(projetos, domain, agora, amaRow);
-
-    // ---- axe-core (diagnóstico próprio) ----
-    let axeRow;
-    try {
-      const x = await coletarAxe(page, domain);
-      axeRow = {
-        fonte: "axe", status: "ok",
-        nota: null, erros: x.total, qtd_a: x.a, qtd_aa: x.aa, qtd_aaa: x.aaa,
-        detalhes: { violacoes: x.detalhes }
-      };
-      console.log("  ✓ axe: " + x.total + " violações · A/AA/AAA " + x.a + "/" + x.aa + "/" + x.aaa);
-      ok++;
-    } catch (err) {
-      console.error("  ✗ axe falhou: " + err.message);
-      axeRow = { fonte: "axe", status: "indisponivel", detalhes: { erro: String(err.message).slice(0, 500) } };
-      falhas++;
-    }
-    await inserir(projetos, domain, agora, axeRow);
   }
 
   await browser.close();
