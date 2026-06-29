@@ -3440,7 +3440,7 @@ function pushHist(label) {
   if (_histLock || !canEdit) return;
   histStack = histStack.slice(0, histIdx + 1);
   histStack.push({ s: _snap(), label: label || "Alteração", ts: Date.now() });
-  if (histStack.length > 60) histStack.shift();
+  if (histStack.length > 400) histStack.shift();
   histIdx = histStack.length - 1;
   updateHistButtons();
 }
@@ -3756,7 +3756,11 @@ function renderPainel(canvas, hint) {
     tile.style.setProperty("--gh", tl.h * SUB);
     const card = document.createElement("div"); card.className = "card";
     const content = document.createElement("div"); content.className = "content";
+    // Edição direto na caixa só no modo edição; fora dele, o admin vê como o cliente vê
+    // (canEdit segue valendo para permissão; aqui é só o render do widget).
+    const _ce = canEdit; canEdit = canEdit && editMode;
     try { W.render(t, content); } catch (e) { content.textContent = "Erro no widget."; }
+    canEdit = _ce;
     card.appendChild(content);
     if (isMobileCanvas() && mobileHalfOf(t)) tile.classList.add("mobile-half");
     if (editMode) {
@@ -3806,7 +3810,7 @@ function bottomRow() { return space().tiles.reduce((m, t) => { const p = tilePos
 async function removeTile(id) {
   if (!(await confirmDialog("Excluir este widget?"))) return;
   const sp = space(); const t = sp.tiles.find(x => x.id === id);
-  if (t) { state.trash = state.trash || []; state.trash.unshift({ tile: JSON.parse(JSON.stringify(t)), space: sp.name, at: Date.now() }); if (state.trash.length > 40) state.trash.pop(); }
+  if (t) { state.trash = state.trash || []; state.trash.unshift({ tile: JSON.parse(JSON.stringify(t)), space: sp.name, at: Date.now() }); } // lixeira nunca expira (preferência do usuário)
   sp.tiles = sp.tiles.filter(x => x.id !== id);
   if (sp._layouts) { ["mobile","tablet"].forEach(lk => { if (sp._layouts[lk]) delete sp._layouts[lk][id]; }); }
   save(); pushHist("Removeu widget"); route();
